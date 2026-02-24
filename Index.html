@@ -1395,7 +1395,8 @@
 
   <!-- Session save/load buttons -->
   <div style="display:flex;gap:4px;flex-shrink:0;margin-left:8px;">
-    <button onclick="saveSession()" title="Save session" style="padding:4px 8px;background:rgba(212,175,55,0.15);border:1px solid rgba(212,175,55,0.3);border-radius:5px;color:var(--gold);font-size:11px;cursor:pointer;font-family:Cinzel,serif;">💾</button>
+    <button onclick="openSessionsModal()" title="Sessions" style="padding:4px 8px;background:rgba(212,175,55,0.15);border:1px solid rgba(212,175,55,0.3);border-radius:5px;color:var(--gold);font-size:11px;cursor:pointer;font-family:Cinzel,serif;">📂</button>
+    <button onclick="saveSession()" title="Quick save" style="padding:4px 8px;background:rgba(212,175,55,0.1);border:1px solid rgba(212,175,55,0.2);border-radius:5px;color:var(--gold);font-size:11px;cursor:pointer;font-family:Cinzel,serif;">💾</button>
     <button onclick="loadSession()" title="Load last session" style="padding:4px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:5px;color:var(--text-dim);font-size:11px;cursor:pointer;font-family:Cinzel,serif;">↩</button>
     <button onclick="promptAPIKey()" title="Set API key for AI features" style="padding:4px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:5px;color:var(--text-dim);font-size:11px;cursor:pointer;font-family:Cinzel,serif;">🔑</button>
   </div>
@@ -3553,60 +3554,193 @@ function showToast(msg, type='info') {
 // ═══════════════════════════════════════════════════════════════
 // FULL SESSION PERSISTENCE
 // ═══════════════════════════════════════════════════════════════
-const SESSION_KEY = 'dm_grimoire_session';
+const SESSION_KEY  = 'dm_grimoire_session';
+const SESSIONS_KEY = 'dm_grimoire_sessions'; // named sessions list
 
-function saveSession() {
-  try {
-    const session = {
-      version: 2,
-      savedAt: new Date().toISOString(),
-      combatants,
-      npcs,
-      locations: window.locations || [],
-      party,
-      presets: JSON.parse(localStorage.getItem('dm_presets') || '[]'),
-      worldTotalHours,
-      worldSeason,
-      totalXP,
-      xpLog,
-      timerSeconds,
-      currentRound: window.currentRound || 0,
-      combatActive: window.combatActive || false,
-      notes: {
-        session: document.getElementById('session-notes')?.value || '',
-        plot:    document.getElementById('plot-notes')?.value    || '',
-      }
-    };
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    showToast('💾 Session saved!', 'success');
-  } catch(e) {
-    showToast('⚠ Save failed: ' + e.message, 'danger');
+// ── Collect current state into an object ───────────────────────────
+function collectState() {
+  return {
+    version: 3,
+    savedAt: new Date().toISOString(),
+    combatants,
+    npcs,
+    locations: window.locations || [],
+    party,
+    presets: JSON.parse(localStorage.getItem('dm_presets') || '[]'),
+    worldTotalHours,
+    worldSeason,
+    totalXP,
+    xpLog,
+    timerSeconds,
+    currentRound: window.currentRound || 0,
+    combatActive: window.combatActive || false,
+    notes: {
+      session: document.getElementById('session-notes')?.value || '',
+      plot:    document.getElementById('plot-notes')?.value    || '',
+    }
+  };
+}
+
+// ── Apply a state object to the app ───────────────────────────────
+function applyState(s) {
+  if (s.combatants)  { combatants = s.combatants; renderCombatants(); }
+  if (s.npcs)        { npcs = s.npcs; renderNPCs(); }
+  if (s.locations)   { window.locations = s.locations; if(typeof renderLocations==='function') renderLocations(); }
+  if (s.party)       { party = s.party; renderParty(); }
+  if (s.presets)     { localStorage.setItem('dm_presets', JSON.stringify(s.presets)); }
+  if (s.worldTotalHours !== undefined) { worldTotalHours = s.worldTotalHours; worldSeason = s.worldSeason||0; updateWorldDisplay(); syncTopBar(); }
+  if (s.totalXP !== undefined) { totalXP = s.totalXP; xpLog = s.xpLog||[]; renderXP(); }
+  if (s.timerSeconds) timerSeconds = s.timerSeconds;
+  if (s.currentRound !== undefined) {
+    window.currentRound = s.currentRound;
+    const re = document.getElementById('round-display'); if(re) re.textContent = s.currentRound;
+  }
+  if (s.notes) {
+    const sn = document.getElementById('session-notes'); if(sn) sn.value = s.notes.session||'';
+    const pn = document.getElementById('plot-notes');   if(pn) pn.value = s.notes.plot||'';
   }
 }
 
+// ── Quick save (overwrites last-used slot) ────────────────────────
+function saveSession() {
+  try {
+    const state = collectState();
+    localStorage.setItem(SESSION_KEY, JSON.stringify(state));
+    showToast('💾 Session saved!', 'success');
+  } catch(e) { showToast('⚠ Save failed: ' + e.message, 'danger'); }
+}
+
+// ── Quick load ────────────────────────────────────────────────────
 function loadSession() {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) { showToast('No saved session found', 'info'); return; }
-    const s = JSON.parse(raw);
-    if (s.combatants)   { combatants = s.combatants; renderCombatants(); }
-    if (s.npcs)         { npcs = s.npcs; renderNPCs(); }
-    if (s.locations)    { window.locations = s.locations; if(typeof renderLocations==='function') renderLocations(); }
-    if (s.party)        { party = s.party; renderParty(); }
-    if (s.worldTotalHours !== undefined) { worldTotalHours = s.worldTotalHours; worldSeason = s.worldSeason||0; updateWorldDisplay(); syncTopBar(); }
-    if (s.totalXP !== undefined) { totalXP = s.totalXP; xpLog = s.xpLog||[]; renderXP(); }
-    if (s.timerSeconds) timerSeconds = s.timerSeconds;
-    if (s.currentRound !== undefined) { window.currentRound = s.currentRound; const re = document.getElementById('round-display'); if(re) re.textContent = s.currentRound; }
-    if (s.notes) {
-      const sn = document.getElementById('session-notes'); if(sn) sn.value = s.notes.session||'';
-      const pn = document.getElementById('plot-notes');   if(pn) pn.value = s.notes.plot||'';
-    }
-    const dt = new Date(s.savedAt);
-    showToast('✅ Session restored from ' + dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString(), 'success');
-  } catch(e) {
-    showToast('⚠ Load failed: ' + e.message, 'danger');
-  }
+    if (!raw) { showToast('No saved session found — use 📂 to open a named session', 'info'); return; }
+    applyState(JSON.parse(raw));
+    showToast('✅ Session restored!', 'success');
+  } catch(e) { showToast('⚠ Load failed: ' + e.message, 'danger'); }
 }
+
+// ── Named sessions ────────────────────────────────────────────────
+function getSessions() {
+  try { return JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+
+function saveNamedSession(name) {
+  try {
+    const sessions = getSessions();
+    const state = collectState();
+    state.name = name;
+    // Replace if same name exists
+    const idx = sessions.findIndex(s => s.name === name);
+    if (idx >= 0) sessions[idx] = state;
+    else sessions.unshift(state);
+    // Keep max 20 sessions
+    if (sessions.length > 20) sessions.splice(20);
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+    localStorage.setItem(SESSION_KEY, JSON.stringify(state)); // also set as current
+    showToast('💾 Saved as "' + name + '"', 'success');
+    closeSessionsModal();
+  } catch(e) { showToast('⚠ Save failed: ' + e.message, 'danger'); }
+}
+
+function loadNamedSession(name) {
+  const sessions = getSessions();
+  const s = sessions.find(s => s.name === name);
+  if (!s) { showToast('Session not found', 'danger'); return; }
+  applyState(s);
+  localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+  showToast('✅ Loaded "' + name + '"', 'success');
+  closeSessionsModal();
+}
+
+function deleteNamedSession(name) {
+  const sessions = getSessions().filter(s => s.name !== name);
+  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+  openSessionsModal(); // refresh
+}
+
+function exportSession() {
+  try {
+    const state = collectState();
+    state.name = state.name || 'grimoire-export';
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = (state.name||'session') + '-' + new Date().toISOString().slice(0,10) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('📤 Session exported!', 'success');
+  } catch(e) { showToast('⚠ Export failed: ' + e.message, 'danger'); }
+}
+
+function importSession(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const s = JSON.parse(e.target.result);
+      if (!s.version) throw new Error('Not a valid session file');
+      applyState(s);
+      if (s.name) {
+        const sessions = getSessions();
+        const idx = sessions.findIndex(x => x.name === s.name);
+        if (idx >= 0) sessions[idx] = s; else sessions.unshift(s);
+        localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+      }
+      localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+      showToast('📥 Session imported: "' + (s.name||'unnamed') + '"', 'success');
+      closeSessionsModal();
+    } catch(err) { showToast('⚠ Import failed: ' + err.message, 'danger'); }
+  };
+  reader.readAsText(file);
+}
+
+// ── Sessions modal ────────────────────────────────────────────────
+function openSessionsModal() {
+  const modal = document.getElementById('sessions-modal');
+  if (!modal) return;
+  modal.classList.add('show');
+  renderSessionsList();
+}
+
+function closeSessionsModal() {
+  const modal = document.getElementById('sessions-modal');
+  if (modal) modal.classList.remove('show');
+}
+
+function renderSessionsList() {
+  const list = document.getElementById('sessions-list');
+  if (!list) return;
+  const sessions = getSessions();
+  if (!sessions.length) {
+    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim);font-style:italic;">No saved sessions yet.<br>Enter a name above and click Save.</div>';
+    return;
+  }
+  list.innerHTML = sessions.map(s => {
+    const dt = new Date(s.savedAt);
+    const dateStr = dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    const combatantCount = (s.combatants||[]).length;
+    const npcCount = (s.npcs||[]).length;
+    const partyCount = (s.party||[]).length;
+    return '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:10px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
+        '<div>' +
+          '<div style="font-family:Cinzel,serif;font-size:15px;color:var(--gold);">' + (s.name||'Unnamed') + '</div>' +
+          '<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">' + dateStr + '</div>' +
+        '</div>' +
+        '<button onclick="deleteNamedSession(\'' + s.name.replace(/'/g,"\\'") + '\')" style="background:rgba(139,26,26,0.2);border:1px solid rgba(139,26,26,0.4);color:#e08080;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:11px;">🗑</button>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;font-size:11px;color:var(--text-dim);margin-bottom:10px;">' +
+        '<span>⚔ ' + combatantCount + ' combatants</span>' +
+        '<span>🧙 ' + npcCount + ' NPCs</span>' +
+        '<span>👥 ' + partyCount + ' party</span>' +
+      '</div>' +
+      '<button onclick="loadNamedSession(\'' + s.name.replace(/'/g,"\\'") + '\')" style="width:100%;padding:8px;background:linear-gradient(135deg,var(--gold-dim),var(--gold));color:var(--ink);border:none;border-radius:4px;font-family:Cinzel,serif;font-size:11px;font-weight:bold;cursor:pointer;letter-spacing:0.08em;">▶ LOAD SESSION</button>' +
+    '</div>';
+  }).join('');
+}
+
 
 function clearSession() {
   if (!confirm('Clear all session data? This cannot be undone.')) return;
@@ -5114,6 +5248,41 @@ function hideCombatantHoverCard() {
       <button class="btn btn-blood" onclick="applyAoE()">💥 Apply to Selected</button>
       <button class="btn btn-ghost" onclick="closeModal('modal-aoe')">Cancel</button>
     </div>
+  </div>
+</div>
+
+
+<!-- ═══ SESSIONS MODAL ═══ -->
+<div id="sessions-modal" class="modal-overlay" onclick="if(event.target===this)closeSessionsModal()">
+  <div class="modal" style="max-width:480px;width:95vw;max-height:85vh;display:flex;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="margin:0;">📂 Sessions</h3>
+      <button onclick="closeSessionsModal()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;padding:0 4px;">✕</button>
+    </div>
+
+    <!-- Save new session -->
+    <div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:16px;">
+      <label style="display:block;font-family:Cinzel,serif;font-size:10px;letter-spacing:0.15em;color:var(--text-dim);text-transform:uppercase;margin-bottom:8px;">Save Current Session As</label>
+      <div style="display:flex;gap:8px;">
+        <input id="session-name-input" type="text" placeholder='e.g. "Session 3 — The Crypt"' style="flex:1;font-size:14px;"
+          onkeypress="if(event.key==='Enter'){const v=document.getElementById('session-name-input').value.trim();if(v)saveNamedSession(v);}">
+        <button onclick="const v=document.getElementById('session-name-input').value.trim();if(v)saveNamedSession(v);else showToast('Enter a session name first','info');"
+          style="padding:8px 16px;background:linear-gradient(135deg,var(--gold-dim),var(--gold));color:var(--ink);border:none;border-radius:4px;font-family:Cinzel,serif;font-size:11px;font-weight:bold;cursor:pointer;white-space:nowrap;">💾 SAVE</button>
+      </div>
+    </div>
+
+    <!-- Import/Export -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button onclick="exportSession()" style="flex:1;padding:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:var(--text-dim);font-family:Cinzel,serif;font-size:10px;cursor:pointer;letter-spacing:0.08em;">📤 EXPORT FILE</button>
+      <label style="flex:1;padding:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:var(--text-dim);font-family:Cinzel,serif;font-size:10px;cursor:pointer;letter-spacing:0.08em;text-align:center;">
+        📥 IMPORT FILE
+        <input type="file" accept=".json" style="display:none;" onchange="if(this.files[0])importSession(this.files[0])">
+      </label>
+    </div>
+
+    <!-- Saved sessions list -->
+    <div style="font-family:Cinzel,serif;font-size:10px;letter-spacing:0.15em;color:var(--text-dim);text-transform:uppercase;margin-bottom:8px;">Saved Sessions</div>
+    <div id="sessions-list" style="overflow-y:auto;flex:1;padding-right:4px;"></div>
   </div>
 </div>
 
