@@ -252,16 +252,23 @@
   .combatant-list { list-style: none; }
   .combatant {
     display: grid;
-    grid-template-columns: 36px 1fr 70px 70px 70px 90px auto;
-    gap: 8px;
+    grid-template-columns: 42px 1fr auto;
+    gap: 0 10px;
     align-items: center;
-    padding: 10px 14px;
+    padding: 10px 12px;
     border: 1px solid var(--border);
-    border-radius: 3px;
+    border-radius: 4px;
     margin-bottom: 6px;
     background: rgba(26,15,10,0.5);
     transition: all 0.2s;
   }
+  .combatant-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .combatant-hp-col { min-width: 90px; flex: 1; }
   .combatant.active-turn {
     border-color: var(--gold);
     background: rgba(201,150,10,0.08);
@@ -1355,6 +1362,75 @@
   .aoe-target-item input  { accent-color: var(--gold); width:16px; height:16px; cursor:pointer; }
   .aoe-target-item .target-hp { font-size:11px; color:var(--text-dim); margin-left:auto; }
 
+
+  /* ═══ FLOATING PARTY SIDEBAR ═══ */
+  #party-sidebar {
+    position: fixed;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 6000;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+  }
+  #party-sidebar-panel {
+    background: linear-gradient(135deg, rgba(14,8,2,0.97), rgba(28,16,6,0.95));
+    border: 1px solid rgba(212,175,55,0.3);
+    border-left: none;
+    border-radius: 0 10px 10px 0;
+    width: 220px;
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 10px 12px;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.7);
+    display: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  #party-sidebar-panel.open { display: block; }
+  #party-sidebar-tab {
+    background: linear-gradient(135deg, rgba(14,8,2,0.97), rgba(28,16,6,0.95));
+    border: 1px solid rgba(212,175,55,0.3);
+    border-left: none;
+    border-radius: 0 8px 8px 0;
+    padding: 14px 6px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    font-size: 18px;
+    color: var(--gold);
+    box-shadow: 3px 0 16px rgba(0,0,0,0.6);
+    transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    min-width: 32px;
+  }
+  #party-sidebar-tab:active { transform: scaleX(0.9); }
+  #party-sidebar-tab .stab-label {
+    font-family: Cinzel, serif;
+    font-size: 8px;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    writing-mode: vertical-rl;
+    text-transform: uppercase;
+  }
+  .sidebar-pc {
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    padding: 8px 0;
+    cursor: pointer;
+  }
+  .sidebar-pc:last-child { border-bottom: none; }
+  .sidebar-pc-name { font-family: Cinzel, serif; font-size: 12px; color: var(--gold); margin-bottom: 4px; }
+  .sidebar-pc-row { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim); margin-bottom: 2px; }
+  .sidebar-pc-hp { color: var(--text-primary); }
+  .sidebar-hp-bar { height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; margin-top: 3px; }
+  .sidebar-hp-fill { height: 100%; background: linear-gradient(90deg, #27ae60, #2ecc71); border-radius: 2px; transition: width 0.3s; }
+  .sidebar-hp-fill.medium { background: linear-gradient(90deg, #d4a820, #f0c030); }
+  .sidebar-hp-fill.low { background: linear-gradient(90deg, #8b1a1a, #e74c3c); }
+  .sidebar-title { font-family: Cinzel, serif; font-size: 10px; letter-spacing: 0.15em; color: var(--gold); text-transform: uppercase; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid rgba(212,175,55,0.2); }
+
 </style>
 </head>
 <body>
@@ -1440,7 +1516,7 @@
 
 <!-- Add Player Modal -->
 <div class="modal-overlay" id="player-modal">
-  <div class="modal" style="max-width:540px;width:95%;">
+  <div class="modal" style="max-width:540px;width:95%;max-height:90vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">
     <h3 style="font-family:'Cinzel',serif;color:var(--gold);margin-bottom:16px;" id="player-modal-title">🧝 Add Character</h3>
     <input type="hidden" id="edit-player-id">
     <div class="grid-2" style="gap:10px;margin-bottom:10px;">
@@ -1484,6 +1560,7 @@
   </div>
 </div>
 
+<!-- COMBAT LOG PANEL (inside initiative section, added via JS) -->
 <!-- Save Preset Modal -->
 <div class="modal-overlay" id="preset-modal">
   <div class="modal" style="max-width:380px;">
@@ -1695,8 +1772,10 @@
 <!--  NPC SECTION                                                 -->
 <!-- ============================================================ -->
 <div id="tab-npcs" class="section">
-  <!-- NPC GENERATOR PANEL -->
-  <div class="panel" style="margin-bottom:16px;">
+  <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:16px;">
+    <!-- NPC Generator — 3/4 width -->
+    <div style="flex:3;min-width:0;">
+    <div class="panel" style="margin-bottom:0;">
     <div class="panel-title"><span class="ornament">⚡</span> Quick NPC Generator</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
       <div class="field-group">
@@ -1802,7 +1881,69 @@
   </div>
 
   <div id="npc-grid" class="npc-grid"></div>
-</div>
+
+    </div><!-- end 3/4 NPC generator col -->
+
+        <!-- Name Generator — right panel -->
+    <div style="width:230px;flex-shrink:0;">
+      <div class="panel" style="padding:12px;">
+        <div style="font-family:Cinzel,serif;font-size:10px;letter-spacing:0.12em;color:var(--gold);margin-bottom:10px;">🎲 NAME GENERATOR</div>
+
+        <div style="margin-bottom:6px;">
+          <label style="font-size:9px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);">GENDER</label>
+          <select id="namegen-gender" style="font-size:11px;padding:3px 5px;margin-top:3px;width:100%;">
+            <option value="any">Any</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+          </select>
+        </div>
+
+        <div style="margin-bottom:6px;">
+          <label style="font-size:9px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);">RACE</label>
+          <select id="namegen-race" onchange="refreshNamePanel()" style="font-size:11px;padding:3px 5px;margin-top:3px;width:100%;">
+            <option value="random">Any / Random</option>
+            <option value="human">Human</option>
+            <option value="elf">Elf</option>
+            <option value="dwarf">Dwarf</option>
+            <option value="halfling">Halfling</option>
+            <option value="tiefling">Tiefling</option>
+            <option value="orc">Orc</option>
+            <option value="gnome">Gnome</option>
+            <option value="dragonborn">Dragonborn</option>
+            <option value="aasimar">Aasimar</option>
+            <option value="yuan_ti">Yuan-ti</option>
+            <option value="other">Other / Custom</option>
+          </select>
+          <div id="namegen-custom-row" style="display:none;margin-top:4px;">
+            <input id="namegen-custom-type" placeholder="Naga, Beholder, Merfolk..."
+              style="width:100%;font-size:11px;padding:3px 5px;box-sizing:border-box;">
+          </div>
+        </div>
+
+        <div style="margin-bottom:10px;">
+          <label style="font-size:9px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);">ALIGNMENT</label>
+          <select id="namegen-align" style="font-size:11px;padding:3px 5px;margin-top:3px;width:100%;">
+            <option value="any">Any</option>
+            <option value="good">Good</option>
+            <option value="neutral">Neutral</option>
+            <option value="evil">Evil</option>
+            <option value="lawful">Lawful</option>
+            <option value="chaotic">Chaotic</option>
+          </select>
+        </div>
+
+        <div id="namegen-result-display" style="background:rgba(0,0,0,0.3);border:1px solid rgba(212,175,55,0.25);border-radius:5px;padding:10px;text-align:center;margin-bottom:8px;min-height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="rollOneName()" title="Click to copy">
+          <span id="namegen-result-name" style="font-family:Cinzel,serif;font-size:15px;color:var(--gold);">—</span>
+        </div>
+        <div id="namegen-result-sub" style="text-align:center;font-size:10px;color:var(--text-dim);margin-bottom:8px;min-height:14px;"></div>
+
+        <button onclick="rollOneName()" style="width:100%;padding:8px;background:linear-gradient(135deg,rgba(212,175,55,0.15),rgba(212,175,55,0.08));border:1px solid rgba(212,175,55,0.35);border-radius:4px;color:var(--gold);font-family:Cinzel,serif;font-size:11px;cursor:pointer;letter-spacing:0.08em;">🎲 ROLL NAME</button>
+      </div>
+    </div>
+
+  </div><!-- end top flex row -->
+
+</div><!-- end tab-npcs -->
 
 <!-- NPC Detail Modal -->
 <div class="npc-detail" id="npc-detail-overlay" onclick="closeNPCDetail(event)">
@@ -2111,6 +2252,7 @@ Use this space freely during your session. Notes auto-save in your browser."></t
   </div>
   <div class="panel">
     <div class="panel-title"><span class="ornament">🔮</span> Plot Hooks & Threads</div>
+      <button class="btn btn-ghost btn-sm" onclick="clearPlotNotes()">Clear</button>
     <textarea id="plot-notes" class="notes-area" style="min-height:160px;" placeholder="Active plot hooks, foreshadowing, campaign threads..."></textarea>
   </div>
 </div>
@@ -2126,6 +2268,8 @@ let round = 0;
 let combatActive = false;
 let hpTargetId = null;
 let condTargetId = null;
+let partySidebarOpen = false;
+let hoverCardTimeout = null;
 
 let npcs = [];
 let locations = [];
@@ -2158,6 +2302,113 @@ function addCombatant() {
   document.getElementById('new-ac').value = '';
   renderCombatants();
 }
+
+function toggleCombatantInspiration(id) {
+  const c = combatants.find(x=>x.id===id);
+  if (!c) return;
+  c.inspiration = !c.inspiration;
+  renderCombatants();
+  showToast(c.inspiration ? `★ ${c.name} has Inspiration!` : `${c.name} — Inspiration spent`, c.inspiration?'success':'info');
+}
+
+function togglePartyInspiration(id) {
+  const pc = party.find(p=>p.id===id);
+  if (!pc) return;
+  pc.inspiration = !pc.inspiration;
+  savePartyStorage();
+  renderParty();
+  showToast(pc.inspiration ? `★ ${pc.name} has Inspiration!` : `${pc.name} — Inspiration spent`, pc.inspiration?'success':'info');
+}
+
+function setCombatantConc(id) {
+  const c = combatants.find(x=>x.id===id);
+  if (!c) return;
+  if (c.concentrating) { c.concentrating = null; renderCombatants(); showToast(`${c.name} dropped concentration`,'info'); return; }
+  const spell = window.prompt(`${c.name} is concentrating on...`,'');
+  if (spell===null) return;
+  c.concentrating = spell || 'a spell';
+  renderCombatants();
+  showToast(`${c.name} concentrating on ${c.concentrating}`,'success');
+}
+
+// Check concentration on damage
+function checkConcentration(c, damage) {
+  if (!c.concentrating || damage <= 0) return;
+  const dc = Math.max(10, Math.floor(damage/2));
+  showToast(`⚠ ${c.name} concentrating on "${c.concentrating}" — must make DC ${dc} CON save!`, 'warning');
+}
+
+
+function shortRest() {
+  if (!party.length) { showToast('No party members to rest','info'); return; }
+  // For each PC, restore some HP via hit dice
+  party.forEach(pc => {
+    // Restore half proficiency-based resources — for simplicity show toast and restore 1 hit die
+    const hdMap = {Barbarian:12,Fighter:10,Paladin:10,Ranger:10,Monk:8,Bard:8,Cleric:8,Druid:8,Rogue:8,Warlock:8,Sorcerer:6,Wizard:6,Other:8};
+    const hd = hdMap[pc.cls]||8;
+    const conMod = Math.floor(((pc.con||10)-10)/2);
+    const heal = Math.max(1, Math.floor(Math.random()*hd)+1+conMod);
+    // Update combatant HP if they're in initiative
+    const cmb = combatants.find(x=>x.name===pc.name && x.type==='ally');
+    if (cmb) { cmb.hp = Math.min(cmb.maxHp, cmb.hp+heal); }
+  });
+  renderCombatants();
+  combatLog.unshift({round:currentRound||0, text:'— Party took a Short Rest —', type:'round', time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})});
+  renderCombatLog();
+  showToast('🌙 Short Rest taken — hit dice spent, in-battle HP restored','success');
+}
+
+function longRest() {
+  if (!confirm('Take a Long Rest? This will fully restore all party HP and spell slots.')) return;
+  party.forEach(pc => {
+    // Full HP restore is done via combatant
+    const cmb = combatants.find(x=>x.name===pc.name && x.type==='ally');
+    if (cmb) { cmb.hp = cmb.maxHp; }
+    // Clear exhaustion levels
+    pc.exhaustion = 0;
+    // Clear spell slots
+    pc.usedSlots = {};
+  });
+  // Also heal allies in combat
+  combatants.filter(c=>c.type==='ally').forEach(c=>{ c.hp=c.maxHp; });
+  savePartyStorage();
+  renderParty();
+  renderCombatants();
+  combatLog.unshift({round:currentRound||0, text:'— Party took a Long Rest — all HP and resources restored —', type:'round', time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})});
+  renderCombatLog();
+  showToast('☀ Long Rest complete — all HP and spell slots restored!','success');
+}
+
+function editInit(id) {
+  const el = document.getElementById('init-' + id);
+  if (!el || el.querySelector('input')) return;
+  const c = combatants.find(x => x.id === id);
+  if (!c) return;
+  const orig = c.init;
+  const inp = document.createElement('input');
+  inp.type = 'number';
+  inp.value = orig;
+  inp.style.cssText = 'width:46px;background:rgba(0,0,0,0.6);color:var(--gold);border:1px solid var(--gold);border-radius:3px;font-family:Cinzel,serif;font-size:15px;font-weight:bold;text-align:center;padding:2px;';
+  inp.onclick = e => e.stopPropagation();
+  inp.onblur = () => commitInit(id, inp.value);
+  inp.onkeydown = e => {
+    if (e.key === 'Enter') inp.blur();
+    if (e.key === 'Escape') { inp.value = orig; inp.blur(); }
+  };
+  el.innerHTML = '';
+  el.appendChild(inp);
+  inp.focus(); inp.select();
+}
+
+function commitInit(id, val) {
+  const c = combatants.find(x => x.id === id);
+  if (!c) return;
+  const n = parseInt(val);
+  if (!isNaN(n)) c.init = n;
+  combatants.sort((a,b) => b.init - a.init);
+  renderCombatants();
+}
+
 
 function addPreset(name, hp, ac, type) {
   const init = Math.floor(Math.random() * 20) + 1;
@@ -2221,6 +2472,28 @@ function updateRoundDisplay() {
   document.getElementById('turn-indicator').textContent = cur ? `Current: ${cur.name}` : '';
 }
 
+
+function editInit(id) {
+  const c = combatants.find(x => x.id === id);
+  if (!c) return;
+  const el = document.getElementById('init-disp-' + id);
+  if (!el) return;
+  const old = c.init;
+  const inp = document.createElement('input');
+  inp.type = 'number'; inp.value = old;
+  inp.style.cssText = 'width:50px;font-family:Cinzel,serif;font-size:18px;font-weight:bold;color:var(--gold);background:rgba(0,0,0,0.8);border:1px solid var(--gold);border-radius:3px;text-align:center;padding:2px;';
+  el.parentNode.replaceChild(inp, el);
+  inp.focus(); inp.select();
+  function commit() {
+    const v = parseInt(inp.value);
+    c.init = isNaN(v) ? old : v;
+    combatants.sort((a,b) => b.init - a.init);
+    renderCombatants();
+  }
+  inp.addEventListener('blur', commit);
+  inp.addEventListener('keydown', e => { if(e.key==='Enter') inp.blur(); if(e.key==='Escape'){c.init=old;renderCombatants();} });
+}
+
 function renderCombatants() {
   const list = document.getElementById('combatant-list');
   if (combatants.length === 0) {
@@ -2234,31 +2507,39 @@ function renderCombatants() {
     const isDead = c.hp <= 0;
     const nameClass = c.type === 'enemy' ? 'enemy' : c.type === 'ally' ? 'ally' : '';
     const conds = c.conditions.map(cond => `<span class="cond-badge" onclick="removeCondition(${c.id},'${cond}')" title="Click to remove">${cond} ✕</span>`).join('');
-    return `<li class="combatant ${isActive ? 'active-turn' : ''} ${isDead ? 'dead' : ''}" data-id="${c.id}">
-      <div class="combatant-init">${c.init}</div>
+    const typeColor = c.type==='enemy' ? '#c0392b' : c.type==='ally' ? '#27ae60' : '#888';
+    const inspBadge = c.inspiration ? '<span style="color:#ffe066;font-size:13px;margin-left:4px;" title="Inspired">★</span>' : '';
+    const concBadge = c.concentrating ? `<span style="background:rgba(100,50,200,0.2);border:1px solid rgba(150,80,255,0.4);color:#b080ff;font-size:9px;font-family:Cinzel,serif;border-radius:3px;padding:1px 5px;margin-left:4px;" title="${c.concentrating}">CONC</span>` : '';
+    return `<li class="combatant ${isActive ? 'active-turn' : ''} ${isDead ? 'dead' : ''}" data-id="${c.id}" style="border-left:3px solid ${typeColor}33;">
+      <div class="combatant-init" onclick="editInit(${c.id})" title="Tap to edit initiative" style="cursor:pointer;border-radius:4px;padding:3px;text-align:center;"><span id="init-disp-${c.id}">${c.init}</span></div>
       <div>
-        <div class="combatant-name ${nameClass}">${c.name}${isActive ? ' ◀' : ''}</div>
-        <div style="margin-top:4px">${conds}</div>
-      </div>
-      <div class="combatant-hp-display">
-        <div class="hp-number-wrap" id="hp-num-${c.id}" style="color:${isDead ? 'var(--blood-light)' : 'var(--text-primary)'}">
-          ${isDead ? '💀 Down' : c.hp + ' / ' + c.maxHp}
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px;margin-bottom:3px;">
+          <span class="combatant-name ${nameClass}" style="font-size:16px;">${c.name}${isActive ? ' ◀' : ''}</span>
+          ${inspBadge}${concBadge}
+          <span style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.04em;color:${typeColor};margin-left:4px;opacity:0.8;">${c.type.toUpperCase()}</span>
         </div>
-        <div class="combatant-hp-bar"><div class="combatant-hp-fill ${hpClass}" style="width:${pct}%"></div></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div style="min-width:80px;">
+            <div class="hp-number-wrap" id="hp-num-${c.id}" style="color:${isDead ? 'var(--blood-light)' : 'var(--text-primary)'};font-family:Cinzel,serif;font-size:13px;font-weight:bold;">
+              ${isDead ? '💀 Down' : c.hp + ' / ' + c.maxHp}
+            </div>
+            <div class="combatant-hp-bar" style="width:90px;"><div class="combatant-hp-fill ${hpClass}" style="width:${pct}%"></div></div>
+          </div>
+          <div style="font-family:Cinzel,serif;font-size:13px;color:var(--text-secondary);white-space:nowrap;">🛡 ${c.ac}</div>
+          ${conds ? `<div style="display:flex;flex-wrap:wrap;gap:3px;">${conds}</div>` : ''}
+        </div>
       </div>
-      <div class="combatant-ac">🛡 ${c.ac}</div>
-      <div class="combatant-conditions"></div>
-      <div style="font-size:11px;color:var(--text-dim);font-family:Cinzel,serif;letter-spacing:0.05em;">
-        ${c.type.toUpperCase()}
-      </div>
-      <div class="combatant-actions">
-        <button onclick="openHPModal(${c.id})" title="Modify HP">❤</button>
-        <button onclick="openCondModal(${c.id})" title="Add Condition">⚡</button>
-        <button class="del" onclick="removeCombatant(${c.id})" title="Remove">✕</button>
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">
+        <div style="display:flex;gap:3px;">
+          <button onclick="openHPModal(${c.id})" title="Modify HP" style="background:none;border:1px solid var(--border);color:var(--text-dim);width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">❤</button>
+          <button onclick="openCondModal(${c.id})" title="Add Condition" style="background:none;border:1px solid var(--border);color:var(--text-dim);width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">⚡</button>
+          <button onclick="toggleCombatantInspiration(${c.id})" title="Toggle Inspiration" style="background:none;border:1px solid var(--border);color:${c.inspiration?'#ffe066':'var(--text-dim)'};width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">★</button>
+          <button onclick="setCombatantConc(${c.id})" title="Set Concentration" style="background:none;border:1px solid var(--border);color:${c.concentrating?'#b080ff':'var(--text-dim)'};width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;">C</button>
+          <button class="del" onclick="removeCombatant(${c.id})" title="Remove" style="background:none;border:1px solid var(--border);color:var(--text-dim);width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>
+        </div>
       </div>
     </li>`;
   }).join('');
-  // Attach hover card listeners
   requestAnimationFrame(() => {
     document.querySelectorAll('.combatant[data-id]').forEach(li => {
       const cid = parseFloat(li.dataset.id);
@@ -2292,8 +2573,16 @@ function applyHP(type) {
   const c = combatants.find(x => x.id === hpTargetId);
   if (!c) return;
   const isDamage = type === 'damage';
+  const prevHp = c.hp;
   if (isDamage) c.hp = Math.max(0, c.hp - amount);
   else          c.hp = Math.min(c.maxHp, c.hp + amount);
+  if (isDamage && amount > 0) checkConcentration(c, amount);
+  if (amount > 0) {
+    const r = window.currentRound||0;
+    combatLog.unshift({ round: r||'—', text: isDamage ? `${c.name} took ${amount} damage (${prevHp}→${c.hp} HP)` : `${c.name} healed ${amount} HP (${prevHp}→${c.hp} HP)`, type: isDamage?'damage':'heal', time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) });
+    if (combatLog.length > 200) combatLog.pop();
+    renderCombatLog();
+  }
   closeModal();
   renderCombatants();
   // Animate after render
@@ -2723,6 +3012,11 @@ function clearNotes() {
   document.getElementById('session-notes').value = '';
   localStorage.removeItem('dm-session-notes');
 }
+function clearPlotNotes() {
+  if (!confirm('Clear plot hooks & threads?')) return;
+  document.getElementById('plot-notes').value = '';
+  localStorage.removeItem('dm-plot-notes');
+}
 
 
 // ============================================================
@@ -2770,12 +3064,19 @@ function renderParty() {
       </div>
       ${moves.length ? `<div class="party-moves"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:4px;">ABILITIES</div>${moves.slice(0,4).map(m => { const [name,...rest]=m.split('—'); return `<div class="party-move"><strong>${name.trim()}</strong>${rest.length ? ' — '+rest.join('—') : ''}</div>`; }).join('')}${moves.length>4 ? `<div class="party-move" style="color:var(--text-dim);">+${moves.length-4} more...</div>` : ''}</div>` : ''}
       <div style="display:flex;gap:6px;margin-top:12px;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+          <button onclick="togglePartyInspiration(${pc.id})" style="padding:4px 10px;background:${pc.inspiration?'rgba(255,224,0,0.2)':'rgba(255,255,255,0.05)'};border:1px solid ${pc.inspiration?'rgba(255,224,0,0.5)':'rgba(255,255,255,0.1)'};border-radius:4px;color:${pc.inspiration?'#ffe066':'var(--text-dim)'};font-size:12px;cursor:pointer;font-family:Cinzel,serif;letter-spacing:0.05em;" title="Toggle Inspiration">★ ${pc.inspiration?'INSPIRED':'Inspiration'}</button>
+        </div>
         <button class="add-to-init-btn" onclick="addPCToInitiative(${pc.id})">⚔ Add to Initiative</button>
         <button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;" onclick="editPlayer(${pc.id})">✏ Edit</button>
+        <button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;background:rgba(80,160,40,0.15);border-color:rgba(80,160,40,0.4);color:#8fd050;" onclick="levelUp(${pc.id})">⬆ Level Up</button>
         <button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;color:var(--blood-light);border-color:rgba(139,26,26,0.4);" onclick="deletePlayer(${pc.id})">✕</button>
       </div>
     </div>`;
   }).join('');
+
+  // Update sidebar if open
+  if (partySidebarOpen) renderSidebar();
 }
 
 function openAddPlayerModal() {
@@ -2789,6 +3090,68 @@ function openAddPlayerModal() {
   document.getElementById('pc-init-bonus').value = 0;
   ['str','dex','con','int','wis','cha'].forEach(s => document.getElementById('pc-'+s).value = 10);
   document.getElementById('player-modal').classList.add('show');
+}
+
+
+function levelUp(id) {
+  const pc = party.find(p=>p.id===id);
+  if (!pc) return;
+  const newLevel = (pc.level||1)+1;
+  const conMod = Math.floor(((pc.con||10)-10)/2);
+  // HP dice by class
+  const hdMap = {Barbarian:12,Fighter:10,Paladin:10,Ranger:10,Monk:8,Bard:8,Cleric:8,Druid:8,Rogue:8,Warlock:8,Sorcerer:6,Wizard:6,Other:8};
+  const hd = hdMap[pc.cls]||8;
+  const existing = document.getElementById('levelup-modal');
+  if(existing) existing.remove();
+  const m = document.createElement('div');
+  m.id='levelup-modal'; m.className='modal-overlay show'; m.style.zIndex='2500';
+  m.innerHTML=`<div class="modal" style="max-width:400px;width:95vw;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="margin:0;">⬆ Level Up — ${pc.name}</h3>
+      <button onclick="document.getElementById('levelup-modal').remove()" style="background:none;border:none;color:var(--text-dim);font-size:22px;cursor:pointer;">✕</button>
+    </div>
+    <div style="background:rgba(212,175,55,0.08);border:1px solid rgba(212,175,55,0.2);border-radius:6px;padding:12px;margin-bottom:14px;text-align:center;">
+      <div style="font-family:Cinzel,serif;font-size:22px;color:var(--gold);">Level ${pc.level||1} → ${newLevel}</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">${pc.cls||'Adventurer'} · ${pc.race||''}</div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="font-family:Cinzel,serif;font-size:10px;letter-spacing:0.15em;color:var(--text-dim);text-transform:uppercase;display:block;margin-bottom:6px;">HP Roll (d${hd}, not including CON)</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input id="lu-hproll" type="number" min="1" max="${hd}" placeholder="Your d${hd} roll" style="flex:1;font-size:20px;text-align:center;font-family:Cinzel,serif;font-weight:bold;color:#ffe066;">
+        <button onclick="document.getElementById('lu-hproll').value=Math.floor(Math.random()*${hd})+1;document.getElementById('lu-hproll').style.color='#ffe066';"
+          style="padding:8px 12px;background:rgba(212,175,55,0.15);border:1px solid rgba(212,175,55,0.3);border-radius:4px;color:var(--gold);cursor:pointer;font-size:16px;">🎲</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:6px;">CON mod (${conMod>=0?'+'+conMod:conMod}) will be added automatically → Final HP gain shown after save</div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="font-family:Cinzel,serif;font-size:10px;letter-spacing:0.15em;color:var(--text-dim);text-transform:uppercase;display:block;margin-bottom:6px;">Stat Changes (optional — edit anything that changed)</label>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+        ${['STR','DEX','CON','INT','WIS','CHA'].map(stat=>`<div style="text-align:center;"><label style="font-size:10px;color:var(--text-dim);font-family:Cinzel,serif;">${stat}</label><input id="lu-${stat.toLowerCase()}" type="number" value="${pc[stat.toLowerCase()]||10}" style="text-align:center;font-size:15px;"></div>`).join('')}
+      </div>
+    </div>
+    <button onclick="commitLevelUp(${id})" style="width:100%;padding:12px;background:linear-gradient(135deg,#5a8a20,#7ab830);color:white;border:none;border-radius:5px;font-family:Cinzel,serif;font-size:13px;font-weight:bold;cursor:pointer;letter-spacing:0.1em;">✨ LEVEL UP!</button>
+  </div>`;
+  document.body.appendChild(m);
+  setTimeout(()=>document.getElementById('lu-hproll')?.focus(),100);
+}
+
+function commitLevelUp(id) {
+  const pc = party.find(p=>p.id===id);
+  if (!pc) return;
+  const roll = parseInt(document.getElementById('lu-hproll')?.value)||1;
+  const conMod = Math.floor(((pc.con||10)-10)/2);
+  const hpGain = Math.max(1, roll + conMod);
+  pc.level = (pc.level||1)+1;
+  pc.maxhp = (pc.maxhp||10)+hpGain;
+  // Save updated stats
+  ['str','dex','con','int','wis','cha'].forEach(stat=>{
+    const v=parseInt(document.getElementById('lu-'+stat)?.value);
+    if(!isNaN(v)) pc[stat]=v;
+  });
+  savePartyStorage();
+  renderParty();
+  const m=document.getElementById('levelup-modal'); if(m)m.remove();
+  showToast(`🎉 ${pc.name} is now level ${pc.level}! +${hpGain} HP (rolled ${roll} + CON ${conMod>=0?'+'+conMod:conMod})`,'success');
 }
 
 function editPlayer(id) {
@@ -2857,27 +3220,97 @@ function closePlayerModal() {
 }
 
 function addPCToInitiative(id) {
-  const pc = party.find(p => p.id === id);
+  const pc = party.find(p=>p.id===id);
   if (!pc) return;
-  const init = Math.floor(Math.random() * 20) + 1 + (pc.initBonus || 0);
-  combatants.push({ id: Date.now()+Math.random(), name: pc.name, init: Math.max(1,init), hp: pc.maxhp, maxHp: pc.maxhp, ac: pc.ac, type: 'ally', conditions: [] });
-  combatants.sort((a,b) => b.init - a.init);
-  renderCombatants();
-  // Switch to initiative
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  const dexMod = Math.floor(((pc.dex||10)-10)/2)+(pc.initBonus||0);
+  const sign = dexMod>=0?'+'+dexMod:''+dexMod;
+  // Small inline prompt
+  const roll = window.prompt(`Initiative roll for ${pc.name} (DEX mod ${sign}):\nEnter their d20 result (mod will be added), or leave blank to auto-roll.`,'');
+  let init;
+  if (roll === null) return; // cancelled
+  const parsed = parseInt(roll);
+  init = isNaN(parsed) ? Math.floor(Math.random()*20)+1+dexMod : parsed+dexMod;
+  init = Math.max(1,init);
+  if (!combatants.find(x=>x.name===pc.name && x.type==='ally')) {
+    combatants.push({id:Date.now()+Math.random(),name:pc.name,init,hp:pc.maxhp||20,maxHp:pc.maxhp||20,ac:pc.ac||14,type:'ally',conditions:[]});
+    combatants.sort((a,b)=>b.init-a.init);
+    renderCombatants();
+  }
+  // Switch to initiative tab
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.getElementById('tab-initiative').classList.add('active');
-  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.querySelector('.nav-tab[onclick*="initiative"]').classList.add('active');
+  showToast(`⚔ ${pc.name} added with initiative ${init}`,'success');
 }
 
 function addPartyToInitiative() {
-  if (party.length === 0) { alert('No party members added yet! Go to the Party tab first.'); return; }
+  if (!party.length) { showToast('No party members! Add them in the Party tab first.','info'); return; }
+  // Build popup
+  let existing = document.getElementById('init-roll-modal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'init-roll-modal';
+  modal.className = 'modal-overlay show';
+  modal.style.zIndex = '2500';
+  const rows = party.map(pc => {
+    const dexMod = Math.floor(((pc.dex||10)-10)/2) + (pc.initBonus||0);
+    const sign = dexMod>=0 ? '+'+dexMod : ''+dexMod;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.07);">
+      <input type="checkbox" id="ichk-${pc.id}" checked style="width:20px;height:20px;accent-color:var(--gold);cursor:pointer;flex-shrink:0;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-family:Cinzel,serif;font-size:14px;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${pc.name}</div>
+        <div style="font-size:11px;color:var(--text-dim);">DEX mod ${sign}</div>
+      </div>
+      <input type="number" id="ival-${pc.id}" placeholder="d20 roll" min="1" max="30"
+        style="width:80px;font-size:18px;font-family:Cinzel,serif;font-weight:bold;text-align:center;color:#ffe066;"
+        onkeypress="if(event.key==='Enter')commitInitRolls()">
+      <button onclick="(function(){const d=${dexMod};const r=Math.floor(Math.random()*20)+1;const el=document.getElementById('ival-${pc.id}');el.value=r+d;el.style.color='#ffe066';})()"
+        style="padding:6px 9px;background:rgba(212,175,55,0.15);border:1px solid rgba(212,175,55,0.3);border-radius:4px;color:var(--gold);cursor:pointer;font-size:14px;">🎲</button>
+    </div>`;
+  }).join('');
+
+  modal.innerHTML = `<div class="modal" style="max-width:440px;width:95vw;max-height:90vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h3 style="margin:0;">⚔ Party Initiative</h3>
+      <button onclick="document.getElementById('init-roll-modal').remove()" style="background:none;border:none;color:var(--text-dim);font-size:22px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">Enter each player's d20 roll (DEX mod auto-added), or tap 🎲 to roll for them. Uncheck anyone sitting this fight out.</div>
+    ${rows}
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button onclick="rollAllPartyInit()" style="flex:1;padding:10px;background:rgba(212,175,55,0.1);border:1px solid rgba(212,175,55,0.3);border-radius:5px;color:var(--gold);font-family:Cinzel,serif;font-size:11px;letter-spacing:0.08em;cursor:pointer;">🎲 ROLL ALL</button>
+      <button onclick="commitInitRolls()" style="flex:2;padding:10px;background:linear-gradient(135deg,var(--gold-dim),var(--gold));color:var(--ink);border:none;border-radius:5px;font-family:Cinzel,serif;font-size:12px;font-weight:bold;cursor:pointer;letter-spacing:0.08em;">⚔ ADD TO INITIATIVE</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  setTimeout(()=>{ const f=modal.querySelector('input[type=number]'); if(f)f.focus(); },100);
+}
+
+function rollAllPartyInit() {
   party.forEach(pc => {
-    const init = Math.floor(Math.random() * 20) + 1 + (pc.initBonus || 0);
-    combatants.push({ id: Date.now()+Math.random(), name: pc.name, init: Math.max(1,init), hp: pc.maxhp, maxHp: pc.maxhp, ac: pc.ac, type: 'ally', conditions: [] });
+    const dexMod = Math.floor(((pc.dex||10)-10)/2)+(pc.initBonus||0);
+    const el = document.getElementById('ival-'+pc.id);
+    if(el){ el.value = Math.floor(Math.random()*20)+1+dexMod; el.style.color='#ffe066'; }
   });
-  combatants.sort((a,b) => b.init - a.init);
+}
+
+function commitInitRolls() {
+  let added = 0;
+  party.forEach(pc => {
+    const chk = document.getElementById('ichk-'+pc.id);
+    if (!chk || !chk.checked) return;
+    const el = document.getElementById('ival-'+pc.id);
+    const raw = parseInt(el?.value);
+    const init = isNaN(raw) ? Math.floor(Math.random()*20)+1+(pc.initBonus||0) : raw;
+    if (!combatants.find(x=>x.name===pc.name && x.type==='ally')) {
+      combatants.push({id:Date.now()+Math.random(),name:pc.name,init,hp:pc.maxhp||20,maxHp:pc.maxhp||20,ac:pc.ac||14,type:'ally',conditions:[]});
+      added++;
+    }
+  });
+  combatants.sort((a,b)=>b.init-a.init);
   renderCombatants();
+  const m=document.getElementById('init-roll-modal'); if(m)m.remove();
+  showToast(`⚔ ${added} party member${added!==1?'s':''} added to initiative!`,'success');
 }
 
 // ============================================================
@@ -3406,6 +3839,8 @@ function loadEncounterToInitiative() {
 let diceOverlayExpanded = true;
 // Set initial display state once DOM ready
 document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => { refreshNamePanel(); rollOneName(); }, 150);
+  initSidebarDrag();
   const mini = document.getElementById('dice-overlay-mini');
   if (mini) mini.classList.add('dice-hidden');
 });
@@ -4162,6 +4597,8 @@ const MAGIC_ITEMS = {
 };
 
 let lootSessionLog = [];
+let combatLog = [];
+
 
 function generateLoot() {
   const tier = parseInt(document.getElementById('loot-cr').value);
@@ -4186,19 +4623,22 @@ function generateLoot() {
   let totalGP = Math.round(cp/100 + sp/10 + gp + pp*10);
   let items = [];
 
-  // Magic items based on tier and type
-  const magicChance = type==='magic' ? [0.8,0.5,0.2,0.05] : type==='hoard' ? [0.7,0.3,0.1,0.02] : [0.3,0.1,0.02,0];
-  const rarities = ['common','uncommon','rare','very_rare'];
+  // Magic items — proper per-tier rarity weights
+  // Rows = tier 0-4, Cols = [common, uncommon, rare, very_rare, legendary]
+  const MAGIC_WEIGHTS = {
+    individual: [[0.40,0.05,0.00,0.00,0.00],[0.50,0.15,0.02,0.00,0.00],[0.40,0.30,0.08,0.01,0.00],[0.30,0.30,0.15,0.04,0.00],[0.20,0.25,0.20,0.08,0.01]],
+    hoard:      [[0.60,0.20,0.03,0.00,0.00],[0.60,0.35,0.10,0.01,0.00],[0.50,0.40,0.20,0.04,0.00],[0.35,0.40,0.30,0.10,0.02],[0.25,0.35,0.35,0.20,0.06]],
+    magic:      [[0.80,0.40,0.08,0.01,0.00],[0.80,0.55,0.20,0.03,0.00],[0.65,0.55,0.30,0.07,0.01],[0.50,0.50,0.40,0.15,0.03],[0.35,0.45,0.45,0.28,0.08]],
+  };
+  const weights = (MAGIC_WEIGHTS[type]||MAGIC_WEIGHTS.individual)[Math.min(tier,4)];
+  const rarityGoldValue = {common:50, uncommon:500, rare:5000, very_rare:50000, legendary:0};
+  const rarities = ['common','uncommon','rare','very_rare','legendary'];
   rarities.forEach((r,i) => {
-    if (Math.random() < (magicChance[i] || 0) + tier*0.08) {
+    if (Math.random() < weights[i]) {
       const pool = MAGIC_ITEMS[r];
-      items.push({ ...pool[Math.floor(Math.random()*pool.length)], rarity: r });
+      if (pool&&pool.length) items.push({ ...pool[Math.floor(Math.random()*pool.length)], rarity: r });
     }
   });
-  if (tier >= 4 && type === 'hoard' && Math.random() < 0.25) {
-    const pool = MAGIC_ITEMS.legendary;
-    items.push({ ...pool[Math.floor(Math.random()*pool.length)], rarity: 'legendary' });
-  }
 
   // Gems/art by tier
   const gemTables = [
@@ -4223,9 +4663,19 @@ function generateLoot() {
   }
   const rarityClass = { common:'loot-rarity-common', uncommon:'loot-rarity-uncommon', rare:'loot-rarity-rare', very_rare:'loot-rarity-very-rare', legendary:'loot-rarity-legendary', gem:'' };
   items.forEach(item => {
-    html2 += `<div class="loot-item"><div class="loot-item-icon">${item.icon}</div><div><div class="loot-item-name ${rarityClass[item.rarity]||''}">${item.name} <span style="font-size:10px;opacity:0.7;">${item.rarity !== 'gem' ? '('+item.rarity.replace('_',' ')+')' : ''}</span></div><div class="loot-item-value">${item.desc} · ${item.value}</div></div></div>`;
+    const mktVal = item.rarity !== 'gem' ? rarityGoldValue[item.rarity] : null;
+    const mktStr = mktVal ? ' · <span style="color:var(--gold);">~' + mktVal.toLocaleString() + ' gp market value</span>' : '';
+    html2 += `<div class="loot-item"><div class="loot-item-icon">${item.icon}</div><div><div class="loot-item-name ${rarityClass[item.rarity]||''}">${item.name} <span style="font-size:10px;opacity:0.7;">${item.rarity !== 'gem' ? '('+item.rarity.replace('_',' ')+')' : ''}</span></div><div class="loot-item-value">${item.desc} · ${item.value}${mktStr}</div></div></div>`;
   });
-  html2 += `<div class="loot-total">≈ ${totalGP.toLocaleString()} gp total value</div>`;
+  // Add magic item market values to total
+  items.forEach(it => {
+    if (it.value && it.value !== 'Priceless') {
+      const gv = parseInt(it.value.replace(/[^0-9]/g,''));
+      if (!isNaN(gv)) totalGP += gv;
+    }
+  });
+  const epicFind = items.find(it=>['very_rare','legendary'].includes(it.rarity));
+  html2 += `<div class="loot-total">≈ ${totalGP.toLocaleString()} gp total value${epicFind?' <span style="color:#ffe066;font-size:11px;">✨ Exceptional find!</span>':''}</div>`;
 
   document.getElementById('loot-result').innerHTML = html2;
 
@@ -4853,7 +5303,6 @@ function getDefaultActions(c) {
   };
 }
 
-let hoverCardTimeout = null;
 
 function showCombatantHoverCard(e, combatantId) {
   if (!e || !e.clientX) return; // mobile touch - skip
@@ -4943,6 +5392,348 @@ function hideCombatantHoverCard() {
 // hover attachment inlined into renderCombatants above
 
 
+
+// ═══ PARTY SIDEBAR ════════════════════════════════════════════════
+
+function togglePartySidebar() {
+  partySidebarOpen = !partySidebarOpen;
+  const panel = document.getElementById('party-sidebar-panel');
+  if (partySidebarOpen) { panel.classList.add('open'); renderSidebar(); }
+  else panel.classList.remove('open');
+}
+
+function renderSidebar() {
+  const list = document.getElementById('sidebar-pc-list');
+  if (!list) return;
+  if (!party || !party.length) {
+    list.innerHTML = '<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:16px 0;">No party members.<br>Add them in the Party tab.</div>';
+    return;
+  }
+  list.innerHTML = party.map(pc => {
+    const currentHp = pc.currentHp !== undefined ? pc.currentHp : pc.maxhp;
+    const pct = Math.max(0, currentHp / pc.maxhp * 100);
+    const hpClass = pct > 50 ? '' : pct > 25 ? 'medium' : 'low';
+    return '<div class="sidebar-pc" onclick="switchTab(\'party\')">' +
+      '<div class="sidebar-pc-name">' + pc.name + ' <span style="font-size:9px;color:var(--text-dim);">Lv.' + (pc.level||1) + ' ' + pc.cls + '</span></div>' +
+      '<div class="sidebar-pc-row"><span>HP:</span><span class="sidebar-pc-hp">' + currentHp + ' / ' + pc.maxhp + '</span><span>AC: ' + pc.ac + '</span></div>' +
+      '<div class="sidebar-hp-bar"><div class="sidebar-hp-fill ' + hpClass + '" style="width:' + pct + '%"></div></div>' +
+    '</div>';
+  }).join('');
+}
+
+// Patch renderParty to also update sidebar
+const _origRenderParty = typeof renderParty === 'function' ? renderParty : null;
+
+
+function calcEncounterDifficulty() {
+  const THRESHOLDS = {1:[25,50,75,100],2:[50,100,150,200],3:[75,150,225,400],4:[125,250,375,500],5:[250,500,750,1100],6:[300,600,900,1400],7:[350,750,1100,1700],8:[450,900,1400,2100],9:[550,1100,1600,2400],10:[600,1200,1900,2800],11:[800,1600,2400,3600],12:[1000,2000,3000,4500],13:[1100,2200,3400,5100],14:[1250,2500,3800,5700],15:[1400,2800,4300,6400],16:[1600,3200,4800,7200],17:[2000,3900,5900,8800],18:[2100,4200,6300,9500],19:[2400,4900,7300,10900],20:[2800,5700,8500,12700]};
+  const CR_XP = {0:10,'1/8':25,'1/4':50,'1/2':100,1:200,2:450,3:700,4:1100,5:1800,6:2300,7:2900,8:3900,9:5000,10:5900,11:7200,12:8400,13:10000,14:11500,15:13000,16:15000,17:18000,18:20000,19:22000,20:25000,21:33000,22:41000,23:50000,24:62000,25:75000,26:90000,27:105000,28:120000,29:135000,30:155000};
+  const MULT = [1,1,1.5,2,2,2,2.5,2.5,3,3,4,4,5,5];
+
+  // Get party levels from party array
+  const partyLevels = party.map(pc=>pc.level||1);
+  if (!partyLevels.length) { showToast('Add party members first!','info'); return; }
+
+  // Get monster CRs from current combatants (enemies)
+  const enemies = combatants.filter(c=>c.type==='enemy');
+  if (!enemies.length) { showToast('Add enemies to the initiative tracker first!','info'); return; }
+
+  // Parse CRs — try to find from known monster data, else estimate from HP
+  let totalXP = 0;
+  enemies.forEach(e => {
+    // Try name lookup against known CRs in MONSTER_DB
+    const known = (window.MONSTER_DB||[]).find(m=>m.name.toLowerCase()===e.name.toLowerCase());
+    if (known) {
+      const x = CR_XP[known.cr] || 0;
+      totalXP += x;
+    } else {
+      // Estimate CR from max HP
+      const estCR = e.maxHp <= 6?0:e.maxHp<=14?'1/8':e.maxHp<=28?'1/4':e.maxHp<=56?'1/2':e.maxHp<=84?1:e.maxHp<=114?2:e.maxHp<=149?3:e.maxHp<=189?4:e.maxHp<=224?5:Math.ceil((e.maxHp-200)/60)+5;
+      totalXP += CR_XP[estCR] || (e.maxHp * 10);
+    }
+  });
+
+  // Multiplier
+  const mIdx = Math.min(enemies.length, MULT.length-1);
+  const adjusted = Math.round(totalXP * MULT[mIdx]);
+
+  // Party thresholds (sum per PC)
+  const thresholds = [0,0,0,0];
+  partyLevels.forEach(lvl => {
+    const t = THRESHOLDS[Math.min(lvl,20)];
+    thresholds.forEach((v,i)=>{ thresholds[i]+=t[i]; });
+  });
+
+  const diff = adjusted < thresholds[0] ? 'TRIVIAL' : adjusted < thresholds[1] ? 'EASY' : adjusted < thresholds[2] ? 'MEDIUM' : adjusted < thresholds[3] ? 'HARD' : 'DEADLY';
+  const diffColor = {TRIVIAL:'#aaa',EASY:'#2ecc71',MEDIUM:'#f39c12',HARD:'#e74c3c',DEADLY:'#8b0000'}[diff];
+
+  showToast(`Encounter: ${diff} — ${adjusted.toLocaleString()} adj XP (${enemies.length} enemy${enemies.length!==1?'ies':'y'}, ${partyLevels.length} PCs)`, 'info', 5000);
+  combatLog.unshift({round:currentRound||0, text:`Encounter difficulty: ${diff} (${adjusted.toLocaleString()} adj XP)`, type:'info', time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})});
+  renderCombatLog();
+}
+
+const NAME_PARTS = {
+  human: {
+    male:   ['Aldric','Brennan','Cade','Doren','Fynn','Gareth','Hadley','Ivor','Kael','Lyle','Maren','Nolan','Oryn','Quinn','Rael','Tomas','Vane','Wren','Zane','Edmund','Harald','Leoric','Oswin','Percival','Roland','Severin','Theron','Ulric'],
+    female: ['Alara','Brynn','Cara','Elara','Gwen','Isadora','Jana','Kira','Lyra','Mira','Nessa','Petra','Rowan','Sable','Tara','Ursa','Vesna','Willa','Yara','Zara','Aelith','Brienna','Celeste','Daphne','Emara','Fiona','Helena','Ilena','Lireth'],
+    last:   ['Ashford','Blackwood','Coldwell','Drake','Ember','Frost','Gale','Holt','Ironside','Lake','Marsh','Nightshade','Oakheart','Pyre','Reed','Storm','Thornwood','Ulrick','Vale','Ward','Cross','Yarrow']
+  },
+  elf: {
+    male:   ['Aelar','Caelum','Dalwyn','Faeron','Galadwen','Heliodor','Jareth','Kael','Laucian','Nailo','Opavin','Raevin','Thalion','Uelindra','Vaelindra','Xanathos','Zylvaris','Aramil','Berrian','Carric','Edhelmir','Galinndan','Ivellios','Mindartis','Paelias','Quarion','Riardon','Soveliss'],
+    female: ['Adrie','Briavel','Elariel','Liriel','Maeven','Mialee','Naivara','Quelenna','Sariel','Sylvara','Thiala','Vaenna','Wyllow','Ylva','Zalaveth','Anastrianna','Caelynn','Drusilia','Enna','Felosial','Iefyr','Keyleth','Leshanna','Miyafusei','Naeris','Peregrine','Rhoanne','Shava'],
+    last:   ['Amakiir','Brightcloak','Caelamont','Dawnglow','Faernlight','Galanodel','Holimion','Ilphelkiir','Liadon','Meliamne','Nailo','Rowanmantle','Siannodel','Taurentius','Xiloscient','Yeshyrir']
+  },
+  dwarf: {
+    male:   ['Adrik','Baern','Darrak','Eberk','Fargrim','Gardain','Harbek','Kildrak','Morgran','Orsik','Oskar','Rangrim','Rurik','Taklinn','Thordin','Tordek','Ulfgar','Veit','Brottor','Bromm','Dolgrin','Gromnir','Hulfgar','Nordak','Thordak'],
+    female: ['Ilde','Kathra','Kristryd','Mardred','Riswynn','Sannl','Torbera','Vistra','Gurdis','Liftrasa','Bardryn','Diesa','Eldeth','Finellen','Gunnloda','Hlin','Katra','Liwyl','Nora','Ruqonel','Shawna','Tithmel'],
+    last:   ['Balderk','Dankil','Gorunn','Holderhek','Loderr','Lutgehr','Rumnaheim','Strakeln','Torunn','Ungart','Brawnanvil','Fireforge','Frostbeard','Hammerfall','Battlehammer','Ironfist','Shieldbreaker','Stoneshaper','Stormaxe']
+  },
+  halfling: {
+    male:   ['Andry','Beau','Cade','Eldon','Garret','Lyle','Merric','Osborn','Roscoe','Wellby','Alain','Corrin','Dannad','Errich','Finnan','Harol','Lyle','Milo','Perrin','Reed','Wendel'],
+    female: ['Callie','Kithri','Lavinia','Lidda','Nedda','Jessamine','Vani','Portia','Amaryllis','Chenna','Cora','Euphemia','Jillian','Lila','Mereille','Paela','Seraphina','Shaena','Trym','Winta'],
+    last:   ['Brushgather','Goodbarrel','Greenbottle','High-hill','Hilltopple','Leagallow','Quarrypeak','Sandybanks','Tossaway','Underbough','Warmwater','Woolbridge']
+  },
+  tiefling: {
+    male:   ['Akmenos','Amnon','Barakas','Damakos','Ekemon','Iados','Kairon','Leucis','Melech','Mortlach','Pelaios','Skamos','Therai','Zagernath','Xaran','Zovath','Crius','Pheleus','Riven','Thymos'],
+    female: ['Akta','Bryseis','Criella','Damaia','Ea','Kallista','Lerissa','Makaria','Nemeia','Orianna','Phelaia','Rieta','Talanthe','Ulkira','Vivex','Zelaia','Chana','Farideh','Havilar','Lorcan'],
+    last:   ['Art','Carrion','Chant','Craft','Death','Despair','Doom','Fate','Fear','Glory','Hope','Mourn','Pyre','Ruin','Scorn','Storm','Torment','Valor','Vengeance','Vice','Virtue','Void','Zeal']
+  },
+  orc: {
+    male:   ['Grom','Thrall','Garrosh','Orgrim','Durotan','Kilrogg','Fenris','Grummsh','Nazgrel','Rend','Maim','Varok','Kargath','Tagar','Ulfgar','Grun','Hakkar','Morg','Ragash','Skullcleave','Throgg','Zug'],
+    female: ['Baggi','Emen','Engong','Kansif','Myev','Neega','Ovak','Ownka','Shautha','Sutha','Vola','Volen','Yevelda','Zutha','Denda','Grula','Hegga','Keth','Nulara','Ovak'],
+    last:   ['Bloodfist','Darkspear','Doomhammer','Frostwolf','Hellscream','Ironforge','Necksnapper','Skullcrusher','Warcry','Warsong','Blacktooth','Bonechewer','Dragonmaw','Thunderlord']
+  },
+  gnome: {
+    male:   ['Alston','Alvyn','Boddynock','Brocc','Burgell','Dimble','Eldon','Erky','Fonkin','Frug','Gerbo','Gimble','Glim','Jebeddo','Kellen','Namfoodle','Orryn','Roondar','Seebo','Sindri','Warryn','Zook'],
+    female: ['Bimpnottin','Breena','Caramip','Carlin','Donella','Duvamil','Ella','Ellyjobell','Ellywick','Lilli','Loopmottin','Lorilla','Mardnab','Nissa','Nyx','Oda','Orla','Roywyn','Shamil','Tana','Waywocket','Zanna'],
+    last:   ['Beren','Daergel','Folkor','Garrick','Nackle','Murnig','Ningel','Raulnor','Scheppen','Timbers','Turen']
+  },
+  dragonborn: {
+    male:   ['Arjhan','Balasar','Bharash','Donaar','Ghesh','Heskan','Kriv','Medrash','Mehen','Nadarr','Pandjed','Patrin','Rhogar','Shamash','Shedinn','Tarhun','Torinn'],
+    female: ['Akra','Biri','Daar','Farideh','Harann','Havilar','Jheri','Kava','Korinn','Mishann','Nala','Perra','Raiann','Sora','Surina','Thava','Uadjit'],
+    last:   ['Daardendrian','Delmirev','Fenkenkabradon','Kepeshkmolik','Kerrhylon','Myastan','Nemmonis','Norixius','Prexijandilin','Shestendeliath','Yarjerit']
+  },
+  aasimar: {
+    male:   ['Adrie','Anomen','Edalar','Faenor','Heilig','Ilmar','Jaryn','Lheris','Oghren','Pelio','Respen','Toras','Uriah','Veladiel'],
+    female: ['Celestine','Dawnbringer','Gloriel','Ilmara','Kira','Muriel','Nairi','Seraphina','Tora','Wren','Xandria','Yariel','Zea','Aeryn','Brielle'],
+    last:   ['Brightmantle','Celestar','Dawnfire','Goldenwing','Holyhammer','Lightborn','Morningstar','Oathkeeper','Radiantblade','Silvercloak','Truelight']
+  },
+  yuan_ti: {
+    male:   ['Sseth','Zehir','Merrshaulk','Thessalar','Sythiss','Zaltys','Vaerix','Xerindas'],
+    female: ['Varae','Sibyl','Ssevaari','Yasstri','Zassath','Ssava','Vireth','Xaviress'],
+    last:   ["of the Fang","the Malison","Pureblooded","Sseth-Touched","of Seven Fangs","Viper-Crowned","the Coiled"]
+  }
+};;
+
+function generateRandomName(race, customType, gender) {
+  if (customType) return generateCreatureName(customType);
+  const allRaces = Object.keys(NAME_PARTS);
+  race = (race && race !== 'random') ? race : allRaces[Math.floor(Math.random()*5)];
+  const parts = NAME_PARTS[race] || NAME_PARTS.human;
+
+  // Pick first name based on gender
+  let firstPool;
+  if (gender === 'male' && parts.male)        firstPool = parts.male;
+  else if (gender === 'female' && parts.female) firstPool = parts.female;
+  else if (parts.male && parts.female)
+    firstPool = Math.random() < 0.5 ? parts.male : parts.female;
+  else firstPool = parts.first || parts.male || parts.female || ['Unknown'];
+
+  const first = firstPool[Math.floor(Math.random()*firstPool.length)];
+  const last  = parts.last[Math.floor(Math.random()*parts.last.length)];
+  return first + ' ' + last;
+}
+
+function generateCreatureName(type) {
+  const key = (type||'').toLowerCase().replace(/[^a-z]/g,'');
+  const pools = {
+    naga:      {v:['aa','ii','uu','ae','ei','ia'],c:['ss','sh','zz','kh','th','v','n','r'],p:['CVCV','VCVC','CVVCV']},
+    dragon:    {v:['ar','or','ur','ix','ax'],c:['dr','kr','vr','thr','gr','xr','zr'],p:['CVCV','CVCVC','CVVCV']},
+    demon:     {v:['az','oz','ix','ux','ek'],c:['g','k','z','x','gh','kh','tz'],p:['CVCVC','VCVCV','CVVCVC']},
+    fey:       {v:['ae','ei','ia','iu','eo'],c:['l','r','n','s','f','v','ly','ny'],p:['VCVCV','CVCVC','VCVC']},
+    undead:    {v:['a','e','i','o'],c:['m','r','th','sh','sk','kh','gr'],p:['CVCVC','VCVC','CVCV']},
+    beholder:  {v:['az','ix','or','uu'],c:['xar','gaz','kth','bzz','rr'],p:['CVCVC','VCVC']},
+    illithid:  {v:['il','ul','er','in'],c:['th','gr','mn','xl','zr','ng'],p:['VCVCV','CVCVC','VCVC']},
+    kobold:    {v:['ik','ak','ok','uk'],c:['kr','sk','tz','xt','kk'],p:['CVCV','CVCVC']},
+    githyanki: {v:['ith','ath','ur','ar'],c:['zr','kh','gh','th','mr'],p:['CVCVC','CVVCV','VCVC']},
+    celestial: {v:['ia','ae','eu','ei'],c:['l','r','s','th','v','f','m'],p:['VCVCV','CVCVCV','VCVC']},
+  };
+  const pool = pools[key] || {
+    v:['a','e','i','o','u','aa','ee'],
+    c:['r','n','s','k','z','th','sh','kh','gr','vr'],
+    p:['CVCVC','VCVCV','CVCV','CVVCV']
+  };
+  const pat = pool.p[Math.floor(Math.random()*pool.p.length)];
+  const name = pat.split('').map(ch => {
+    if(ch==='C') return pool.c[Math.floor(Math.random()*pool.c.length)];
+    if(ch==='V') return pool.v[Math.floor(Math.random()*pool.v.length)];
+    return ch;
+  }).join('');
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+function showNameGenerator() {
+  const existing = document.getElementById('namegen-modal');
+  if (existing) { existing.remove(); return; }
+  const races = ['human','elf','dwarf','halfling','tiefling','orc'];
+  const m = document.createElement('div');
+  m.id = 'namegen-modal';
+  m.style.cssText = 'position:fixed;bottom:80px;right:16px;z-index:3000;background:linear-gradient(135deg,#2a1608,#1a0f06);border:1px solid rgba(212,175,55,0.4);border-radius:10px;padding:16px;max-width:340px;width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.8);max-height:70vh;overflow-y:auto;-webkit-overflow-scrolling:touch;';
+
+  function buildContent() {
+    let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+      '<div style="font-family:Cinzel,serif;font-size:13px;color:var(--gold);letter-spacing:0.1em;">🎲 NAME GENERATOR</div>' +
+      '<button id="ng-close" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;padding:0 4px;">✕</button>' +
+    '</div>';
+    races.forEach(race => {
+      const names = Array.from({length:4}, () => generateRandomName(race));
+      html += '<div style="margin-bottom:10px;">' +
+        '<div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.15em;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px;">' + race + '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:5px;">';
+      names.forEach(n => {
+        const btn = document.createElement('button');
+        btn.textContent = n;
+        btn.style.cssText = 'background:rgba(212,175,55,0.08);border:1px solid rgba(212,175,55,0.2);border-radius:4px;padding:4px 8px;color:var(--parchment);font-size:12px;cursor:pointer;';
+        btn.addEventListener('click', () => {
+          if (navigator.clipboard) navigator.clipboard.writeText(n).catch(()=>{});
+          showToast('📋 Copied: ' + n, 'success');
+        });
+        html += btn.outerHTML;
+      });
+      html += '</div></div>';
+    });
+    html += '<button id="ng-regen" style="width:100%;padding:8px;background:rgba(212,175,55,0.1);border:1px solid rgba(212,175,55,0.3);border-radius:4px;color:var(--gold);font-family:Cinzel,serif;font-size:11px;cursor:pointer;margin-top:4px;letter-spacing:0.08em;">🎲 REGENERATE ALL</button>';
+    return html;
+  }
+
+  m.innerHTML = buildContent();
+  document.body.appendChild(m);
+
+  m.querySelector('#ng-close').addEventListener('click', () => m.remove());
+  m.querySelector('#ng-regen').addEventListener('click', () => { m.innerHTML = buildContent(); m.querySelector('#ng-close').addEventListener('click',()=>m.remove()); m.querySelector('#ng-regen').addEventListener('click',()=>{ m.remove(); showNameGenerator(); }); });
+
+  // Re-attach copy buttons
+  m.querySelectorAll('button:not(#ng-close):not(#ng-regen)').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (navigator.clipboard) navigator.clipboard.writeText(btn.textContent).catch(()=>{});
+      showToast('📋 Copied: ' + btn.textContent, 'success');
+    });
+  });
+}
+
+function renderCombatLog() {
+  const el = document.getElementById('combat-log-list');
+  if (!el) return;
+  if (!combatLog.length) { el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-style:italic;font-size:13px;">No events yet — start combat to see the log</div>'; return; }
+  el.innerHTML = combatLog.slice(0,100).map(e => {
+    const col = e.type==='damage'?'#e74c3c':e.type==='heal'?'#2ecc71':e.type==='round'?'var(--gold)':'var(--text-dim)';
+    return `<div style="padding:5px 8px;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;gap:8px;align-items:baseline;">
+      <span style="font-size:10px;color:var(--text-dim);white-space:nowrap;flex-shrink:0;">${e.time}</span>
+      <span style="font-size:10px;font-family:Cinzel,serif;color:rgba(212,175,55,0.5);flex-shrink:0;">R${e.round||'—'}</span>
+      <span style="font-size:12px;color:${col};">${e.text}</span>
+    </div>`;
+  }).join('');
+}
+
+function refreshNamePanel() {
+  // Show/hide custom input based on race selection
+  const raceEl = document.getElementById('namegen-race');
+  const customRow = document.getElementById('namegen-custom-row');
+  if (!raceEl) return;
+  if (customRow) customRow.style.display = raceEl.value === 'other' ? 'block' : 'none';
+}
+
+function rollOneName() {
+  const raceEl   = document.getElementById('namegen-race');
+  const genderEl = document.getElementById('namegen-gender');
+  const alignEl  = document.getElementById('namegen-align');
+  const customInput = document.getElementById('namegen-custom-type');
+  const display  = document.getElementById('namegen-result-name');
+  const sub      = document.getElementById('namegen-result-sub');
+  if (!display) return;
+
+  const isCustom  = raceEl && raceEl.value === 'other';
+  const customType = isCustom ? (customInput ? customInput.value.trim() || 'other' : 'other') : null;
+  const race  = (!isCustom && raceEl && raceEl.value !== 'random') ? raceEl.value : null;
+  const gender = genderEl ? genderEl.value : 'any';
+  const align  = alignEl  ? alignEl.value  : 'any';
+
+  const name = generateRandomName(race, customType, gender);
+
+  // Build subtitle: race · gender · alignment
+  const raceLbl   = race ? race.replace('_','-') : (isCustom ? (customType||'creature') : 'random');
+  const genderLbl = gender === 'any' ? '' : gender;
+  const alignLbl  = align  === 'any' ? '' : align;
+  const subParts  = [raceLbl, genderLbl, alignLbl].filter(Boolean);
+
+  display.textContent = name;
+  display.style.animation = 'none';
+  void display.offsetWidth;
+  display.style.animation = 'fadeIn 0.25s ease';
+  if (sub) sub.textContent = subParts.join(' · ');
+
+  // Copy to clipboard silently
+  if (navigator.clipboard) navigator.clipboard.writeText(name).catch(()=>{});
+}
+
+function copyName(name) {
+  if (navigator.clipboard) navigator.clipboard.writeText(name).catch(()=>{});
+  // Also fill the NPC story hook with the name as a hint
+  const hook = document.getElementById('npc-gen-hook');
+  showToast('📋 ' + name, 'success');
+}
+
+function initSidebarDrag() {
+  const sidebar = document.getElementById('party-sidebar');
+  if (!sidebar) return;
+  let startY, startTop, dragging = false;
+
+  function getTopPx() {
+    const r = sidebar.getBoundingClientRect();
+    return r.top;
+  }
+
+  function startDrag(cy) {
+    startY = cy;
+    startTop = getTopPx();
+    dragging = true;
+    sidebar.style.transform = 'none';
+    sidebar.style.top = startTop + 'px';
+    sidebar.classList.add('dragging');
+  }
+
+  function moveDrag(cy) {
+    if (!dragging) return;
+    let newTop = startTop + (cy - startY);
+    const H = sidebar.offsetHeight;
+    newTop = Math.max(8, Math.min(window.innerHeight - H - 8, newTop));
+    sidebar.style.top = newTop + 'px';
+  }
+
+  function endDrag() { dragging = false; sidebar.classList.remove('dragging'); }
+
+  const tab = document.getElementById('party-sidebar-tab');
+  if (tab) {
+    tab.addEventListener('touchstart', e => {
+      startDrag(e.touches[0].clientY);
+    }, { passive: true });
+  }
+
+  document.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    e.preventDefault();
+    moveDrag(e.touches[0].clientY);
+  }, { passive: false });
+
+  document.addEventListener('touchend', endDrag);
+
+  // Mouse for desktop
+  if (tab) {
+    tab.addEventListener('mousedown', e => { startDrag(e.clientY); e.preventDefault(); });
+  }
+  document.addEventListener('mousemove', e => { if (dragging) moveDrag(e.clientY); });
+  document.addEventListener('mouseup', endDrag);
+}
 </script>
 
 
@@ -5283,6 +6074,38 @@ function hideCombatantHoverCard() {
     <!-- Saved sessions list -->
     <div style="font-family:Cinzel,serif;font-size:10px;letter-spacing:0.15em;color:var(--text-dim);text-transform:uppercase;margin-bottom:8px;">Saved Sessions</div>
     <div id="sessions-list" style="overflow-y:auto;flex:1;padding-right:4px;"></div>
+  </div>
+</div>
+
+
+<!-- ═══ PARTY INITIATIVE MODAL ═══ -->
+<div id="party-init-modal" class="modal-overlay" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal" style="max-width:460px;width:95vw;max-height:85vh;display:flex;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="margin:0;">⚔️ Party Initiative</h3>
+      <button onclick="document.getElementById('party-init-modal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:22px;cursor:pointer;">✕</button>
+    </div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px;">Check each player to include. Enter their d20 roll — bonus is added automatically. Leave blank to auto-roll.</div>
+    <div id="party-init-rows" style="overflow-y:auto;flex:1;margin-bottom:14px;"></div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="confirmPartyInit()" style="flex:1;padding:12px;background:linear-gradient(135deg,var(--gold-dim),var(--gold));color:var(--ink);border:none;border-radius:5px;font-family:Cinzel,serif;font-size:12px;font-weight:bold;cursor:pointer;letter-spacing:0.08em;">⚔ ADD TO INITIATIVE</button>
+      <button onclick="document.getElementById('party-init-modal').classList.remove('show')" style="padding:12px 18px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:5px;color:var(--text-dim);font-family:Cinzel,serif;font-size:11px;cursor:pointer;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══ FLOATING PARTY SIDEBAR ═══ -->
+<div id="party-sidebar">
+  <div id="party-sidebar-panel">
+    <div class="sidebar-title">👥 Party</div>
+    <div id="sidebar-pc-list">
+      <div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px 0;">No party yet</div>
+    </div>
+  </div>
+  <div id="party-sidebar-tab" onclick="togglePartySidebar()">
+    <span>👥</span>
+    <span class="stab-label">Party</span>
   </div>
 </div>
 
