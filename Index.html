@@ -1458,6 +1458,10 @@
   #login-screen button:active { transform: scale(0.97) !important; }
   #user-badge img { border: 1px solid rgba(212,175,55,0.4); }
 
+
+  /* Spell slot pip hover */
+  .spell-pip:hover { transform: scale(1.2); }
+
 </style>
 
 <!-- Firebase -->
@@ -1481,6 +1485,7 @@
   const app  = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db   = getFirestore(app);
+  window.__db = db; window.__doc = doc; window.__onSnapshot = onSnapshot;
 
   let currentUid   = null;
   let syncTimeout  = null;
@@ -1564,6 +1569,16 @@
           state,
           updatedAt: new Date().toISOString()
         });
+        // Also write slim player-view snapshot
+        const pvSnap = {
+          party: state.party || [],
+          combatants: state.combatants || [],
+          currentRound: state.currentRound || 0,
+          combatActive: state.combatActive || false,
+          partyInventory: state.partyInventory || [],
+          updatedAt: new Date().toISOString()
+        };
+        await setDoc(doc(db, 'playerView', currentUid), pvSnap);
         showSyncIndicator();
       } catch(e) {
         console.error('Save error', e);
@@ -1736,14 +1751,14 @@
       <div class="field-group"><label>Player Name</label><input id="pc-player" placeholder="John"></div>
       <div class="field-group">
         <label>Class</label>
-        <select id="pc-class">
+        <select id="pc-class" onchange="autoFillSpellSlots()">
           <option>Barbarian</option><option>Bard</option><option>Cleric</option><option>Druid</option>
           <option>Fighter</option><option>Monk</option><option>Paladin</option><option>Ranger</option>
           <option>Rogue</option><option>Sorcerer</option><option>Warlock</option><option>Wizard</option><option>Other</option>
         </select>
       </div>
       <div class="field-group"><label>Race</label><input id="pc-race" placeholder="Human, Elf, Dwarf..."></div>
-      <div class="field-group"><label>Level</label><select id="pc-level">
+      <div class="field-group"><label>Level</label><select id="pc-level" onchange="autoFillSpellSlots()">
         <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option><option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="16">16</option><option value="17">17</option><option value="18">18</option><option value="19">19</option><option value="20">20</option>
       </select></div>
       <div class="field-group"><label>Max HP</label><input id="pc-maxhp" type="number" placeholder="10"></div>
@@ -1764,6 +1779,24 @@
     <div class="field-group" style="margin-bottom:10px;">
       <label>Key Abilities / Spells <span style="color:var(--text-dim);font-weight:normal;">(one per line)</span></label>
       <textarea id="pc-moves" placeholder="Action Surge — take an extra action&#10;Second Wind — bonus action, heal 1d10+level&#10;Sneak Attack — 3d6 extra damage" style="height:80px;"></textarea>
+    </div>
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <label style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:var(--text-dim);">SPELL SLOTS (max per level)</label>
+        <button type="button" onclick="autoFillSpellSlots()" style="font-size:10px;padding:3px 10px;background:rgba(100,180,255,0.1);border:1px solid rgba(100,180,255,0.3);border-radius:3px;color:#90c8ff;cursor:pointer;font-family:Cinzel,serif;">⚡ Auto-fill from class</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;">
+        <div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">1st</div><input id="pc-ss-1" type="number" min="0" max="9" placeholder="—" style="width:100%;text-align:center;padding:4px 2px;font-size:13px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:3px;color:var(--parchment);"></div>
+        <div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">2nd</div><input id="pc-ss-2" type="number" min="0" max="9" placeholder="—" style="width:100%;text-align:center;padding:4px 2px;font-size:13px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:3px;color:var(--parchment);"></div>
+        <div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">3rd</div><input id="pc-ss-3" type="number" min="0" max="9" placeholder="—" style="width:100%;text-align:center;padding:4px 2px;font-size:13px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:3px;color:var(--parchment);"></div>
+        <div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">4th</div><input id="pc-ss-4" type="number" min="0" max="9" placeholder="—" style="width:100%;text-align:center;padding:4px 2px;font-size:13px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:3px;color:var(--parchment);"></div>
+        <div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">5th</div><input id="pc-ss-5" type="number" min="0" max="9" placeholder="—" style="width:100%;text-align:center;padding:4px 2px;font-size:13px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:3px;color:var(--parchment);"></div>
+        <div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">6th</div><input id="pc-ss-6" type="number" min="0" max="9" placeholder="—" style="width:100%;text-align:center;padding:4px 2px;font-size:13px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:3px;color:var(--parchment);"></div>
+        <div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">7th</div><input id="pc-ss-7" type="number" min="0" max="9" placeholder="—" style="width:100%;text-align:center;padding:4px 2px;font-size:13px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:3px;color:var(--parchment);"></div>
+        <div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">8th</div><input id="pc-ss-8" type="number" min="0" max="9" placeholder="—" style="width:100%;text-align:center;padding:4px 2px;font-size:13px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:3px;color:var(--parchment);"></div>
+        <div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">9th</div><input id="pc-ss-9" type="number" min="0" max="9" placeholder="—" style="width:100%;text-align:center;padding:4px 2px;font-size:13px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:3px;color:var(--parchment);"></div>
+      </div>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:5px;">Leave blank for no slots. Non-spellcasters (Barbarian, Monk, Fighter below lvl 3) auto-get none.</div>
     </div>
     <div class="modal-btns">
       <button class="btn btn-gold" onclick="savePlayer()">💾 Save Character</button>
@@ -2553,33 +2586,39 @@ function checkConcentration(c, damage) {
 
 function shortRest() {
   if (!party.length) { showToast('No party members to rest','info'); return; }
-  // For each PC, restore some HP via hit dice
+  let warlockCount = 0;
   party.forEach(pc => {
-    // Restore half proficiency-based resources — for simplicity show toast and restore 1 hit die
+    // Warlocks recover all spell slots on short rest
+    if (pc.cls === 'Warlock' && pc.spellSlots) {
+      pc.spellSlots.forEach(s => s.used = 0);
+      warlockCount++;
+    }
+    // Fighters/Monks recover action surge / ki points — just HP for now
     const hdMap = {Barbarian:12,Fighter:10,Paladin:10,Ranger:10,Monk:8,Bard:8,Cleric:8,Druid:8,Rogue:8,Warlock:8,Sorcerer:6,Wizard:6,Other:8};
     const hd = hdMap[pc.cls]||8;
     const conMod = Math.floor(((pc.con||10)-10)/2);
     const heal = Math.max(1, Math.floor(Math.random()*hd)+1+conMod);
-    // Update combatant HP if they're in initiative
     const cmb = combatants.find(x=>x.name===pc.name && x.type==='ally');
     if (cmb) { cmb.hp = Math.min(cmb.maxHp, cmb.hp+heal); }
   });
+  savePartyStorage();
+  renderParty();
   renderCombatants();
   combatLog.unshift({round:currentRound||0, text:'— Party took a Short Rest —', type:'round', time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})});
   renderCombatLog();
-  showToast('🌙 Short Rest taken — hit dice spent, in-battle HP restored','success');
+  const wlMsg = warlockCount ? ` — ${warlockCount} Warlock slot${warlockCount>1?'s':''} restored` : '';
+  showToast('🌙 Short Rest — hit dice spent, HP restored' + wlMsg, 'success');
 }
 
 function longRest() {
   if (!confirm('Take a Long Rest? This will fully restore all party HP and spell slots.')) return;
   party.forEach(pc => {
-    // Full HP restore is done via combatant
     const cmb = combatants.find(x=>x.name===pc.name && x.type==='ally');
     if (cmb) { cmb.hp = cmb.maxHp; }
-    // Clear exhaustion levels
     pc.exhaustion = 0;
-    // Clear spell slots
-    pc.usedSlots = {};
+    // Restore all spell slots (new system)
+    if (pc.spellSlots) pc.spellSlots.forEach(sl => sl.used = 0);
+    pc.usedSlots = {}; // legacy compat
   });
   // Also heal allies in combat
   combatants.filter(c=>c.type==='ally').forEach(c=>{ c.hp=c.maxHp; });
@@ -3245,6 +3284,155 @@ function savePartyStorage() {
   if (window.cloudSave) window.cloudSave();
 }
 
+
+function useSpellSlot(pcId, slotIdx) {
+  const pc = party.find(p => p.id === pcId);
+  if (!pc || !pc.spellSlots || !pc.spellSlots[slotIdx]) return;
+  const slot = pc.spellSlots[slotIdx];
+  if (slot.used >= slot.max) return;
+  slot.used++;
+  savePartyStorage();
+  renderParty();
+}
+
+function restoreSpellSlot(pcId, slotIdx) {
+  const pc = party.find(p => p.id === pcId);
+  if (!pc || !pc.spellSlots || !pc.spellSlots[slotIdx]) return;
+  const slot = pc.spellSlots[slotIdx];
+  if (slot.used <= 0) return;
+  slot.used--;
+  savePartyStorage();
+  renderParty();
+}
+
+function restoreAllSlots(pcId) {
+  const pc = party.find(p => p.id === pcId);
+  if (!pc || !pc.spellSlots) return;
+  pc.spellSlots.forEach(s => s.used = 0);
+  savePartyStorage();
+  renderParty();
+  showToast('✨ ' + pc.name + ' — all spell slots restored', 'success');
+}
+
+function autoFillSpellSlots() {
+  const cls = document.getElementById('pc-class').value;
+  const level = parseInt(document.getElementById('pc-level').value) || 1;
+  const slots = getDefaultSlots(cls, level);
+  for (let i = 1; i <= 9; i++) {
+    const el = document.getElementById('pc-ss-' + i);
+    if (!el) continue;
+    const slot = slots ? slots[i-1] : null;
+    el.value = slot ? slot.max : '';
+    el.style.opacity = slot ? '1' : '0.3';
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// PLAYER VIEW
+// ══════════════════════════════════════════════════════════════
+function openPlayerView() {
+  if (!window.__fbUid) { showToast('Sign in first to use Player View', 'warn'); return; }
+  const win = window.open('', '_blank', 'width=900,height=700');
+  win.document.write(buildPlayerViewHTML(window.__fbUid));
+  win.document.close();
+}
+
+function buildPlayerViewHTML(uid) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>⚔ Party Status</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;background:#0d0804;color:#d4b880;font-family:'Crimson Text',serif;font-size:16px;}
+  body{padding:16px;max-width:700px;margin:0 auto;}*{box-sizing:border-box;}
+  @media(max-width:600px){body{padding:10px;}}
+  .card{background:linear-gradient(135deg,rgba(38,24,10,0.98),rgba(28,16,6,1));border:1px solid rgba(212,175,55,0.25);border-radius:8px;padding:16px;margin-bottom:12px;box-shadow:0 4px 20px rgba(0,0,0,0.5);}
+</style>
+</head>
+<body>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:12px;border-bottom:1px solid rgba(212,175,55,0.2);">
+  <div>
+    <div style="font-family:'Cinzel',serif;font-size:22px;font-weight:700;color:#d4a820;">⚔ Party Status</div>
+    <div id="pv-status" style="font-size:11px;color:#8fd050;margin-top:2px;font-family:'Cinzel',serif;">Connecting...</div>
+  </div>
+</div>
+<div id="pv-main"><div style="text-align:center;color:#555;padding:40px 0;font-style:italic;">Loading...</div></div>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  const app = initializeApp({apiKey:"AIzaSyAHeoD6eKkxm7ezwvBcEt5W6S7nVqZYknY",authDomain:"dm-grimoire-20df0.firebaseapp.com",projectId:"dm-grimoire-20df0"});
+  const db = getFirestore(app);
+  const status = document.getElementById('pv-status');
+  let first = true;
+  onSnapshot(doc(db, 'playerView', '${uid}'), snap => {
+    if (!snap.exists()) { status.textContent = 'Waiting for DM data...'; return; }
+    const d = snap.data();
+    document.getElementById('pv-main').innerHTML = renderAll(d);
+    const t = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    status.textContent = first ? ('● Live · Updated ' + t) : ('● Updated ' + t);
+    first = false;
+  }, err => { status.textContent = '⚠ Connection error'; console.error(err); });
+
+  function renderAll(d) {
+    const party = d.party || [], cmbs = d.combatants || [];
+    return renderParty(party, cmbs) + renderInitiative(cmbs, d.currentRound||0, d.combatActive||false) + renderInventory(d.partyInventory||[]);
+  }
+
+  function renderParty(party, cmbs) {
+    if (!party.length) return '<div style="text-align:center;color:#555;padding:40px 0;font-style:italic;">No party yet</div>';
+    return party.map(pc => {
+      const cmb = cmbs.find(x => x.name===pc.name && x.type==='ally');
+      const cur = cmb ? cmb.hp : pc.maxhp, max = cmb ? cmb.maxHp : pc.maxhp;
+      const pct = Math.max(0,Math.min(100,(cur/max)*100));
+      const hpCol = pct>50?'#4caf50':pct>25?'#ff9800':'#f44336';
+      const conds = (cmb?.conditions||[]).map(c=>'<span style="padding:2px 6px;border-radius:3px;font-size:10px;background:rgba(255,100,100,0.2);border:1px solid rgba(255,100,100,0.4);color:#ff9090;margin:1px;">'+c+'</span>').join('');
+      const insp = pc.inspiration ? '<span style="padding:2px 8px;border-radius:3px;font-size:10px;background:rgba(255,215,0,0.2);border:1px solid rgba(255,215,0,0.5);color:#ffd700;margin-left:4px;">★ Inspiration</span>' : '';
+      const slots = (pc.spellSlots||[]).length ? '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);"><div style="font-size:10px;letter-spacing:0.12em;color:#888;margin-bottom:6px;font-family:Cinzel,serif;">SPELL SLOTS</div>'
+        + pc.spellSlots.map((sl,i)=>{
+            const avail=sl.max-sl.used, lvls=['1st','2nd','3rd','4th','5th','6th','7th','8th','9th'];
+            const pips=Array.from({length:sl.max},(_,j)=>{const sp=j>=avail;return '<span style="display:inline-block;width:12px;height:12px;border-radius:50%;margin:1px;background:'+(sp?'rgba(255,255,255,0.07)':'rgba(100,180,255,0.65)')+';border:1px solid '+(sp?'rgba(255,255,255,0.12)':'rgba(100,180,255,0.9)')+';box-shadow:'+(sp?'none':'0 0 4px rgba(100,180,255,0.4)')+'"></span>';}).join('');
+            return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;"><span style="font-size:9px;color:#666;width:24px;">'+lvls[i]+'</span><div>'+pips+'</div><span style="font-size:9px;color:'+(avail>0?'#90c8ff':'#555')+'">'+avail+'/'+sl.max+'</span></div>';
+          }).join('') + '</div>' : '';
+      return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">'
+        +'<div><div style="font-family:Cinzel,serif;font-size:18px;font-weight:700;color:#d4a820;">'+pc.name+'</div>'
+        +'<div style="font-size:12px;color:#888;margin-top:2px;">'+(pc.race||'')+' '+pc.cls+' · Level '+pc.level+(pc.player?' · <em>'+pc.player+'</em>':'')+'</div></div>'
+        +'<div style="text-align:right;"><div style="font-size:22px;font-weight:700;color:'+hpCol+';">'+cur+'<span style="font-size:13px;color:#666;">'+'/'+max+'</span></div>'
+        +'<div style="font-size:10px;color:#666;letter-spacing:0.1em;">HIT POINTS</div></div></div>'
+        +'<div style="background:rgba(0,0,0,0.3);border-radius:3px;height:6px;margin-bottom:10px;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:'+hpCol+';border-radius:3px;box-shadow:0 0 6px '+hpCol+'44;"></div></div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><span style="padding:3px 10px;border-radius:4px;font-size:11px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#aaa;">🛡 AC '+(pc.ac||'?')+'</span>'+conds+insp+'</div>'
+        + slots + '</div>';
+    }).join('');
+  }
+
+  function renderInitiative(cmbs, round, active) {
+    if (!cmbs.length) return '';
+    return '<div class="card"><div style="font-family:Cinzel,serif;font-size:13px;letter-spacing:0.12em;color:#888;margin-bottom:10px;">⚔ INITIATIVE ORDER — Round '+round+'</div>'
+      + cmbs.map((c,i)=>{
+          const ally=c.type==='ally', hp=Math.max(0,Math.min(100,(c.hp/(c.maxHp||1))*100));
+          const hpCol=hp>50?'#4caf50':hp>25?'#ff9800':'#f44336', cur=i===0&&active;
+          return '<div style="display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:5px;margin-bottom:3px;background:'+(cur?'rgba(212,175,55,0.12)':'rgba(0,0,0,0.2)')+';border:1px solid '+(cur?'rgba(212,175,55,0.4)':'transparent')+'">'
+            +'<span style="font-size:16px;font-weight:700;color:#d4a820;width:28px;text-align:center;">'+c.initiative+'</span>'
+            +'<span style="font-size:13px;color:'+(ally?'#90c8ff':'#ff9090')+';flex:1;">'+c.name+(cur?' ◀':'')+'</span>'
+            +'<div style="display:flex;align-items:center;gap:4px;"><div style="width:60px;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;"><div style="height:100%;width:'+hp+'%;background:'+hpCol+';border-radius:2px;"></div></div>'
+            +'<span style="font-size:11px;color:'+hpCol+'">'+c.hp+'/'+c.maxHp+'</span></div></div>';
+        }).join('') + '</div>';
+  }
+
+  function renderInventory(inv) {
+    if (!inv.length) return '';
+    return '<div class="card"><div style="font-family:Cinzel,serif;font-size:13px;letter-spacing:0.12em;color:#888;margin-bottom:10px;">💰 PARTY INVENTORY</div>'
+      + inv.map(item=>'<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><span style="font-size:16px;">'+(item.icon||'📦')+'</span><div><div style="font-size:13px;color:#d4b880;">'+item.name+'</div>'+(item.desc?'<div style="font-size:11px;color:#666;margin-top:1px;">'+item.desc+'</div>':'')+'</div></div>').join('')
+      + '</div>';
+  }
+<\/script>
+</body>
+</html>`;
+}
+
 function renderParty() {
   const grid = document.getElementById('party-grid');
   if (!grid) return;
@@ -3280,6 +3468,34 @@ function renderParty() {
         <span>⚡ <strong style="color:var(--parchment);">${fmt(pc.initBonus || 0)}</strong> Init</span>
       </div>
       ${moves.length ? `<div class="party-moves"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:4px;">ABILITIES</div>${moves.slice(0,4).map(m => { const [name,...rest]=m.split('—'); return `<div class="party-move"><strong>${name.trim()}</strong>${rest.length ? ' — '+rest.join('—') : ''}</div>`; }).join('')}${moves.length>4 ? `<div class="party-move" style="color:var(--text-dim);">+${moves.length-4} more...</div>` : ''}</div>` : ''}
+      ${pc.spellSlots && pc.spellSlots.length ? `
+        <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.07);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);">SPELL SLOTS</div>
+            ${pc.cls === 'Warlock' ? 
+  `<span style="font-size:9px;color:#c8a0ff;font-family:Cinzel,serif;margin-right:4px;">Short Rest ↓</span>` : 
+  `<span style="font-size:9px;color:var(--text-dim);font-family:Cinzel,serif;margin-right:4px;">Long Rest ↓</span>`}
+<button onclick="restoreAllSlots(${pc.id})" style="font-size:9px;padding:2px 7px;background:${pc.cls==='Warlock'?'rgba(180,100,255,0.15)':'rgba(100,180,255,0.1)'};border:1px solid ${pc.cls==='Warlock'?'rgba(180,100,255,0.35)':'rgba(100,180,255,0.25)'};border-radius:3px;color:${pc.cls==='Warlock'?'#c8a0ff':'#90c8ff'};cursor:pointer;font-family:Cinzel,serif;" title="${pc.cls==='Warlock'?'Warlocks recover on Short Rest':'Recover on Long Rest'}">↺</button>
+          </div>
+          ${pc.spellSlots.map((slot, i) => {
+            const lvlNums = ['1st','2nd','3rd','4th','5th','6th','7th','8th','9th'];
+            const available = slot.max - slot.used;
+            const pips = Array.from({length: slot.max}, (_, pipIdx) => {
+              const spent = pipIdx >= available;
+              return `<span onclick="${spent ? 'restoreSpellSlot' : 'useSpellSlot'}(${pc.id},${i})" 
+                style="display:inline-block;width:14px;height:14px;border-radius:50%;margin:1px;cursor:pointer;
+                background:${spent ? 'rgba(255,255,255,0.08)' : 'rgba(100,180,255,0.7)'};
+                border:1px solid ${spent ? 'rgba(255,255,255,0.15)' : 'rgba(100,180,255,0.9)'};
+                box-shadow:${spent ? 'none' : '0 0 4px rgba(100,180,255,0.4)'};
+                transition:all 0.15s;" title="${spent ? 'Click to restore' : 'Click to use'}"></span>`;
+            }).join('');
+            return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+              <span style="font-size:10px;color:var(--text-dim);width:28px;flex-shrink:0;">${lvlNums[i]}</span>
+              <div style="display:flex;flex-wrap:wrap;gap:1px;">${pips}</div>
+              <span style="font-size:10px;color:${available > 0 ? '#90c8ff' : 'var(--text-dim)'};">${available}/${slot.max}</span>
+            </div>`;
+          }).join('')}
+        </div>` : ''}
       <div style="display:flex;gap:6px;margin-top:12px;">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
           <button onclick="togglePartyInspiration(${pc.id})" style="padding:4px 10px;background:${pc.inspiration?'rgba(255,224,0,0.2)':'rgba(255,255,255,0.05)'};border:1px solid ${pc.inspiration?'rgba(255,224,0,0.5)':'rgba(255,255,255,0.1)'};border-radius:4px;color:${pc.inspiration?'#ffe066':'var(--text-dim)'};font-size:12px;cursor:pointer;font-family:Cinzel,serif;letter-spacing:0.05em;" title="Toggle Inspiration">★ ${pc.inspiration?'INSPIRED':'Inspiration'}</button>
@@ -3300,6 +3516,7 @@ function openAddPlayerModal() {
   document.getElementById('player-modal-title').textContent = '🧝 Add Character';
   document.getElementById('edit-player-id').value = '';
   ['name','player','race','moves'].forEach(f => document.getElementById('pc-'+f).value = '');
+  for (let i = 1; i <= 9; i++) { const el = document.getElementById('pc-ss-'+i); if(el) el.value=''; }
   document.getElementById('pc-class').value = 'Fighter';
   document.getElementById('pc-level').value = 1;
   document.getElementById('pc-maxhp').value = '';
@@ -3391,6 +3608,15 @@ function editPlayer(id) {
   document.getElementById('pc-wis').value = pc.wis || 10;
   document.getElementById('pc-cha').value = pc.cha || 10;
   document.getElementById('pc-moves').value = pc.moves || '';
+  // Populate spell slots
+  const existingSlots = pc.spellSlots || getDefaultSlots(pc.cls, pc.level) || [];
+  for (let i = 1; i <= 9; i++) {
+    const el = document.getElementById('pc-ss-' + i);
+    if (!el) continue;
+    const slot = existingSlots[i-1];
+    el.value = slot ? slot.max : '';
+    el.style.opacity = slot ? '1' : '0.4';
+  }
   document.getElementById('player-modal').classList.add('show');
 }
 
@@ -3412,7 +3638,32 @@ function savePlayer() {
     int: parseInt(document.getElementById('pc-int').value) || 10,
     wis: parseInt(document.getElementById('pc-wis').value) || 10,
     cha: parseInt(document.getElementById('pc-cha').value) || 10,
-    moves: document.getElementById('pc-moves').value
+    moves: document.getElementById('pc-moves').value,
+    spellSlots: (() => {
+      // Read from modal spell slot inputs if present
+      const cls = document.getElementById('pc-class').value;
+      const level = parseInt(document.getElementById('pc-level').value) || 1;
+      // Check if user has custom slots set
+      const customSlots = [];
+      let hasCustom = false;
+      for (let i = 1; i <= 9; i++) {
+        const el = document.getElementById('pc-ss-' + i);
+        if (el && el.value !== '') {
+          hasCustom = true;
+          customSlots.push({ max: parseInt(el.value) || 0, used: 0 });
+        } else if (hasCustom) {
+          break;
+        }
+      }
+      if (hasCustom) return customSlots;
+      // If editing, preserve existing used counts
+      const existingId = document.getElementById('edit-player-id').value;
+      if (existingId) {
+        const existing = party.find(p => p.id === parseInt(existingId));
+        if (existing && existing.spellSlots) return existing.spellSlots;
+      }
+      return getDefaultSlots(cls, level);
+    })()
   };
   if (id) {
     const idx = party.findIndex(p => p.id === parseInt(id));
@@ -3534,51 +3785,196 @@ function commitInitRolls() {
 // MONSTER AUTOCOMPLETE
 // ============================================================
 const MONSTER_DB = [
-  {name:'Goblin',hp:7,ac:15,init:2,cr:'1/4'},{name:'Hobgoblin',hp:11,ac:18,init:1,cr:'1/2'},
-  {name:'Bugbear',hp:27,ac:16,init:1,cr:'1'},{name:'Orc',hp:15,ac:13,init:1,cr:'1/2'},
-  {name:'Orc Warrior',hp:15,ac:13,init:1,cr:'1/2'},{name:'Orc Warchief',hp:93,ac:16,init:2,cr:'4'},
-  {name:'Skeleton',hp:13,ac:13,init:2,cr:'1/4'},{name:'Zombie',hp:22,ac:8,init:-2,cr:'1/4'},
-  {name:'Ghoul',hp:22,ac:12,init:2,cr:'1'},{name:'Ghost',hp:45,ac:11,init:1,cr:'4'},
+  // ── Humanoids ──────────────────────────────────────────────
+  {name:'Goblin',hp:7,ac:15,init:2,cr:'1/4'},{name:'Goblin Boss',hp:21,ac:17,init:3,cr:'1'},
+  {name:'Hobgoblin',hp:11,ac:18,init:1,cr:'1/2'},{name:'Hobgoblin Captain',hp:52,ac:17,init:2,cr:'3'},
+  {name:'Hobgoblin Warlord',hp:97,ac:20,init:2,cr:'6'},
+  {name:'Bugbear',hp:27,ac:16,init:1,cr:'1'},{name:'Bugbear Chief',hp:65,ac:17,init:1,cr:'3'},
+  {name:'Orc',hp:15,ac:13,init:1,cr:'1/2'},{name:'Orc Eye of Gruumsh',hp:45,ac:16,init:2,cr:'2'},
+  {name:'Orc War Chief',hp:93,ac:16,init:2,cr:'4'},{name:'Orog',hp:42,ac:18,init:2,cr:'2'},
+  {name:'Kobold',hp:5,ac:12,init:2,cr:'1/8'},{name:'Kobold Dragonshield',hp:44,ac:17,init:2,cr:'1'},
+  {name:'Kobold Inventor',hp:13,ac:12,init:2,cr:'1/4'},
+  {name:'Gnoll',hp:22,ac:15,init:1,cr:'1/2'},{name:'Gnoll Fang of Yeenoghu',hp:65,ac:14,init:2,cr:'4'},
+  {name:'Gnoll Pack Lord',hp:49,ac:15,init:2,cr:'2'},
+  {name:'Lizardfolk',hp:22,ac:15,init:0,cr:'1/2'},{name:'Lizardfolk King',hp:78,ac:15,init:1,cr:'4'},
+  {name:'Lizardfolk Shaman',hp:27,ac:13,init:0,cr:'2'},
+  {name:'Bullywug',hp:11,ac:15,init:0,cr:'1/4'},{name:'Bullywug Knight',hp:52,ac:15,init:1,cr:'2'},
+  {name:'Sahuagin',hp:22,ac:12,init:-1,cr:'1/2'},{name:'Sahuagin Baron',hp:76,ac:16,init:0,cr:'5'},
+  {name:'Sahuagin Priestess',hp:33,ac:12,init:-1,cr:'3'},
+  {name:'Merrow',hp:45,ac:13,init:-1,cr:'2'},{name:'Merfolk',hp:11,ac:11,init:1,cr:'1/8'},
+  {name:'Kuo-toa',hp:18,ac:13,init:0,cr:'1/4'},{name:'Kuo-toa Archpriest',hp:97,ac:13,init:0,cr:'6'},
+  {name:'Kuo-toa Whip',hp:65,ac:11,init:1,cr:'1'},
+  {name:'Yuan-ti Pureblood',hp:40,ac:11,init:1,cr:'1'},{name:'Yuan-ti Malison',hp:66,ac:12,init:1,cr:'3'},
+  {name:'Yuan-ti Abomination',hp:127,ac:15,init:2,cr:'7'},{name:'Yuan-ti Pit Master',hp:127,ac:14,init:1,cr:'8'},
+  {name:'Drow',hp:13,ac:15,init:2,cr:'1/4'},{name:'Drow Elite Warrior',hp:71,ac:18,init:3,cr:'5'},
+  {name:'Drow Mage',hp:45,ac:12,init:2,cr:'7'},{name:'Drow Priestess of Lolth',hp:71,ac:16,init:2,cr:'8'},
+  {name:'Derro',hp:13,ac:13,init:3,cr:'1/4'},{name:'Derro Savant',hp:36,ac:13,init:3,cr:'3'},
+  {name:'Grimlock',hp:11,ac:11,init:1,cr:'1/4'},
+  // ── Undead ──────────────────────────────────────────────────
+  {name:'Skeleton',hp:13,ac:13,init:2,cr:'1/4'},{name:'Minotaur Skeleton',hp:67,ac:12,init:0,cr:'3'},
+  {name:'Warhorse Skeleton',hp:22,ac:13,init:1,cr:'1/2'},{name:'Ogre Zombie',hp:85,ac:8,init:-2,cr:'2'},
+  {name:'Zombie',hp:22,ac:8,init:-2,cr:'1/4'},{name:'Ghoul',hp:22,ac:12,init:2,cr:'1'},
+  {name:'Ghast',hp:36,ac:13,init:3,cr:'2'},{name:'Shadow',hp:16,ac:12,init:2,cr:'1/2'},
+  {name:'Specter',hp:22,ac:12,init:2,cr:'1'},{name:'Poltergeist',hp:22,ac:12,init:2,cr:'2'},
+  {name:'Revenant',hp:136,ac:13,init:0,cr:'5'},{name:'Banshee',hp:58,ac:12,init:2,cr:'4'},
+  {name:'Will-o-Wisp',hp:22,ac:19,init:9,cr:'2'},{name:'Flameskull',hp:40,ac:13,init:3,cr:'4'},
+  {name:'Crawling Claw',hp:2,ac:12,init:0,cr:'0'},{name:'Death Knight',hp:180,ac:20,init:0,cr:'17'},
   {name:'Wight',hp:45,ac:14,init:2,cr:'3'},{name:'Wraith',hp:67,ac:13,init:4,cr:'5'},
-  {name:'Lich',hp:135,ac:17,init:3,cr:'21'},{name:'Vampire',hp:144,ac:15,init:4,cr:'13'},
-  {name:'Vampire Spawn',hp:82,ac:15,init:4,cr:'5'},
+  {name:'Demilich',hp:80,ac:20,init:8,cr:'18'},{name:'Lich',hp:135,ac:17,init:3,cr:'21'},
+  {name:'Vampire',hp:144,ac:15,init:4,cr:'13'},{name:'Vampire Spawn',hp:82,ac:15,init:4,cr:'5'},
+  {name:'Vampire Mist',hp:30,ac:13,init:3,cr:'3'},{name:'Mummy',hp:58,ac:11,init:-1,cr:'3'},
+  {name:'Mummy Lord',hp:97,ac:17,init:0,cr:'15'},{name:'Allip',hp:40,ac:13,init:4,cr:'5'},
+  // ── Beasts ──────────────────────────────────────────────────
+  {name:'Rat',hp:1,ac:10,init:2,cr:'0'},{name:'Giant Rat',hp:7,ac:12,init:2,cr:'1/8'},
+  {name:'Rat Swarm',hp:24,ac:10,init:2,cr:'1/4'},{name:'Bat Swarm',hp:22,ac:12,init:3,cr:'1/4'},
+  {name:'Poisonous Snake',hp:2,ac:13,init:3,cr:'1/8'},{name:'Giant Poisonous Snake',hp:11,ac:14,init:4,cr:'1/4'},
+  {name:'Constrictor Snake',hp:13,ac:12,init:0,cr:'1/4'},{name:'Giant Constrictor Snake',hp:60,ac:12,init:0,cr:'2'},
+  {name:'Wolf',hp:11,ac:13,init:2,cr:'1/4'},{name:'Dire Wolf',hp:37,ac:14,init:2,cr:'1'},
+  {name:'Winter Wolf',hp:75,ac:13,init:1,cr:'3'},{name:'Worg',hp:26,ac:13,init:1,cr:'1/2'},
+  {name:'Brown Bear',hp:34,ac:11,init:0,cr:'1'},{name:'Polar Bear',hp:42,ac:12,init:0,cr:'2'},
+  {name:'Black Bear',hp:19,ac:11,init:0,cr:'1/2'},{name:'Giant Boar',hp:42,ac:12,init:-1,cr:'2'},
+  {name:'Boar',hp:11,ac:11,init:0,cr:'1/4'},{name:'Giant Elk',hp:42,ac:14,init:3,cr:'2'},
+  {name:'Rhinoceros',hp:45,ac:11,init:0,cr:'2'},{name:'Elephant',hp:76,ac:12,init:-1,cr:'4'},
+  {name:'Mammoth',hp:126,ac:13,init:-1,cr:'6'},{name:'Giant Crocodile',hp:114,ac:14,init:-1,cr:'5'},
+  {name:'Crocodile',hp:19,ac:12,init:0,cr:'1/2'},{name:'Giant Frog',hp:18,ac:11,init:1,cr:'1/4'},
+  {name:'Giant Eagle',hp:26,ac:13,init:3,cr:'1'},{name:'Giant Vulture',hp:22,ac:10,init:1,cr:'1'},
+  {name:'Giant Hyena',hp:45,ac:12,init:1,cr:'1'},{name:'Giant Wasp',hp:13,ac:12,init:1,cr:'1/2'},
+  {name:'Giant Spider',hp:26,ac:14,init:3,cr:'1'},{name:'Phase Spider',hp:32,ac:13,init:3,cr:'3'},
+  {name:'Giant Scorpion',hp:52,ac:15,init:1,cr:'3'},{name:'Giant Centipede',hp:4,ac:13,init:2,cr:'1/4'},
+  {name:'Pteranodon',hp:13,ac:13,init:2,cr:'1/4'},{name:'Plesiosaurus',hp:68,ac:13,init:2,cr:'2'},
+  {name:'Allosaurus',hp:51,ac:13,init:1,cr:'2'},{name:'Triceratops',hp:114,ac:13,init:0,cr:'5'},
+  {name:'Tyrannosaurus Rex',hp:136,ac:13,init:0,cr:'8'},
+  // ── Monstrosities ───────────────────────────────────────────
+  {name:'Owlbear',hp:59,ac:13,init:1,cr:'3'},{name:'Peryton',hp:33,ac:13,init:2,cr:'2'},
+  {name:'Displacer Beast',hp:85,ac:13,init:2,cr:'3'},{name:'Basilisk',hp:52,ac:15,init:-1,cr:'3'},
+  {name:'Cockatrice',hp:27,ac:11,init:1,cr:'1/2'},{name:'Medusa',hp:127,ac:15,init:2,cr:'6'},
+  {name:'Harpy',hp:38,ac:11,init:1,cr:'1'},{name:'Griffon',hp:59,ac:12,init:2,cr:'2'},
+  {name:'Hippogriff',hp:19,ac:11,init:1,cr:'1'},{name:'Manticore',hp:68,ac:14,init:2,cr:'3'},
+  {name:'Chimera',hp:114,ac:14,init:0,cr:'6'},{name:'Hydra',hp:172,ac:15,init:1,cr:'8'},
+  {name:'Wyvern',hp:110,ac:13,init:1,cr:'6'},{name:'Gorgon',hp:114,ac:19,init:-1,cr:'5'},
+  {name:'Remorhaz',hp:195,ac:17,init:1,cr:'11'},{name:'Young Remorhaz',hp:93,ac:14,init:1,cr:'5'},
+  {name:'Kraken',hp:472,ac:18,init:0,cr:'23'},{name:'Tarrasque',hp:676,ac:25,init:3,cr:'30'},
+  {name:'Bulette',hp:94,ac:17,init:0,cr:'5'},{name:'Umber Hulk',hp:93,ac:18,init:-1,cr:'5'},
+  {name:'Hook Horror',hp:75,ac:15,init:0,cr:'3'},{name:'Carrion Crawler',hp:51,ac:13,init:1,cr:'2'},
+  {name:'Ankheg',hp:39,ac:14,init:0,cr:'2'},{name:'Ettercap',hp:44,ac:13,init:2,cr:'2'},
+  {name:'Grick',hp:27,ac:14,init:2,cr:'2'},{name:'Grick Alpha',hp:75,ac:18,init:2,cr:'7'},
+  {name:'Minotaur',hp:76,ac:14,init:0,cr:'3'},{name:'Gnoll Witherling',hp:11,ac:12,init:0,cr:'1/4'},
+  {name:'Banshee',hp:58,ac:12,init:2,cr:'4'},{name:'Werewolf',hp:58,ac:11,init:1,cr:'3'},
+  {name:'Werebear',hp:135,ac:11,init:0,cr:'5'},{name:'Weretiger',hp:120,ac:12,init:3,cr:'4'},
+  {name:'Wererat',hp:33,ac:12,init:2,cr:'2'},{name:'Wereboar',hp:78,ac:11,init:0,cr:'4'},
+  {name:'Nothic',hp:45,ac:15,init:3,cr:'2'},{name:'Mephit (Mud)',hp:27,ac:11,init:0,cr:'1/4'},
+  {name:'Mephit (Steam)',hp:21,ac:10,init:1,cr:'1/4'},{name:'Mephit (Ice)',hp:21,ac:11,init:1,cr:'1/4'},
+  {name:'Mephit (Magma)',hp:22,ac:11,init:0,cr:'1/2'},{name:'Mephit (Smoke)',hp:22,ac:12,init:3,cr:'1/4'},
+  {name:'Mephit (Dust)',hp:17,ac:12,init:2,cr:'1/2'},{name:'Banshee',hp:58,ac:12,init:2,cr:'4'},
+  // ── Giants ──────────────────────────────────────────────────
+  {name:'Ogre',hp:59,ac:11,init:-1,cr:'2'},{name:'Ogre Battering Ram',hp:59,ac:14,init:-1,cr:'4'},
+  {name:'Half-Ogre',hp:30,ac:12,init:-1,cr:'1'},{name:'Troll',hp:84,ac:15,init:1,cr:'5'},
+  {name:'Troll Rot',hp:84,ac:15,init:1,cr:'9'},{name:'Hill Giant',hp:105,ac:13,init:-1,cr:'5'},
+  {name:'Stone Giant',hp:126,ac:17,init:-1,cr:'7'},{name:'Stone Giant Dreamwalker',hp:161,ac:18,init:-1,cr:'10'},
+  {name:'Frost Giant',hp:138,ac:15,init:-1,cr:'8'},{name:'Fire Giant',hp:162,ac:18,init:-1,cr:'9'},
+  {name:'Cloud Giant',hp:200,ac:14,init:0,cr:'9'},{name:'Storm Giant',hp:230,ac:16,init:0,cr:'13'},
+  {name:'Storm Giant Quintessent',hp:230,ac:12,init:0,cr:'16'},{name:'Death Giant',hp:187,ac:15,init:-1,cr:'13'},
+  {name:'Fomorian',hp:149,ac:14,init:-1,cr:'8'},
+  // ── Dragons ──────────────────────────────────────────────────
+  {name:'Dragon Wyrmling (Red)',hp:75,ac:17,init:0,cr:'4'},{name:'Young Red Dragon',hp:178,ac:18,init:0,cr:'10'},
+  {name:'Adult Red Dragon',hp:256,ac:19,init:0,cr:'17'},{name:'Ancient Red Dragon',hp:546,ac:22,init:0,cr:'24'},
+  {name:'Dragon Wyrmling (Blue)',hp:52,ac:17,init:0,cr:'3'},{name:'Young Blue Dragon',hp:152,ac:18,init:0,cr:'9'},
+  {name:'Adult Blue Dragon',hp:225,ac:19,init:0,cr:'16'},{name:'Ancient Blue Dragon',hp:481,ac:22,init:0,cr:'23'},
+  {name:'Dragon Wyrmling (Green)',hp:38,ac:17,init:1,cr:'2'},{name:'Young Green Dragon',hp:136,ac:18,init:1,cr:'8'},
+  {name:'Adult Green Dragon',hp:207,ac:19,init:1,cr:'15'},{name:'Ancient Green Dragon',hp:385,ac:21,init:1,cr:'22'},
+  {name:'Dragon Wyrmling (Black)',hp:33,ac:17,init:2,cr:'2'},{name:'Young Black Dragon',hp:127,ac:18,init:2,cr:'7'},
+  {name:'Adult Black Dragon',hp:195,ac:19,init:2,cr:'14'},{name:'Ancient Black Dragon',hp:367,ac:22,init:2,cr:'21'},
+  {name:'Dragon Wyrmling (White)',hp:32,ac:16,init:0,cr:'2'},{name:'Young White Dragon',hp:133,ac:17,init:0,cr:'9'},
+  {name:'Adult White Dragon',hp:200,ac:18,init:0,cr:'13'},{name:'Ancient White Dragon',hp:333,ac:20,init:0,cr:'20'},
+  {name:'Dragon Wyrmling (Brass)',hp:16,ac:16,init:0,cr:'1'},{name:'Young Brass Dragon',hp:110,ac:17,init:0,cr:'6'},
+  {name:'Adult Brass Dragon',hp:172,ac:18,init:0,cr:'13'},{name:'Ancient Brass Dragon',hp:297,ac:20,init:0,cr:'20'},
+  {name:'Young Copper Dragon',hp:119,ac:17,init:1,cr:'7'},{name:'Adult Copper Dragon',hp:184,ac:18,init:1,cr:'14'},
+  {name:'Young Gold Dragon',hp:178,ac:18,init:2,cr:'10'},{name:'Adult Gold Dragon',hp:256,ac:19,init:2,cr:'17'},
+  {name:'Ancient Gold Dragon',hp:546,ac:22,init:2,cr:'24'},
+  {name:'Young Silver Dragon',hp:168,ac:18,init:0,cr:'9'},{name:'Adult Silver Dragon',hp:243,ac:19,init:0,cr:'16'},
+  {name:'Ancient Silver Dragon',hp:487,ac:22,init:0,cr:'24'},
+  {name:'Pseudodragon',hp:7,ac:13,init:2,cr:'1/4'},{name:'Faerie Dragon (Young)',hp:14,ac:13,init:4,cr:'1'},
+  {name:'Dragon Turtle',hp:341,ac:20,init:-3,cr:'17'},
+  // ── Aberrations ─────────────────────────────────────────────
+  {name:'Mind Flayer',hp:71,ac:15,init:4,cr:'7'},{name:'Mind Flayer Arcanist',hp:71,ac:15,init:4,cr:'8'},
+  {name:'Beholder',hp:180,ac:18,init:4,cr:'13'},{name:'Death Tyrant',hp:187,ac:19,init:2,cr:'14'},
+  {name:'Spectator',hp:39,ac:14,init:3,cr:'3'},{name:'Gazer',hp:13,ac:13,init:3,cr:'1/2'},
+  {name:'Aboleth',hp:135,ac:17,init:1,cr:'10'},{name:'Chuul',hp:93,ac:16,init:-1,cr:'4'},
+  {name:'Otyugh',hp:114,ac:14,init:-1,cr:'5'},{name:'Roper',hp:93,ac:20,init:-2,cr:'5'},
+  {name:'Intellect Devourer',hp:21,ac:12,init:4,cr:'2'},{name:'Slaad (Red)',hp:93,ac:14,init:1,cr:'5'},
+  {name:'Slaad (Blue)',hp:123,ac:15,init:2,cr:'7'},{name:'Slaad (Green)',hp:127,ac:16,init:3,cr:'8'},
+  {name:'Slaad (Gray)',hp:127,ac:18,init:4,cr:'9'},{name:'Slaad (Death)',hp:170,ac:18,init:5,cr:'10'},
+  {name:'Grell',hp:55,ac:12,init:2,cr:'3'},{name:'Flumph',hp:7,ac:12,init:2,cr:'1/8'},
+  {name:'Gibbering Mouther',hp:67,ac:9,init:-1,cr:'2'},{name:'Star Spawn Mangler',hp:71,ac:14,init:5,cr:'5'},
+  {name:'Star Spawn Hulk',hp:136,ac:16,init:-1,cr:'10'},
+  // ── Constructs ──────────────────────────────────────────────
+  {name:'Animated Armor',hp:33,ac:18,init:0,cr:'1'},{name:'Flying Sword',hp:17,ac:17,init:4,cr:'1/4'},
+  {name:'Rug of Smothering',hp:33,ac:12,init:0,cr:'2'},{name:'Scarecrow',hp:36,ac:11,init:1,cr:'1'},
+  {name:'Shield Guardian',hp:142,ac:17,init:-1,cr:'7'},{name:'Stone Golem',hp:178,ac:17,init:-1,cr:'10'},
+  {name:'Iron Golem',hp:210,ac:20,init:-1,cr:'16'},{name:'Clay Golem',hp:133,ac:14,init:-1,cr:'9'},
+  {name:'Flesh Golem',hp:93,ac:9,init:-1,cr:'5'},{name:'Helmed Horror',hp:60,ac:20,init:0,cr:'4'},
+  {name:'Modron (Monodrone)',hp:5,ac:15,init:2,cr:'1/8'},{name:'Modron (Quadrone)',hp:22,ac:16,init:2,cr:'1'},
+  // ── Fiends ───────────────────────────────────────────────────
+  {name:'Imp',hp:10,ac:13,init:3,cr:'1'},{name:'Quasit',hp:7,ac:13,init:3,cr:'1'},
+  {name:'Manes',hp:9,ac:9,init:-1,cr:'1/8'},{name:'Dretch',hp:18,ac:11,init:-1,cr:'1/4'},
+  {name:'Shadow Demon',hp:66,ac:13,init:4,cr:'4'},{name:'Vrock',hp:104,ac:15,init:2,cr:'6'},
+  {name:'Hezrou',hp:136,ac:16,init:1,cr:'8'},{name:'Glabrezu',hp:157,ac:17,init:-2,cr:'9'},
+  {name:'Nalfeshnee',hp:184,ac:18,init:-1,cr:'13'},{name:'Marilith',hp:189,ac:18,init:8,cr:'16'},
+  {name:'Balor',hp:262,ac:19,init:6,cr:'19'},{name:'Goristro',hp:310,ac:19,init:-1,cr:'17'},
+  {name:'Barlgura',hp:68,ac:15,init:2,cr:'5'},{name:'Chasme',hp:84,ac:15,init:3,cr:'6'},
+  {name:'Yochlol',hp:136,ac:15,init:4,cr:'10'},{name:'Sibriex',hp:150,ac:19,init:-3,cr:'18'},
+  {name:'Lemure',hp:13,ac:7,init:-3,cr:'0'},{name:'Bearded Devil',hp:52,ac:13,init:2,cr:'3'},
+  {name:'Barbed Devil',hp:110,ac:15,init:3,cr:'5'},{name:'Chain Devil',hp:85,ac:16,init:2,cr:'8'},
+  {name:'Bone Devil',hp:142,ac:19,init:3,cr:'9'},{name:'Ice Devil',hp:180,ac:18,init:1,cr:'14'},
+  {name:'Horned Devil',hp:148,ac:18,init:3,cr:'11'},{name:'Erinyes',hp:153,ac:18,init:3,cr:'12'},
+  {name:'Pit Fiend',hp:300,ac:19,init:5,cr:'20'},{name:'Incubus',hp:66,ac:13,init:3,cr:'4'},
+  {name:'Succubus',hp:66,ac:13,init:3,cr:'4'},{name:'Cambion',hp:82,ac:19,init:3,cr:'5'},
+  {name:'Nightmare',hp:68,ac:13,init:4,cr:'3'},{name:'Hell Hound',hp:45,ac:15,init:1,cr:'3'},
+  // ── Elementals ───────────────────────────────────────────────
+  {name:'Fire Elemental',hp:102,ac:13,init:1,cr:'5'},{name:'Water Elemental',hp:114,ac:14,init:0,cr:'5'},
+  {name:'Earth Elemental',hp:126,ac:17,init:-1,cr:'5'},{name:'Air Elemental',hp:90,ac:15,init:5,cr:'5'},
+  {name:'Magmin',hp:9,ac:14,init:1,cr:'1/2'},{name:'Azer',hp:39,ac:17,init:1,cr:'2'},
+  {name:'Galeb Duhr',hp:85,ac:16,init:-3,cr:'6'},{name:'Gargoyle',hp:52,ac:15,init:0,cr:'2'},
+  {name:'Invisible Stalker',hp:104,ac:14,init:8,cr:'6'},{name:'Xorn',hp:73,ac:19,init:0,cr:'5'},
+  {name:'Mephit (Mud)',hp:27,ac:11,init:0,cr:'1/4'},{name:'Mephit (Steam)',hp:21,ac:10,init:1,cr:'1/4'},
+  {name:'Mephit (Ice)',hp:21,ac:11,init:1,cr:'1/4'},{name:'Mephit (Magma)',hp:22,ac:11,init:0,cr:'1/2'},
+  {name:'Salamander',hp:90,ac:15,init:2,cr:'5'},{name:'Fire Snake',hp:22,ac:14,init:2,cr:'1'},
+  {name:'Dao',hp:187,ac:18,init:1,cr:'11'},{name:'Djinni',hp:161,ac:17,init:2,cr:'11'},
+  {name:'Efreeti',hp:200,ac:17,init:1,cr:'11'},{name:'Marid',hp:229,ac:17,init:1,cr:'11'},
+  // ── Celestials ────────────────────────────────────────────────
+  {name:'Deva',hp:136,ac:17,init:4,cr:'10'},{name:'Planetar',hp:200,ac:19,init:4,cr:'16'},
+  {name:'Solar',hp:243,ac:21,init:6,cr:'21'},{name:'Couatl',hp:97,ac:19,init:3,cr:'4'},
+  {name:'Pegasus',hp:59,ac:12,init:3,cr:'2'},{name:'Unicorn',hp:67,ac:12,init:2,cr:'5'},
+  {name:'Ki-rin',hp:152,ac:20,init:7,cr:'12'},
+  // ── Fey ──────────────────────────────────────────────────────
+  {name:'Pixie',hp:1,ac:15,init:4,cr:'1/4'},{name:'Sprite',hp:2,ac:15,init:4,cr:'1/4'},
+  {name:'Dryad',hp:22,ac:11,init:1,cr:'1'},{name:'Satyr',hp:31,ac:14,init:3,cr:'1/2'},
+  {name:'Green Hag',hp:82,ac:14,init:1,cr:'3'},{name:'Sea Hag',hp:52,ac:14,init:1,cr:'2'},
+  {name:'Night Hag',hp:112,ac:17,init:2,cr:'5'},{name:'Bheur Hag',hp:91,ac:17,init:3,cr:'7'},
+  {name:'Quickling',hp:10,ac:16,init:8,cr:'1'},{name:'Blink Dog',hp:22,ac:13,init:3,cr:'1/4'},
+  {name:'Korred',hp:93,ac:17,init:4,cr:'7'},{name:'Meenlock',hp:31,ac:15,init:3,cr:'2'},
+  // ── Oozes & Plants ───────────────────────────────────────────
+  {name:'Gelatinous Cube',hp:84,ac:6,init:-5,cr:'2'},{name:'Black Pudding',hp:85,ac:7,init:-3,cr:'4'},
+  {name:'Ochre Jelly',hp:45,ac:8,init:-2,cr:'2'},{name:'Gray Ooze',hp:22,ac:8,init:-2,cr:'1/2'},
+  {name:'Rust Monster',hp:27,ac:14,init:0,cr:'1/2'},{name:'Mimic',hp:58,ac:12,init:3,cr:'2'},
+  {name:'Shambling Mound',hp:136,ac:15,init:-1,cr:'5'},{name:'Awakened Tree',hp:59,ac:13,init:-2,cr:'2'},
+  {name:'Awakened Shrub',hp:10,ac:9,init:-1,cr:'0'},{name:'Vine Blight',hp:26,ac:12,init:-1,cr:'1/2'},
+  {name:'Needle Blight',hp:11,ac:12,init:1,cr:'1/4'},{name:'Twig Blight',hp:4,ac:13,init:0,cr:'1/8'},
+  // ── NPCs / Humanoids (non-monster) ───────────────────────────
   {name:'Bandit',hp:11,ac:12,init:1,cr:'1/8'},{name:'Bandit Captain',hp:65,ac:15,init:3,cr:'2'},
   {name:'Thug',hp:32,ac:11,init:0,cr:'1/2'},{name:'Assassin',hp:78,ac:15,init:3,cr:'8'},
+  {name:'Spy',hp:27,ac:12,init:2,cr:'1'},{name:'Martial Arts Adept',hp:60,ac:16,init:3,cr:'3'},
   {name:'Guard',hp:11,ac:16,init:1,cr:'1/8'},{name:'Knight',hp:52,ac:18,init:0,cr:'3'},
   {name:'Veteran',hp:58,ac:17,init:1,cr:'3'},{name:'Gladiator',hp:112,ac:16,init:2,cr:'5'},
-  {name:'Giant Spider',hp:26,ac:14,init:3,cr:'1'},{name:'Giant Rat',hp:7,ac:12,init:2,cr:'1/8'},
-  {name:'Wolf',hp:11,ac:13,init:2,cr:'1/4'},{name:'Dire Wolf',hp:37,ac:14,init:2,cr:'1'},
-  {name:'Brown Bear',hp:34,ac:11,init:0,cr:'1'},{name:'Giant Eagle',hp:26,ac:13,init:3,cr:'1'},
-  {name:'Owlbear',hp:59,ac:13,init:1,cr:'3'},{name:'Displacer Beast',hp:85,ac:13,init:2,cr:'3'},
-  {name:'Basilisk',hp:52,ac:15,init:-1,cr:'3'},{name:'Medusa',hp:127,ac:15,init:2,cr:'6'},
-  {name:'Harpy',hp:38,ac:11,init:1,cr:'1'},{name:'Griffon',hp:59,ac:12,init:2,cr:'2'},
-  {name:'Manticore',hp:68,ac:14,init:2,cr:'3'},{name:'Wyvern',hp:110,ac:13,init:1,cr:'6'},
-  {name:'Young Dragon',hp:178,ac:18,init:1,cr:'10'},{name:'Adult Red Dragon',hp:256,ac:19,init:0,cr:'17'},
-  {name:'Ancient Red Dragon',hp:546,ac:22,init:0,cr:'24'},
-  {name:'Young Black Dragon',hp:127,ac:18,init:2,cr:'7'},{name:'Young Green Dragon',hp:136,ac:18,init:1,cr:'8'},
-  {name:'Young White Dragon',hp:133,ac:17,init:0,cr:'9'},{name:'Young Blue Dragon',hp:152,ac:18,init:0,cr:'9'},
-  {name:'Kobold',hp:5,ac:12,init:2,cr:'1/8'},{name:'Gnoll',hp:22,ac:15,init:1,cr:'1/2'},
-  {name:'Lizardfolk',hp:22,ac:15,init:0,cr:'1/2'},{name:'Merrow',hp:45,ac:13,init:-1,cr:'2'},
-  {name:'Sahuagin',hp:22,ac:12,init:-1,cr:'1/2'},{name:'Bullywug',hp:11,ac:15,init:0,cr:'1/4'},
-  {name:'Drow',hp:13,ac:15,init:2,cr:'1/4'},{name:'Drow Elite Warrior',hp:71,ac:18,init:3,cr:'5'},
-  {name:'Mind Flayer',hp:71,ac:15,init:4,cr:'7'},{name:'Beholder',hp:180,ac:18,init:4,cr:'13'},
-  {name:'Gelatinous Cube',hp:84,ac:6,init:-5,cr:'2'},{name:'Mimic',hp:58,ac:12,init:3,cr:'2'},
-  {name:'Troll',hp:84,ac:15,init:1,cr:'5'},{name:'Ogre',hp:59,ac:11,init:-1,cr:'2'},
-  {name:'Hill Giant',hp:105,ac:13,init:-1,cr:'5'},{name:'Stone Giant',hp:126,ac:17,init:-1,cr:'7'},
-  {name:'Frost Giant',hp:138,ac:15,init:-1,cr:'8'},{name:'Fire Giant',hp:162,ac:18,init:-1,cr:'9'},
-  {name:'Storm Giant',hp:230,ac:16,init:0,cr:'13'},
+  {name:'Berserker',hp:67,ac:13,init:1,cr:'2'},{name:'Tribal Warrior',hp:11,ac:12,init:1,cr:'1/8'},
   {name:'Cultist',hp:9,ac:12,init:1,cr:'1/8'},{name:'Cult Fanatic',hp:33,ac:13,init:2,cr:'2'},
-  {name:'Priest',hp:27,ac:13,init:0,cr:'2'},{name:'Acolyte',hp:9,ac:10,init:0,cr:'1/4'},
+  {name:'Acolyte',hp:9,ac:10,init:0,cr:'1/4'},{name:'Priest',hp:27,ac:13,init:0,cr:'2'},
   {name:'Mage',hp:40,ac:12,init:2,cr:'6'},{name:'Archmage',hp:99,ac:12,init:2,cr:'12'},
-  {name:'Wizard Apprentice',hp:22,ac:11,init:2,cr:'1'},{name:'Warlock',hp:32,ac:12,init:2,cr:'2'},
-  {name:'Imp',hp:10,ac:13,init:3,cr:'1'},{name:'Quasit',hp:7,ac:13,init:3,cr:'1'},
-  {name:'Incubus',hp:66,ac:13,init:3,cr:'4'},{name:'Succubus',hp:66,ac:13,init:3,cr:'4'},
-  {name:'Demon (Dretch)',hp:18,ac:11,init:-1,cr:'1/4'},{name:'Demon (Vrock)',hp:104,ac:15,init:2,cr:'6'},
-  {name:'Devil (Imp)',hp:10,ac:13,init:3,cr:'1'},{name:'Devil (Barbed)',hp:110,ac:15,init:3,cr:'5'},
-  {name:'Pit Fiend',hp:300,ac:19,init:5,cr:'20'},
-  {name:'Aboleth',hp:135,ac:17,init:1,cr:'10'},{name:'Chuul',hp:93,ac:16,init:-1,cr:'4'},
-  {name:'Roper',hp:93,ac:20,init:-2,cr:'5'},{name:'Rust Monster',hp:27,ac:14,init:0,cr:'1/2'},
-  {name:'Flumph',hp:7,ac:12,init:2,cr:'1/8'},{name:'Awakened Shrub',hp:10,ac:9,init:-1,cr:'0'},
+  {name:'Warlock of the Fiend',hp:78,ac:12,init:2,cr:'7'},{name:'Blackguard',hp:153,ac:18,init:0,cr:'8'},
+  {name:'Champion',hp:143,ac:18,init:0,cr:'9'},{name:'Swashbuckler',hp:66,ac:17,init:4,cr:'3'},
+  {name:'Illusionist',hp:38,ac:11,init:2,cr:'3'},{name:'Necromancer',hp:66,ac:12,init:2,cr:'9'},
+  {name:'War Priest',hp:117,ac:18,init:0,cr:'9'},{name:'Druid',hp:27,ac:11,init:0,cr:'2'},
+  {name:'Archdruid',hp:132,ac:16,init:1,cr:'12'},{name:'Warlord',hp:229,ac:20,init:1,cr:'12'},
 ];
 
 let acSelectedIdx = -1;
@@ -5798,6 +6194,34 @@ function calcEncounterDifficulty() {
   showToast(`Encounter: ${diff} — ${adjusted.toLocaleString()} adj XP (${enemies.length} enemy${enemies.length!==1?'ies':'y'}, ${partyLevels.length} PCs)`, 'info', 5000);
   combatLog.unshift({round:currentRound||0, text:`Encounter difficulty: ${diff} (${adjusted.toLocaleString()} adj XP)`, type:'info', time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})});
   renderCombatLog();
+}
+
+
+// Spell slots per class per level [L1..L9]
+// 0 = no slots at that level
+const SPELL_SLOT_TABLE = {
+  Wizard:    [[2],[3],[4,2],[4,3],[4,3,2],[4,3,3],[4,3,3,1],[4,3,3,2],[4,3,3,3,1],[4,3,3,3,2],[4,3,3,3,2,1],[4,3,3,3,2,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1,1],[4,3,3,3,3,1,1,1,1],[4,3,3,3,3,2,1,1,1],[4,3,3,3,3,2,2,1,1]],
+  Sorcerer:  [[2],[3],[4,2],[4,3],[4,3,2],[4,3,3],[4,3,3,1],[4,3,3,2],[4,3,3,3,1],[4,3,3,3,2],[4,3,3,3,2,1],[4,3,3,3,2,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1,1],[4,3,3,3,3,1,1,1,1],[4,3,3,3,3,2,1,1,1],[4,3,3,3,3,2,2,1,1]],
+  Bard:      [[2],[3],[4,2],[4,3],[4,3,2],[4,3,3],[4,3,3,1],[4,3,3,2],[4,3,3,3,1],[4,3,3,3,2],[4,3,3,3,2,1],[4,3,3,3,2,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1,1],[4,3,3,3,3,1,1,1,1],[4,3,3,3,3,2,1,1,1],[4,3,3,3,3,2,2,1,1]],
+  Druid:     [[2],[3],[4,2],[4,3],[4,3,2],[4,3,3],[4,3,3,1],[4,3,3,2],[4,3,3,3,1],[4,3,3,3,2],[4,3,3,3,2,1],[4,3,3,3,2,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1,1],[4,3,3,3,3,1,1,1,1],[4,3,3,3,3,2,1,1,1],[4,3,3,3,3,2,2,1,1]],
+  Cleric:    [[2],[3],[4,2],[4,3],[4,3,2],[4,3,3],[4,3,3,1],[4,3,3,2],[4,3,3,3,1],[4,3,3,3,2],[4,3,3,3,2,1],[4,3,3,3,2,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1],[4,3,3,3,2,1,1,1,1],[4,3,3,3,3,1,1,1,1],[4,3,3,3,3,2,1,1,1],[4,3,3,3,3,2,2,1,1]],
+  Paladin:   [[],[2],[3],[3,1],[4,2],[4,2],[4,3],[4,3,1],[4,3,2],[4,3,2,1],[4,3,3,1],[4,3,3,1],[4,3,3,2],[4,3,3,2,1],[4,3,3,2,1],[4,3,3,2,1,1],[4,3,3,3,1,1],[4,3,3,3,1,1,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1,1]],
+  Ranger:    [[],[2],[3],[3,1],[4,2],[4,2],[4,3],[4,3,1],[4,3,2],[4,3,2,1],[4,3,3,1],[4,3,3,1],[4,3,3,2],[4,3,3,2,1],[4,3,3,2,1],[4,3,3,2,1,1],[4,3,3,3,1,1],[4,3,3,3,1,1,1],[4,3,3,3,2,1,1],[4,3,3,3,2,1,1,1]],
+  Fighter:   [[],[],[],[],[],[],[2],[2],[],[3],[3],[3,1],[3,1],[3,1,1],[3,1,1],[3,1,1,1],[3,1,1,1],[3,1,1,1,1],[3,1,1,1,1],[3,2,1,1,1]],
+  Rogue:     [[],[],[],[],[],[],[],[],[],[],[],[],[3],[3,1],[3,1,1],[3,1,1,1],[3,2,1,1,1],[3,2,1,1,1],[3,2,1,1,1,1],[3,2,1,1,1,1]],
+  Warlock:   [[1],[2],[2],[2],[2],[2],[2],[2],[2],[2],[3],[3],[3],[3],[3],[3],[4],[4],[4],[4]],
+  Monk:      null, Barbarian: null,
+};
+// Warlock slots are special (short rest) - handle display
+const WARLOCK_SLOT_LEVEL = [null,1,1,2,2,3,3,4,4,5,5,5,5,5,5,5,5,5,5,5];
+
+function getDefaultSlots(cls, level) {
+  const table = SPELL_SLOT_TABLE[cls];
+  if (!table) return null; // no spell slots (Barbarian, Monk)
+  const lvlData = table[level - 1];
+  if (!lvlData || lvlData.length === 0) return null;
+  // Return array of {max, used} per spell level
+  return lvlData.map(max => ({ max, used: 0 }));
 }
 
 const NAME_PARTS = {
