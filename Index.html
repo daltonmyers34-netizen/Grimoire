@@ -3448,18 +3448,18 @@ function buildPlayerViewHTML(uid) {
 function sendPlayerMessage(pcId) {
   const pc = party.find(p => p.id === pcId);
   if (!pc) return;
-  const msg = prompt('Message to ' + pc.name + ':', (appState.pvMessages && appState.pvMessages[pcId]) || '');
+  if (!window.pvMessages) window.pvMessages = {};
+  const msg = prompt('Message to ' + pc.name + ':', window.pvMessages[pcId] || '');
   if (msg === null) return;
-  if (!appState.pvMessages) appState.pvMessages = {};
-  appState.pvMessages[pcId] = msg;
-  saveState();
+  window.pvMessages[pcId] = msg;
+  if (typeof saveSession === 'function') saveSession();
   showToast('Message sent to ' + pc.name, 'success');
 }
 function sendPartyMessage() {
-  const msg = prompt('Message to entire party:', appState.pvPartyMessage || '');
+  const msg = prompt('Message to entire party:', window.pvPartyMessage || '');
   if (msg === null) return;
-  appState.pvPartyMessage = msg;
-  saveState();
+  window.pvPartyMessage = msg;
+  if (typeof saveSession === 'function') saveSession();
   showToast('Party message sent', 'success');
 }
 function renderParty() {
@@ -4652,6 +4652,8 @@ function collectState() {
     timerSeconds,
     currentRound: window.currentRound || 0,
     combatActive: window.combatActive || false,
+    pvMessages: window.pvMessages || {},
+    pvPartyMessage: window.pvPartyMessage || '',
     notes: {
       session: document.getElementById('session-notes')?.value || '',
       plot:    document.getElementById('plot-notes')?.value    || '',
@@ -4673,6 +4675,8 @@ function applyState(s) {
     window.currentRound = s.currentRound;
     const re = document.getElementById('round-display'); if(re) re.textContent = s.currentRound;
   }
+  if (s.pvMessages) { window.pvMessages = s.pvMessages; }
+  if (s.pvPartyMessage) { window.pvPartyMessage = s.pvPartyMessage; }
   if (s.notes) {
     const sn = document.getElementById('session-notes'); if(sn) sn.value = s.notes.session||'';
     const pn = document.getElementById('plot-notes');   if(pn) pn.value = s.notes.plot||'';
