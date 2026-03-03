@@ -1576,6 +1576,8 @@
           currentRound: state.currentRound || 0,
           combatActive: state.combatActive || false,
           partyInventory: state.partyInventory || [],
+          pvMessages: state.pvMessages || {},
+          pvPartyMessage: state.pvPartyMessage || '',
           updatedAt: new Date().toISOString()
         };
         await setDoc(doc(db, 'playerView', currentUid), pvSnap);
@@ -1731,6 +1733,8 @@
   <div class="section-header-row">
     <div style="font-family:'Cinzel',serif;font-size:13px;color:var(--text-dim);letter-spacing:0.1em;">PLAYER CHARACTERS</div>
     <button class="btn btn-gold btn-sm" onclick="openAddPlayerModal()">+ Add Character</button>
+    <button class="btn btn-ghost btn-sm" onclick="sendPartyMessage()">📢 Party Msg</button>
+    <button class="btn btn-ghost btn-sm" onclick="openPlayerView()">👁 Player View</button>
   </div>
   <div id="party-grid" class="party-grid">
     <div class="party-empty">
@@ -2600,6 +2604,7 @@ function shortRest() {
     const heal = Math.max(1, Math.floor(Math.random()*hd)+1+conMod);
     const cmb = combatants.find(x=>x.name===pc.name && x.type==='ally');
     if (cmb) { cmb.hp = Math.min(cmb.maxHp, cmb.hp+heal); }
+    pc.lastRest = 'short';
   });
   savePartyStorage();
   renderParty();
@@ -2616,6 +2621,7 @@ function longRest() {
     const cmb = combatants.find(x=>x.name===pc.name && x.type==='ally');
     if (cmb) { cmb.hp = cmb.maxHp; }
     pc.exhaustion = 0;
+    pc.lastRest = 'long';
     // Restore all spell slots (new system)
     if (pc.spellSlots) pc.spellSlots.forEach(sl => sl.used = 0);
     pc.usedSlots = {}; // legacy compat
@@ -3342,24 +3348,30 @@ function buildPlayerViewHTML(uid) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>⚔ Party Status</title>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Party Status</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Crimson+Text:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
 <style>
-  html,body{margin:0;padding:0;background:#0d0804;color:#d4b880;font-family:'Crimson Text',serif;font-size:16px;}
-  body{padding:16px;max-width:700px;margin:0 auto;}*{box-sizing:border-box;}
-  @media(max-width:600px){body{padding:10px;}}
+  html,body{margin:0;padding:0;background:#0d0804;color:#d4b880;font-family:'Crimson Text',serif;}
+  body{padding:16px;max-width:720px;margin:0 auto;}*{box-sizing:border-box;}
   .card{background:linear-gradient(135deg,rgba(38,24,10,0.98),rgba(28,16,6,1));border:1px solid rgba(212,175,55,0.25);border-radius:8px;padding:16px;margin-bottom:12px;box-shadow:0 4px 20px rgba(0,0,0,0.5);}
+  .hp-bar-wrap{background:rgba(0,0,0,0.3);border-radius:3px;height:7px;margin-bottom:10px;overflow:hidden;}
+  .hp-bar{height:100%;border-radius:3px;transition:width 0.6s ease;}
+  .pip{display:inline-block;width:13px;height:13px;border-radius:50%;margin:1px;}
+  .msg-banner{border-radius:6px;padding:10px 14px;margin-bottom:10px;font-size:14px;line-height:1.5;}
+  .party-msg{background:rgba(212,175,55,0.12);border:1px solid rgba(212,175,55,0.4);color:#ffe066;}
+  .personal-msg{background:rgba(100,180,255,0.1);border:1px solid rgba(100,180,255,0.4);color:#b8d8ff;}
+  .avatar{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:15px;font-weight:700;flex-shrink:0;border:2px solid rgba(255,255,255,0.15);}
+  .cond-tag{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:3px;font-size:11px;background:rgba(255,100,100,0.15);border:1px solid rgba(255,100,100,0.35);color:#ff9090;margin:2px 2px 2px 0;}
+  .rest-badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;background:rgba(100,180,255,0.1);border:1px solid rgba(100,180,255,0.25);color:#90c8ff;margin-left:4px;vertical-align:middle;}
 </style>
 </head>
 <body>
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:12px;border-bottom:1px solid rgba(212,175,55,0.2);">
-  <div>
-    <div style="font-family:'Cinzel',serif;font-size:22px;font-weight:700;color:#d4a820;">⚔ Party Status</div>
-    <div id="pv-status" style="font-size:11px;color:#8fd050;margin-top:2px;font-family:'Cinzel',serif;">Connecting...</div>
-  </div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(212,175,55,0.2);">
+  <div style="font-family:'Cinzel',serif;font-size:20px;font-weight:700;color:#d4a820;">Party Status</div>
+  <div id="pv-status" style="font-size:11px;color:#8fd050;font-family:'Cinzel',serif;">Connecting...</div>
 </div>
+<div id="pv-party-msg"></div>
 <div id="pv-main"><div style="text-align:center;color:#555;padding:40px 0;font-style:italic;">Loading...</div></div>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -3369,70 +3381,87 @@ function buildPlayerViewHTML(uid) {
   const status = document.getElementById('pv-status');
   let first = true;
   onSnapshot(doc(db, 'playerView', '${uid}'), snap => {
-    if (!snap.exists()) { status.textContent = 'Waiting for DM data...'; return; }
+    if (!snap.exists()) { status.textContent = 'Waiting for DM...'; return; }
     const d = snap.data();
+    const pm = d.pvPartyMessage || '';
+    document.getElementById('pv-party-msg').innerHTML = pm ? '<div class="msg-banner party-msg">DM: ' + esc(pm) + '</div>' : '';
     document.getElementById('pv-main').innerHTML = renderAll(d);
-    const t = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-    status.textContent = first ? ('● Live · Updated ' + t) : ('● Updated ' + t);
+    status.textContent = (first ? 'Live ' : '') + new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
     first = false;
-  }, err => { status.textContent = '⚠ Connection error'; console.error(err); });
-
-  function renderAll(d) {
-    const party = d.party || [], cmbs = d.combatants || [];
-    return renderParty(party, cmbs) + renderInitiative(cmbs, d.currentRound||0, d.combatActive||false) + renderInventory(d.partyInventory||[]);
+  });
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  const AC=['#7b3a14','#1e4d7a','#3a6b47','#6b2d5e','#7a5c10','#1d5e6b','#6b3a1e','#2d4e7a'];
+  function avc(n){let h=0;for(const c of n)h=(h*31+c.charCodeAt(0))&0xffff;return AC[h%AC.length];}
+  function renderAll(d){
+    const p=d.party||[],c=d.combatants||[],m=d.pvMessages||{};
+    return renderParty(p,c,m)+renderInit(c,d.currentRound||0,d.combatActive||false)+renderInv(d.partyInventory||[]);
   }
-
-  function renderParty(party, cmbs) {
-    if (!party.length) return '<div style="text-align:center;color:#555;padding:40px 0;font-style:italic;">No party yet</div>';
-    return party.map(pc => {
-      const cmb = cmbs.find(x => x.name===pc.name && x.type==='ally');
-      const cur = cmb ? cmb.hp : pc.maxhp, max = cmb ? cmb.maxHp : pc.maxhp;
-      const pct = Math.max(0,Math.min(100,(cur/max)*100));
-      const hpCol = pct>50?'#4caf50':pct>25?'#ff9800':'#f44336';
-      const conds = (cmb?.conditions||[]).map(c=>'<span style="padding:2px 6px;border-radius:3px;font-size:10px;background:rgba(255,100,100,0.2);border:1px solid rgba(255,100,100,0.4);color:#ff9090;margin:1px;">'+c+'</span>').join('');
-      const insp = pc.inspiration ? '<span style="padding:2px 8px;border-radius:3px;font-size:10px;background:rgba(255,215,0,0.2);border:1px solid rgba(255,215,0,0.5);color:#ffd700;margin-left:4px;">★ Inspiration</span>' : '';
-      const slots = (pc.spellSlots||[]).length ? '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);"><div style="font-size:10px;letter-spacing:0.12em;color:#888;margin-bottom:6px;font-family:Cinzel,serif;">SPELL SLOTS</div>'
-        + pc.spellSlots.map((sl,i)=>{
-            const avail=sl.max-sl.used, lvls=['1st','2nd','3rd','4th','5th','6th','7th','8th','9th'];
-            const pips=Array.from({length:sl.max},(_,j)=>{const sp=j>=avail;return '<span style="display:inline-block;width:12px;height:12px;border-radius:50%;margin:1px;background:'+(sp?'rgba(255,255,255,0.07)':'rgba(100,180,255,0.65)')+';border:1px solid '+(sp?'rgba(255,255,255,0.12)':'rgba(100,180,255,0.9)')+';box-shadow:'+(sp?'none':'0 0 4px rgba(100,180,255,0.4)')+'"></span>';}).join('');
-            return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;"><span style="font-size:9px;color:#666;width:24px;">'+lvls[i]+'</span><div>'+pips+'</div><span style="font-size:9px;color:'+(avail>0?'#90c8ff':'#555')+'">'+avail+'/'+sl.max+'</span></div>';
-          }).join('') + '</div>' : '';
-      return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">'
-        +'<div><div style="font-family:Cinzel,serif;font-size:18px;font-weight:700;color:#d4a820;">'+pc.name+'</div>'
-        +'<div style="font-size:12px;color:#888;margin-top:2px;">'+(pc.race||'')+' '+pc.cls+' · Level '+pc.level+(pc.player?' · <em>'+pc.player+'</em>':'')+'</div></div>'
-        +'<div style="text-align:right;"><div style="font-size:22px;font-weight:700;color:'+hpCol+';">'+cur+'<span style="font-size:13px;color:#666;">'+'/'+max+'</span></div>'
-        +'<div style="font-size:10px;color:#666;letter-spacing:0.1em;">HIT POINTS</div></div></div>'
-        +'<div style="background:rgba(0,0,0,0.3);border-radius:3px;height:6px;margin-bottom:10px;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:'+hpCol+';border-radius:3px;box-shadow:0 0 6px '+hpCol+'44;"></div></div>'
-        +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><span style="padding:3px 10px;border-radius:4px;font-size:11px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#aaa;">🛡 AC '+(pc.ac||'?')+'</span>'+conds+insp+'</div>'
-        + slots + '</div>';
+  function renderParty(party,cmbs,msgs){
+    if(!party.length) return '<div style="text-align:center;color:#555;padding:40px 0;">No party members yet</div>';
+    return party.map(pc=>{
+      const cmb=cmbs.find(x=>x.name===pc.name&&x.type==='ally');
+      const cur=cmb?cmb.hp:pc.maxhp,max=cmb?cmb.maxHp:pc.maxhp;
+      const pct=Math.max(0,Math.min(100,(cur/(max||1))*100));
+      const hc=pct>50?'#4caf50':pct>25?'#ff9800':'#f44336';
+      const ini=pc.name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+      const pm=msgs[pc.id]||msgs[String(pc.id)]||'';
+      const mh=pm?'<div class="msg-banner personal-msg">DM: '+esc(pm)+'</div>':'';
+      const conds=(cmb&&cmb.conditions||[]).map(c=>'<span class="cond-tag">'+esc(c)+'</span>').join('');
+      const insp=pc.inspiration?'<span style="padding:2px 8px;border-radius:3px;font-size:11px;background:rgba(255,215,0,0.18);border:1px solid rgba(255,215,0,0.5);color:#ffd700;margin:2px;">Inspired</span>':'';
+      const rest=pc.lastRest?'<span class="rest-badge">'+(pc.lastRest==='long'?'Long Rest':'Short Rest')+'</span>':'';
+      const slots=(pc.spellSlots||[]).length?'<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.07);"><div style="font-size:10px;color:#555;margin-bottom:5px;">SPELL SLOTS</div>'
+        +pc.spellSlots.map((sl,i)=>{const av=sl.max-sl.used,lv=['1st','2nd','3rd','4th','5th','6th','7th','8th','9th'];
+          return '<div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;"><span style="font-size:9px;color:#555;width:22px;">'+lv[i]+'</span>'
+            +Array.from({length:sl.max},(_,j)=>{const sp=j>=av;return '<span class="pip" style="background:'+(sp?'rgba(255,255,255,0.07)':'rgba(100,180,255,0.65)')+';border:1px solid '+(sp?'rgba(255,255,255,0.12)':'rgba(100,180,255,0.9)')+';"></span>';}).join('')
+            +'<span style="font-size:9px;color:'+(av>0?'#90c8ff':'#555')+'">'+av+'/'+sl.max+'</span></div>';}).join('')+'</div>':'';
+      return '<div class="card">'+mh
+        +'<div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;">'
+        +'<div class="avatar" style="background:'+avc(pc.name)+';color:#fff;">'+ini+'</div>'
+        +'<div style="flex:1;"><div style="font-family:Cinzel,serif;font-size:17px;font-weight:700;color:#d4a820;">'+esc(pc.name)+rest+'</div>'
+        +'<div style="font-size:12px;color:#666;">'+(pc.race?esc(pc.race)+' ':'')+esc(pc.cls)+' Lv'+pc.level+(pc.player?' - '+esc(pc.player):'')+'</div></div>'
+        +'<div style="text-align:right;"><div style="font-size:24px;font-weight:700;color:'+hc+';">'+cur+'<span style="font-size:13px;color:#555;">/'+max+'</span></div>'
+        +'<div style="font-size:10px;color:#555;">HP</div></div></div>'
+        +'<div class="hp-bar-wrap"><div class="hp-bar" style="width:'+pct+'%;background:'+hc+';"></div></div>'
+        +'<div style="display:flex;gap:5px;flex-wrap:wrap;"><span style="padding:3px 10px;border-radius:4px;font-size:11px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#888;">AC '+(pc.ac||'?')+'</span>'
+        +conds+insp+'</div>'+slots+'</div>';
     }).join('');
   }
-
-  function renderInitiative(cmbs, round, active) {
-    if (!cmbs.length) return '';
-    return '<div class="card"><div style="font-family:Cinzel,serif;font-size:13px;letter-spacing:0.12em;color:#888;margin-bottom:10px;">⚔ INITIATIVE ORDER — Round '+round+'</div>'
-      + cmbs.map((c,i)=>{
-          const ally=c.type==='ally', hp=Math.max(0,Math.min(100,(c.hp/(c.maxHp||1))*100));
-          const hpCol=hp>50?'#4caf50':hp>25?'#ff9800':'#f44336', cur=i===0&&active;
-          return '<div style="display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:5px;margin-bottom:3px;background:'+(cur?'rgba(212,175,55,0.12)':'rgba(0,0,0,0.2)')+';border:1px solid '+(cur?'rgba(212,175,55,0.4)':'transparent')+'">'
-            +'<span style="font-size:16px;font-weight:700;color:#d4a820;width:28px;text-align:center;">'+c.initiative+'</span>'
-            +'<span style="font-size:13px;color:'+(ally?'#90c8ff':'#ff9090')+';flex:1;">'+c.name+(cur?' ◀':'')+'</span>'
-            +'<div style="display:flex;align-items:center;gap:4px;"><div style="width:60px;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;"><div style="height:100%;width:'+hp+'%;background:'+hpCol+';border-radius:2px;"></div></div>'
-            +'<span style="font-size:11px;color:'+hpCol+'">'+c.hp+'/'+c.maxHp+'</span></div></div>';
-        }).join('') + '</div>';
+  function renderInit(cmbs,round,active){
+    if(!cmbs.length) return '';
+    return '<div class="card"><div style="font-family:Cinzel,serif;font-size:12px;color:#555;margin-bottom:10px;">INITIATIVE - ROUND '+round+'</div>'
+      +cmbs.map((c,i)=>{const ally=c.type==='ally',hp=Math.max(0,Math.min(100,(c.hp/(c.maxHp||1))*100));
+        const hc=hp>50?'#4caf50':hp>25?'#ff9800':'#f44336',cur=i===0&&active;
+        return '<div style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:5px;margin-bottom:3px;background:'+(cur?'rgba(212,175,55,0.1)':'rgba(0,0,0,0.2)')+';border:1px solid '+(cur?'rgba(212,175,55,0.4)':'transparent')+'">'
+          +'<span style="font-size:15px;font-weight:700;color:#d4a820;width:26px;text-align:center;">'+c.initiative+'</span>'
+          +'<span style="font-size:13px;color:'+(ally?'#90c8ff':'#ff9090')+';flex:1;">'+esc(c.name)+(cur?' &lt;':'')+'</span>'
+          +'<div style="display:flex;align-items:center;gap:5px;"><div style="width:50px;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;"><div style="height:100%;width:'+hp+'%;background:'+hc+'"></div></div>'
+          +'<span style="font-size:11px;color:'+hc+';">'+c.hp+'/'+c.maxHp+'</span></div></div>';}).join('')+'</div>';
   }
-
-  function renderInventory(inv) {
-    if (!inv.length) return '';
-    return '<div class="card"><div style="font-family:Cinzel,serif;font-size:13px;letter-spacing:0.12em;color:#888;margin-bottom:10px;">💰 PARTY INVENTORY</div>'
-      + inv.map(item=>'<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><span style="font-size:16px;">'+(item.icon||'📦')+'</span><div><div style="font-size:13px;color:#d4b880;">'+item.name+'</div>'+(item.desc?'<div style="font-size:11px;color:#666;margin-top:1px;">'+item.desc+'</div>':'')+'</div></div>').join('')
-      + '</div>';
+  function renderInv(inv){
+    if(!inv.length) return '';
+    return '<div class="card"><div style="font-family:Cinzel,serif;font-size:12px;color:#555;margin-bottom:10px;">PARTY INVENTORY</div>'
+      +inv.map(item=>'<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><span style="font-size:18px;">'+(item.icon||'?')+'</span><div><div style="font-size:13px;color:#d4b880;">'+esc(item.name)+'</div>'+(item.desc?'<div style="font-size:11px;color:#555;">'+esc(item.desc)+'</div>':'')+'</div></div>').join('')+'</div>';
   }
-<\/script>
-</body>
-</html>`;
+<\/script></body></html>`;
 }
 
+function sendPlayerMessage(pcId) {
+  const pc = party.find(p => p.id === pcId);
+  if (!pc) return;
+  const msg = prompt('Message to ' + pc.name + ':', (appState.pvMessages && appState.pvMessages[pcId]) || '');
+  if (msg === null) return;
+  if (!appState.pvMessages) appState.pvMessages = {};
+  appState.pvMessages[pcId] = msg;
+  saveState();
+  showToast('Message sent to ' + pc.name, 'success');
+}
+function sendPartyMessage() {
+  const msg = prompt('Message to entire party:', appState.pvPartyMessage || '');
+  if (msg === null) return;
+  appState.pvPartyMessage = msg;
+  saveState();
+  showToast('Party message sent', 'success');
+}
 function renderParty() {
   const grid = document.getElementById('party-grid');
   if (!grid) return;
@@ -3496,13 +3525,14 @@ function renderParty() {
             </div>`;
           }).join('')}
         </div>` : ''}
-      <div style="display:flex;gap:6px;margin-top:12px;">
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:12px;">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
           <button onclick="togglePartyInspiration(${pc.id})" style="padding:4px 10px;background:${pc.inspiration?'rgba(255,224,0,0.2)':'rgba(255,255,255,0.05)'};border:1px solid ${pc.inspiration?'rgba(255,224,0,0.5)':'rgba(255,255,255,0.1)'};border-radius:4px;color:${pc.inspiration?'#ffe066':'var(--text-dim)'};font-size:12px;cursor:pointer;font-family:Cinzel,serif;letter-spacing:0.05em;" title="Toggle Inspiration">★ ${pc.inspiration?'INSPIRED':'Inspiration'}</button>
         </div>
         <button class="add-to-init-btn" onclick="addPCToInitiative(${pc.id})">⚔ Add to Initiative</button>
         <button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;" onclick="editPlayer(${pc.id})">✏ Edit</button>
         <button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;background:rgba(80,160,40,0.15);border-color:rgba(80,160,40,0.4);color:#8fd050;" onclick="levelUp(${pc.id})">⬆ Level Up</button>
+        <button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;color:var(--blood-light);border-color:rgba(139,26,26,0.4);" onclick="sendPlayerMessage(${pc.id})" title="Message player">📨</button>
         <button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;color:var(--blood-light);border-color:rgba(139,26,26,0.4);" onclick="deletePlayer(${pc.id})">✕</button>
       </div>
     </div>`;
@@ -5167,54 +5197,211 @@ function clearDiceHistory() {
 // ============================================================
 const MAGIC_ITEMS = {
   common: [
-    {name:'Healing Potion',desc:'Restores 2d4+2 HP',icon:'🧪',value:'50 gp'},
-    {name:'Potion of Climbing',desc:'Climb speed = walk speed for 1 hour',icon:'🧪',value:'75 gp'},
-    {name:'Cantrip Scroll',desc:'Random cantrip spell scroll',icon:'📜',value:'25 gp'},
-    {name:'Sending Stones (pair)',desc:'Communicate once per day',icon:'💎',value:'200 gp'},
-    {name:'Bag of Ball Bearings',desc:'Covers 10ft, creatures must make DC 10 Dex',icon:'💰',value:'1 gp'},
-    {name:'Alchemy Jug',desc:'Produces various mundane liquids',icon:'🏺',value:'180 gp'},
-    {name:'Rope of Mending',desc:'Self-repairs if cut',icon:'🪢',value:'50 gp'},
+    {name:"Healing Potion",desc:"Restores 2d4+2 HP. Tastes faintly of cherries.",icon:"🧪",value:"50 gp"},
+    {name:"Greater Healing Potion",desc:"Restores 4d4+4 HP. A warm, glowing red liquid.",icon:"🧪",value:"150 gp"},
+    {name:"Superior Healing Potion",desc:"Restores 8d4+8 HP. Thick dark crimson, smells of iron.",icon:"🧪",value:"500 gp"},
+    {name:"Potion of Climbing",desc:"Climb speed equals walk speed for 1 hour.",icon:"🧪",value:"75 gp"},
+    {name:"Potion of Water Breathing",desc:"Breathe underwater for 1 hour. Tastes of salt and seaweed.",icon:"🧪",value:"180 gp"},
+    {name:"Potion of Animal Friendship",desc:"Cast Animal Friendship (DC 13) for 1 hour.",icon:"🧪",value:"100 gp"},
+    {name:"Potion of Growth",desc:"Grow to Large size for 1d4 hours. Melee damage +1d4.",icon:"🧪",value:"270 gp"},
+    {name:"Potion of Heroism",desc:"Gain 10 temp HP and immunity to the Frightened condition for 1 hour.",icon:"🧪",value:"180 gp"},
+    {name:"Potion of Resistance",desc:"Resistance to one damage type for 1 hour. Roll or choose.",icon:"🧪",value:"300 gp"},
+    {name:"Cantrip Scroll",desc:"A single-use scroll containing a random cantrip.",icon:"📜",value:"25 gp"},
+    {name:"1st-Level Spell Scroll",desc:"Single use. One 1st-level spell. Arcana DC 10 to read if not on class list.",icon:"📜",value:"75 gp"},
+    {name:"2nd-Level Spell Scroll",desc:"Single use. One 2nd-level spell. Arcana DC 12 to read.",icon:"📜",value:"150 gp"},
+    {name:"3rd-Level Spell Scroll",desc:"Single use. One 3rd-level spell. Arcana DC 15 to read.",icon:"📜",value:"300 gp"},
+    {name:"Sending Stones (pair)",desc:"Touch and speak up to 25 words; the paired stone holder hears instantly.",icon:"🪨",value:"200 gp"},
+    {name:"Alchemy Jug",desc:"Produces acid, beer, honey, oil, vinegar, or water once per day.",icon:"🏺",value:"400 gp"},
+    {name:"Bag of Holding",desc:"Holds 500 lbs in 64 cubic feet. Always weighs 15 lbs.",icon:"👜",value:"4000 gp"},
+    {name:"Rope of Climbing",desc:"60-ft magical rope. Animates on command. Holds 3,000 lbs.",icon:"🪢",value:"2000 gp"},
+    {name:"Driftglobe",desc:"Glows bright light 20 ft on command. Floats beside you.",icon:"🔮",value:"750 gp"},
+    {name:"Goggles of Night",desc:"Darkvision out to 60 ft while worn.",icon:"🥽",value:"1500 gp"},
+    {name:"Hat of Disguise",desc:"Cast Disguise Self at will while wearing it.",icon:"🎩",value:"2000 gp"},
+    {name:"Lantern of Revealing",desc:"Bright light 30 ft, dim 60 ft. Invisible creatures become visible in the light.",icon:"🏮",value:"5000 gp"},
+    {name:"Mariners Armor",desc:"Armor (any). Your swim speed equals your walk speed.",icon:"🛡",value:"1500 gp"},
+    {name:"Mystery Key",desc:"A small key with no known lock. 5% chance it opens any lock tried.",icon:"🗝",value:"100 gp"},
+    {name:"Wand of Pyrotechnics",desc:"7 charges. Fire a burst of colorful harmless sparks. Regains 1d6+1 at dawn.",icon:"🪄",value:"400 gp"},
+    {name:"Wand of Secrets",desc:"3 charges. Points toward nearest secret door within 30 ft.",icon:"🪄",value:"1500 gp"},
   ],
   uncommon: [
-    {name:'Bag of Holding',desc:'Portable extradimensional space, 500 lb capacity',icon:'💼',value:'500 gp'},
-    {name:'+1 Longsword',desc:'+1 bonus to attack and damage rolls',icon:'⚔️',value:'1,000 gp'},
-    {name:'Cloak of Protection',desc:'+1 to AC and saving throws',icon:'🧥',value:'750 gp'},
-    {name:'Boots of Elvenkind',desc:'Advantage on Stealth checks',icon:'👢',value:'500 gp'},
-    {name:'Gauntlets of Ogre Power',desc:'STR becomes 19 while worn',icon:'🧤',value:'1,500 gp'},
-    {name:'Immovable Rod',desc:'Can be fixed in place with a button',icon:'🔱',value:'500 gp'},
-    {name:'Wand of Magic Missiles',desc:'7 charges, 1–3 magic missiles per charge',icon:'🪄',value:'800 gp'},
-    {name:'Hat of Disguise',desc:'Cast Disguise Self at will',icon:'🎩',value:'900 gp'},
+    {name:"Amulet of Proof Against Detection",desc:"Cannot be located by divination magic or scried upon. Attunement.",icon:"📿",value:"20000 gp"},
+    {name:"Boots of Elvenkind",desc:"Advantage on Stealth checks relying on sound. Move in total silence.",icon:"👢",value:"2500 gp"},
+    {name:"Boots of Striding and Springing",desc:"Walk speed minimum 30 ft. Jump distances are tripled.",icon:"👢",value:"5000 gp"},
+    {name:"Bracers of Archery",desc:"+2 bonus to attack rolls with longbows and shortbows.",icon:"💪",value:"1500 gp"},
+    {name:"Brooch of Shielding",desc:"Resistance to force damage. Immune to Magic Missile spell.",icon:"📿",value:"7500 gp"},
+    {name:"Broom of Flying",desc:"Fly at 50 ft speed. Responds to voice commands.",icon:"🧹",value:"8000 gp"},
+    {name:"Cloak of Elvenkind",desc:"Advantage on Stealth. Observers have disadvantage on Perception vs you.",icon:"🧥",value:"5000 gp"},
+    {name:"Cloak of Protection",desc:"+1 to AC and all saving throws. Requires attunement.",icon:"🧥",value:"3500 gp"},
+    {name:"Dimensional Shackles",desc:"A restrained creature cannot teleport or travel to other planes.",icon:"⛓",value:"25000 gp"},
+    {name:"Dust of Disappearance",desc:"Throw at a creature to make it invisible for 2d4 minutes. One use.",icon:"✨",value:"300 gp"},
+    {name:"Efficient Quiver",desc:"Three compartments. Holds 60 arrows, 18 javelins, and 6 staves.",icon:"🪃",value:"1800 gp"},
+    {name:"Eyes of Charming",desc:"3 charges. Cast Charm Person (DC 13). Regains 1d3 charges at dawn.",icon:"👁",value:"3000 gp"},
+    {name:"Gauntlets of Ogre Power",desc:"Your STR score becomes 19 while wearing these.",icon:"🥊",value:"8000 gp"},
+    {name:"Gem of Brightness",desc:"50 charges. Spend 1 for a cone of light, 10 for a blinding burst.",icon:"💎",value:"5000 gp"},
+    {name:"Headband of Intellect",desc:"Your INT score becomes 19 while wearing this.",icon:"👑",value:"8000 gp"},
+    {name:"Helm of Telepathy",desc:"Read surface thoughts (DC 13). Cast Suggestion once per day.",icon:"⛑",value:"15000 gp"},
+    {name:"+1 Longsword",desc:"Finely balanced steel. +1 to all attack and damage rolls.",icon:"⚔",value:"1000 gp"},
+    {name:"+1 Shortsword",desc:"Quick and deadly. +1 to all attack and damage rolls.",icon:"⚔",value:"1000 gp"},
+    {name:"+1 Warhammer",desc:"Heavy and magical. +1 to all attack and damage rolls.",icon:"🔨",value:"1000 gp"},
+    {name:"+1 Shortbow",desc:"Arrows fly with supernatural accuracy. +1 to attack and damage.",icon:"🏹",value:"1000 gp"},
+    {name:"+1 Shield",desc:"A sturdy enchanted shield. +1 to AC stacking with base shield bonus.",icon:"🛡",value:"1500 gp"},
+    {name:"+1 Chain Mail",desc:"Articulated rings of enchanted steel. +1 AC.",icon:"🛡",value:"1500 gp"},
+    {name:"Mithral Armor",desc:"Medium or heavy armor only. Lightweight mithral; no Stealth disadvantage.",icon:"🛡",value:"3000 gp"},
+    {name:"Necklace of Adaptation",desc:"Breathe normally in any environment. Advantage vs inhaled poisons.",icon:"📿",value:"1500 gp"},
+    {name:"Pearl of Power",desc:"Once per day, recover one expended spell slot of up to 3rd level.",icon:"🔮",value:"6000 gp"},
+    {name:"Periapt of Wound Closure",desc:"Stabilize automatically at 0 HP. Death saving throws at advantage.",icon:"📿",value:"5000 gp"},
+    {name:"Ring of Jumping",desc:"Bonus action: cast Jump on yourself. Triple your jump distance.",icon:"💍",value:"3000 gp"},
+    {name:"Ring of Mind Shielding",desc:"Immune to magic that detects emotions or reads thoughts.",icon:"💍",value:"16000 gp"},
+    {name:"Ring of Swimming",desc:"You gain a swim speed of 40 ft.",icon:"💍",value:"3000 gp"},
+    {name:"Ring of Water Walking",desc:"Walk across the surface of any liquid as if it were solid ground.",icon:"💍",value:"1500 gp"},
+    {name:"Slippers of Spider Climbing",desc:"Climb walls and ceilings. Both hands must remain free.",icon:"👟",value:"5000 gp"},
+    {name:"Stone of Good Luck",desc:"+1 bonus to all ability checks and saving throws while carried.",icon:"🪨",value:"4200 gp"},
+    {name:"Wand of Magic Missiles",desc:"7 charges. Spend 1-3 charges to cast Magic Missile at that spell level.",icon:"🪄",value:"9000 gp"},
+    {name:"Winged Boots",desc:"Sprout wings and fly at your walk speed. Up to 4 hours per day.",icon:"👢",value:"8000 gp"},
   ],
   rare: [
-    {name:'+2 Longsword',desc:'+2 bonus to attack and damage rolls',icon:'⚔️',value:'4,000 gp'},
-    {name:'Ring of Protection',desc:'+1 to AC and all saving throws',icon:'💍',value:'3,500 gp'},
-    {name:'Amulet of Health',desc:'CON becomes 19 while worn',icon:'📿',value:'8,000 gp'},
-    {name:'Belt of Giant Strength (Hill)',desc:'STR becomes 21 while worn',icon:'🧤',value:'12,000 gp'},
-    {name:'Wings of Flying',desc:'30-min flying speed (30 ft)',icon:'🪶',value:'10,000 gp'},
-    {name:'Necklace of Fireballs',desc:'1d6+3 beads, each explodes for 10d6 fire',icon:'🔮',value:'8,000 gp'},
-    {name:'Staff of Healing',desc:'10 charges: Cure Wounds, Lesser Restoration, Mass Cure Wounds',icon:'🪄',value:'12,000 gp'},
+    {name:"Animated Shield",desc:"Bonus action: shield wields itself and hovers, freeing your hand for 1 minute.",icon:"🛡",value:"10000 gp"},
+    {name:"Armor of Resistance",desc:"Resistance to one damage type determined when the armor was crafted.",icon:"🛡",value:"18000 gp"},
+    {name:"Belt of Dwarvenkind",desc:"CON +2 (max 20). Darkvision 60 ft. Advantage on saves vs poison.",icon:"👑",value:"10000 gp"},
+    {name:"Boots of Levitation",desc:"Cast Levitate on yourself at will while wearing these.",icon:"👢",value:"4000 gp"},
+    {name:"Boots of Speed",desc:"Bonus action: double walk speed. Opportunity attacks against you have disadvantage.",icon:"👢",value:"4000 gp"},
+    {name:"Cape of the Mountebank",desc:"Cast Dimension Door once per day. Leaves behind a whiff of brimstone.",icon:"🧥",value:"8000 gp"},
+    {name:"Carpet of Flying (3x5 ft)",desc:"Fly at 60 ft speed. Carries up to 200 lbs.",icon:"🪄",value:"10000 gp"},
+    {name:"+2 Weapon",desc:"Masterwork enchantment. +2 bonus to all attack and damage rolls.",icon:"⚔",value:"4000 gp"},
+    {name:"+2 Shield",desc:"Superior protection. +2 AC bonus stacking with base shield.",icon:"🛡",value:"6000 gp"},
+    {name:"Cloak of Displacement",desc:"Attackers have disadvantage on hits against you unless you took damage this turn.",icon:"🧥",value:"60000 gp"},
+    {name:"Flame Tongue Longsword",desc:"Speaks a command word to ignite blade. Deals +2d6 fire damage on each hit.",icon:"⚔",value:"5000 gp"},
+    {name:"Folding Boat",desc:"A 12-inch box that expands into a rowboat or keelboat on command.",icon:"⛵",value:"3000 gp"},
+    {name:"Gem of Seeing",desc:"3 charges. See through illusions and spot hidden creatures for 10 minutes.",icon:"💎",value:"32000 gp"},
+    {name:"Giant Slayer Sword",desc:"+1 magic blade. Against giants: +2d6 damage and DC 15 Str or knocked prone.",icon:"⚔",value:"8000 gp"},
+    {name:"Glamoured Studded Leather",desc:"+1 AC. Bonus action: change its appearance to look like any other armor.",icon:"🛡",value:"2000 gp"},
+    {name:"Horn of Blasting",desc:"30-ft cone: 5d6 thunder, Con DC 15 or deafened for 1 min. Shatters on a 1.",icon:"📯",value:"4500 gp"},
+    {name:"Ioun Stone (Protection)",desc:"Orbits your head. Grants +1 bonus to AC.",icon:"🔮",value:"1200 gp"},
+    {name:"Ioun Stone (Sustenance)",desc:"Orbits your head. You no longer need to eat or drink.",icon:"🔮",value:"5000 gp"},
+    {name:"Ioun Stone (Awareness)",desc:"Orbits your head. You cannot be surprised.",icon:"🔮",value:"12000 gp"},
+    {name:"Javelin of Lightning",desc:"Throw it: 4d6 lightning damage in a 5x120 ft line. Regains power at dawn.",icon:"⚡",value:"1500 gp"},
+    {name:"Mantle of Spell Resistance",desc:"Advantage on all saving throws against spells while wearing this.",icon:"🧥",value:"30000 gp"},
+    {name:"Necklace of Fireballs",desc:"Has 1-9 beads. Throw a bead to cast Fireball (DC 15) at the corresponding level.",icon:"📿",value:"750 gp/bead"},
+    {name:"Portable Hole",desc:"A 6-ft diameter, 10-ft deep extradimensional space folded into a cloth disc.",icon:"⚫",value:"8000 gp"},
+    {name:"Potion of Flying",desc:"Fly at your walk speed for 1 hour. If it ends while airborne, you fall.",icon:"🧪",value:"500 gp"},
+    {name:"Potion of Invisibility",desc:"Become invisible for 1 hour or until you attack or cast a spell.",icon:"🧪",value:"180 gp"},
+    {name:"Ring of Feather Falling",desc:"When falling, descend 60 ft per round and take no damage on landing.",icon:"💍",value:"2000 gp"},
+    {name:"Ring of Free Action",desc:"Difficult terrain costs no extra movement. Cannot be magically paralyzed or restrained.",icon:"💍",value:"8000 gp"},
+    {name:"Ring of Protection",desc:"+1 bonus to AC and all saving throws. Requires attunement.",icon:"💍",value:"3500 gp"},
+    {name:"Ring of Spell Storing",desc:"Stores up to 5 spell levels. Attuned wearer may cast any stored spell.",icon:"💍",value:"24000 gp"},
+    {name:"Robe of Useful Items",desc:"Has 4d4+2 patches: rope, iron door, ladder, rowboat, window, and more.",icon:"🥻",value:"3000 gp"},
+    {name:"Staff of the Python",desc:"Command it to become a giant constrictor snake. Returns to staff form on order.",icon:"🪄",value:"6000 gp"},
+    {name:"Staff of the Woodlands",desc:"10 charges. Barkskin, Pass Without Trace, Speak with Animals, Wall of Thorns.",icon:"🌲",value:"16000 gp"},
+    {name:"Sun Blade",desc:"+2 longsword. Emits sunlight 15 ft bright, 15 ft dim. +1d8 radiant vs undead.",icon:"⚔",value:"50000 gp"},
+    {name:"Sword of Life Stealing",desc:"On a critical hit vs a living creature: +10 damage and you gain 10 temp HP.",icon:"⚔",value:"7500 gp"},
+    {name:"Wand of Fireballs",desc:"7 charges. Cast Fireball (DC 15). Regains 1d6+1 charges at dawn.",icon:"🪄",value:"12000 gp"},
+    {name:"Wand of Lightning Bolts",desc:"7 charges. Cast Lightning Bolt (DC 15). Regains 1d6+1 charges at dawn.",icon:"🪄",value:"12000 gp"},
+    {name:"Wand of Wonder",desc:"7 charges. Roll d100 for a wild random magical effect. Truly unpredictable.",icon:"🪄",value:"6000 gp"},
+    {name:"Wings of Flying",desc:"Bonus action: grow bird or bat wings and fly at 60 ft speed for 1 hour.",icon:"🪶",value:"2000 gp"},
   ],
   very_rare: [
-    {name:'+3 Longsword',desc:'+3 bonus to attack and damage rolls',icon:'⚔️',value:'24,000 gp'},
-    {name:'Helm of Teleportation',desc:'3 charges: Teleport',icon:'⛑️',value:'32,000 gp'},
-    {name:'Cloak of Invisibility',desc:'Become invisible while worn and hood raised',icon:'🧥',value:'80,000 gp'},
-    {name:'Staff of Power',desc:'20 charges, multiple powerful spells',icon:'🪄',value:'95,000 gp'},
-    {name:'Vorpal Sword',desc:'Decapitates on 20, ignores resistances',icon:'⚔️',value:'100,000 gp'},
+    {name:"+3 Weapon",desc:"Masterwork beyond compare. +3 bonus to all attack and damage rolls.",icon:"⚔",value:"16000 gp"},
+    {name:"+3 Shield",desc:"Exceptional magical protection. +3 AC bonus stacking with base shield.",icon:"🛡",value:"24000 gp"},
+    {name:"+3 Plate Armor",desc:"Legendary armor infused with abjuration magic. +3 bonus to AC.",icon:"🛡",value:"24000 gp"},
+    {name:"Armor of Invulnerability",desc:"Resistance to all non-magical damage. 10 min/day: immunity to non-magical damage.",icon:"🛡",value:"250000 gp"},
+    {name:"Belt of Fire Giant Strength",desc:"Your STR score becomes 25 while you wear this belt.",icon:"👑",value:"25000 gp"},
+    {name:"Belt of Frost Giant Strength",desc:"Your STR score becomes 23 while you wear this belt.",icon:"👑",value:"25000 gp"},
+    {name:"Cloak of Arachnida",desc:"Spider climb speed, immunity to webs, cast Web once per day.",icon:"🧥",value:"20000 gp"},
+    {name:"Dancing Sword",desc:"Bonus action: the sword flies and fights on its own for 1 minute.",icon:"⚔",value:"6000 gp"},
+    {name:"Dragon Scale Mail",desc:"+1 AC. Advantage on saves vs dragon breath. Resistance to that damage type.",icon:"🛡",value:"4000 gp"},
+    {name:"Holy Avenger",desc:"+3 sacred sword. +2d10 radiant vs fiends and undead. Aura grants advantage on saves.",icon:"⚔",value:"165000 gp"},
+    {name:"Ioun Stone (Agility)",desc:"Orbits your head. Your DEX score becomes 19.",icon:"🔮",value:"30000 gp"},
+    {name:"Ioun Stone (Fortitude)",desc:"Orbits your head. Your CON score becomes 19.",icon:"🔮",value:"30000 gp"},
+    {name:"Ioun Stone (Intellect)",desc:"Orbits your head. Your INT score becomes 19.",icon:"🔮",value:"30000 gp"},
+    {name:"Manual of Bodily Health",desc:"Read over 48 hrs: CON +2, max raised by 2. The book is mundane for 100 years after.",icon:"📚",value:"137500 gp"},
+    {name:"Manual of Gainful Exercise",desc:"Read over 48 hrs: STR +2, max raised by 2. Mundane for 100 years after.",icon:"📚",value:"137500 gp"},
+    {name:"Necklace of Prayer Beads",desc:"6 beads each castable once per day: Bless, Cure Wounds, Aid, Heal, Planar Ally, Wind Walk.",icon:"📿",value:"24000 gp"},
+    {name:"Potion of Storm Giant Strength",desc:"Your STR becomes 29 for 1 hour. Extraordinary physical power.",icon:"🧪",value:"2000 gp"},
+    {name:"Ring of Regeneration",desc:"Regain 1d6 HP every 10 minutes. Severed limbs regrow in 1d6+1 days.",icon:"💍",value:"12000 gp"},
+    {name:"Ring of Telekinesis",desc:"Cast Telekinesis at will as an action while wearing this ring.",icon:"💍",value:"18000 gp"},
+    {name:"Robe of Eyes",desc:"See in all directions 120 ft including invisible and ethereal. Advantage on Perception.",icon:"🥻",value:"30000 gp"},
+    {name:"Rod of Absorption",desc:"Absorb spells targeting you (max 50 spell levels). Use the energy to cast spells.",icon:"🔩",value:"50000 gp"},
+    {name:"Scimitar of Speed",desc:"+2 scimitar. As a bonus action you may make one additional attack with it.",icon:"⚔",value:"6000 gp"},
+    {name:"Spellguard Shield",desc:"Advantage on saves vs spells. Spell attack rolls against you have disadvantage.",icon:"🛡",value:"50000 gp"},
+    {name:"Staff of Fire",desc:"10 charges. Burning Hands, Fireball, Wall of Fire. Regains 1d6+4 charges at dawn.",icon:"🔥",value:"17000 gp"},
+    {name:"Staff of Frost",desc:"10 charges. Cone of Cold, Fog Cloud, Ice Storm, Wall of Ice.",icon:"❄",value:"17000 gp"},
+    {name:"Staff of Power",desc:"20 charges. Cone of Cold, Fireball, Globe of Invulnerability, Magic Missile, and more.",icon:"🪄",value:"90000 gp"},
+    {name:"Sword of Sharpness",desc:"On a hit deals an extra 14 damage. On a natural 20, severs a limb.",icon:"⚔",value:"6000 gp"},
+    {name:"Tome of Clear Thought",desc:"Read over 48 hrs: INT +2, max raised by 2. Mundane for 100 years after.",icon:"📚",value:"137500 gp"},
+    {name:"Tome of Understanding",desc:"Read over 48 hrs: WIS +2, max raised by 2. Mundane for 100 years after.",icon:"📚",value:"137500 gp"},
+    {name:"Wand of Binding",desc:"7 charges. Cast Hold Monster (DC 17) or Hold Person (DC 17). Recharges at dawn.",icon:"🪄",value:"9000 gp"},
+    {name:"Wand of Polymorph",desc:"7 charges. Cast Polymorph (save DC 15). Regains 1d6+1 charges at dawn.",icon:"🪄",value:"14000 gp"},
   ],
   legendary: [
-    {name:'Holy Avenger',desc:'+3 sword, 2d10 radiant vs undead/fiends, aura of protection',icon:'⚔️',value:'Priceless'},
-    {name:'Sphere of Annihilation',desc:'3-ft sphere of nothingness, destroys all matter',icon:'🌑',value:'Priceless'},
-    {name:'Talisman of Pure Good',desc:'Destroys evil creatures on touch',icon:'✨',value:'Priceless'},
-    {name:'Robe of the Archmagi',desc:'+2 spell save DC, advantage on magic resistance',icon:'🧥',value:'Priceless'},
-    {name:'Deck of Many Things',desc:'13-22 cards, each dramatically alters fate',icon:'🃏',value:'Priceless'},
-  ]
+    {name:"Armor of Etherealness",desc:"Enter the Ethereal Plane at will for up to 1 hour per use. Recharges at dawn.",icon:"🛡",value:"250000 gp"},
+    {name:"Belt of Storm Giant Strength",desc:"Your STR score becomes 29. The absolute pinnacle of mortal strength.",icon:"👑",value:"200000 gp"},
+    {name:"Cloak of Invisibility",desc:"Pull the hood up to become invisible. 2 hours of use per day; recharges at midnight.",icon:"🧥",value:"80000 gp"},
+    {name:"Deck of Many Things",desc:"Draw a card and destiny shifts: wishes, power, land, ruin, or death await.",icon:"🃏",value:"priceless"},
+    {name:"Defender Sword",desc:"+3 magic weapon. Transfer some or all of its attack bonus to your AC each turn.",icon:"⚔",value:"50000 gp"},
+    {name:"Eye and Hand of Vecna",desc:"Replace your own eye or hand to gain terrifying divine powers. Alignment shifts.",icon:"👁",value:"priceless"},
+    {name:"Hammer of Thunderbolts",desc:"+1 maul. Deals +1d6 thunder. Thrown form stuns on hit (Con DC 17). Giant bane.",icon:"🔨",value:"50000 gp"},
+    {name:"Luck Blade",desc:"+1 sword. Luck: reroll one d20 per day. Contains 1-3 Wish spells.",icon:"⚔",value:"60000 gp"},
+    {name:"Orb of Dragonkind",desc:"Allows control over dragons. All dragons within 40 miles sense when it is used.",icon:"🔮",value:"priceless"},
+    {name:"Ring of Djinni Summoning",desc:"Summon a djinni bound to serve loyally for up to 1 hour per day.",icon:"💍",value:"100000 gp"},
+    {name:"Ring of Invisibility",desc:"Become invisible at will. The effect ends only when you attack or cast.",icon:"💍",value:"50000 gp"},
+    {name:"Ring of Three Wishes",desc:"Cast the Wish spell up to three times. The ring crumbles after the last wish.",icon:"💍",value:"priceless"},
+    {name:"Robe of the Archmagi",desc:"+2 AC, advantage on saves vs spells, +2 to spell save DC and spell attack rolls.",icon:"🥻",value:"100000 gp"},
+    {name:"Scarab of Protection",desc:"+1 on saves vs spells. 12 charges to negate death effects. Immune to undead possession.",icon:"🪲",value:"36000 gp"},
+    {name:"Sphere of Annihilation",desc:"A 2-ft ball of utter nothingness. Destroys absolutely everything it contacts.",icon:"⚫",value:"priceless"},
+    {name:"Staff of the Magi",desc:"50 charges. Access to virtually every spell. If destroyed: retributive strike (50d6).",icon:"🪄",value:"160000 gp"},
+    {name:"Vorpal Sword",desc:"+3 magic sword. On a natural 20 against a Large or smaller target: the head is severed.",icon:"⚔",value:"priceless"},
+    {name:"Well of Many Worlds",desc:"Unfold it on the ground and a 6-ft portal opens to a chosen or random plane.",icon:"🌀",value:"priceless"},
+  ],
 };
 
 let lootSessionLog = [];
 let combatLog = [];
 
 
-function generateLoot() {
+  const MUNDANE_LOOT = [
+    {name:"Dagger (steel)",desc:"Standard iron dagger. Well-balanced, fits a boot.",icon:"🗡",value:"2 gp"},
+    {name:"Shortsword (worn)",desc:"The blade shows use but still holds an edge. Leather wrapped grip.",icon:"⚔",value:"8 gp"},
+    {name:"Handaxe (quality)",desc:"Balanced for throwing or hacking. Solid oak handle.",icon:"🪓",value:"5 gp"},
+    {name:"Crossbow Bolts (20)",desc:"Iron-tipped bolts packed in a leather quiver.",icon:"➡",value:"1 gp"},
+    {name:"Studded Leather Armor",desc:"Reinforced leather with iron rivets. Worn but serviceable.",icon:"🛡",value:"25 gp"},
+    {name:"Fine Wool Cloak",desc:"Deep crimson with a silver clasp. Minor moth damage at the hem.",icon:"🧥",value:"15 gp"},
+    {name:"Silk Scarf",desc:"Embroidered with a city emblem from a distant region.",icon:"🧣",value:"10 gp"},
+    {name:"Silver Ring (plain)",desc:"Unmarked band, slightly bent. Genuine silver.",icon:"💍",value:"5 gp"},
+    {name:"Gold Ring (plain)",desc:"Plain gold band. No markings. 18-karat.",icon:"💍",value:"20 gp"},
+    {name:"Copper Locket",desc:"Heart-shaped, opens to a tiny painted portrait of a stranger.",icon:"📿",value:"3 gp"},
+    {name:"Amber Pendant",desc:"A preserved insect inside golden amber. Hung on a braided cord.",icon:"📿",value:"15 gp"},
+    {name:"Bottle of Fine Wine",desc:"Sealed in wax. A mark from a distant vineyard.",icon:"🍷",value:"10 gp"},
+    {name:"Flask of Brandy",desc:"Strong and warming. Half-full in a battered pewter flask.",icon:"🥃",value:"5 gp"},
+    {name:"Wheel of Aged Cheese",desc:"Hard rind, sharp flavor, wrapped in cloth.",icon:"🧀",value:"2 gp"},
+    {name:"Jar of Honey (sealed)",desc:"Thick dark honey with herbal notes. Heavy ceramic jar.",icon:"🍯",value:"2 gp"},
+    {name:"Spice Pouch (saffron)",desc:"Rare saffron threads wrapped in linen. Very valuable for its weight.",icon:"🌿",value:"15 gp"},
+    {name:"Thieves Tools",desc:"Lockpicks, tension wrench, tiny mirror. Quality leather roll.",icon:"🔧",value:"25 gp"},
+    {name:"Healer Kit",desc:"Bandages, splints, and salve. 10 uses remaining.",icon:"🩹",value:"5 gp"},
+    {name:"Alchemist Supplies (partial)",desc:"Glass vials, mortar and pestle, assorted reagents. About 5 uses.",icon:"⚗",value:"25 gp"},
+    {name:"Tinker Tools",desc:"Small hammers, wires, screws, and bellows. Worn but complete.",icon:"🔩",value:"50 gp"},
+    {name:"Navigator Charts",desc:"Hand-drawn coastal charts. Slightly inaccurate but still useful.",icon:"🗺",value:"5 gp"},
+    {name:"Grappling Hook and Rope",desc:"Heavy iron hook with 50 ft of hempen rope. Well-used.",icon:"🪝",value:"2 gp"},
+    {name:"Hourglass (brass)",desc:"Tracks one hour. The sand runs slightly fast.",icon:"⏳",value:"25 gp"},
+    {name:"Mirror (steel, small)",desc:"Polished to a near-perfect reflective surface.",icon:"🪞",value:"5 gp"},
+    {name:"Magnifying Glass",desc:"A glass lens set in a carved bone frame. Good condition.",icon:"🔍",value:"100 gp"},
+    {name:"Ink and Quills",desc:"A vial of black ink and three goose quills.",icon:"🖊",value:"10 gp"},
+    {name:"Blank Journal",desc:"50 pages of vellum with a leather cover and brass clasp.",icon:"📓",value:"25 gp"},
+    {name:"Spell Formulary (partial)",desc:"A mage notebook on evocation theory. Several pages are missing.",icon:"📖",value:"50 gp"},
+    {name:"Trade Ledger",desc:"Lists debts, names, and quantities. Someone clearly wants this back.",icon:"📋",value:"10 gp"},
+    {name:"Wanted Poster",desc:"A rough woodcut portrait. 200 gp reward. The face looks familiar.",icon:"📜",value:"0 gp"},
+    {name:"Love Letter (coded)",desc:"Unsigned, written in a substitution cipher. The recipient must be important.",icon:"✉",value:"0 gp"},
+    {name:"Dungeon Map (partial)",desc:"Rough sketch of a nearby dungeon. Three rooms are labeled.",icon:"🗺",value:"20 gp"},
+    {name:"Ivory Chess Set",desc:"31 of 32 pieces. One pawn is missing. Stored in a rosewood box.",icon:"♟",value:"50 gp"},
+    {name:"Deck of Playing Cards",desc:"54 hand-illustrated cards. One has a faint hidden mark on the back.",icon:"🃏",value:"1 sp"},
+    {name:"Wind Chime (silver)",desc:"Seven silver tubes with a clear, pleasant tone. A faint calming aura.",icon:"🎵",value:"15 gp"},
+    {name:"Perfume (small bottle)",desc:"Bergamot and sandalwood. Enough for about 20 applications.",icon:"🌸",value:"25 gp"},
+    {name:"Bear Trap",desc:"Heavy serrated iron. Deals 1d4 piercing and restrains when triggered.",icon:"🪤",value:"2 gp"},
+    {name:"Vial of Unknown Liquid",desc:"Glows faintly in moonlight. No identifiable smell.",icon:"🧪",value:"unknown"},
+    {name:"Strange Coin (foreign)",desc:"Heavy, octagonal, with foreign script. No known mint.",icon:"🪙",value:"5 gp"},
+    {name:"Taxidermied Rat",desc:"Small, expertly done. Glass eyes. Someone kept this as a keepsake.",icon:"🐀",value:"1 gp"},
+  ];
+
+  function generateLoot() {
   const tier = parseInt(document.getElementById('loot-cr').value);
   const type = document.getElementById('loot-type').value;
 
@@ -5256,11 +5443,73 @@ function generateLoot() {
 
   // Gems/art by tier
   const gemTables = [
-    [{name:'Copper pieces (loose)',value:1,icon:'🪙'},{name:'Silver earring',value:5,icon:'💍'}],
-    [{name:'Malachite stone',value:10,icon:'💚'},{name:'Blue quartz',value:50,icon:'🔵'},{name:'Carved ivory statuette',value:25,icon:'🗿'}],
-    [{name:'Chrysoberyl',value:100,icon:'💛'},{name:'Gold art object',value:250,icon:'🏺'},{name:'Black pearl',value:500,icon:'⚫'}],
-    [{name:'Star ruby',value:1000,icon:'💎'},{name:'Emerald',value:1000,icon:'💚'},{name:'Diamond (small)',value:5000,icon:'💎'}],
-    [{name:'Diamond (large)',value:50000,icon:'💎'},{name:'Legendary artifact',value:0,icon:'✨'}],
+    [
+      {name:"Copper pieces (handful)",value:1,icon:"🪙"},
+      {name:"Tarnished silver coin",value:2,icon:"🪙"},
+      {name:"Polished river stone",value:3,icon:"🪨"},
+    ],
+    [
+      {name:"Malachite (green banding)",value:10,icon:"💚"},
+      {name:"Blue quartz",value:10,icon:"🔵"},
+      {name:"Obsidian shard",value:10,icon:"⚫"},
+      {name:"Lapis lazuli",value:10,icon:"🔵"},
+      {name:"Azurite (deep blue-green)",value:10,icon:"💙"},
+      {name:"Tiger eye (golden bands)",value:10,icon:"🟡"},
+      {name:"Turquoise (sky blue)",value:10,icon:"🩵"},
+      {name:"Silver earring (plain)",value:20,icon:"💍"},
+    ],
+    [
+      {name:"Bloodstone (dark with red flecks)",value:50,icon:"🔴"},
+      {name:"Carnelian (orange-red)",value:50,icon:"🟠"},
+      {name:"Moonstone (pale blue sheen)",value:50,icon:"🌙"},
+      {name:"Onyx (pure black bands)",value:50,icon:"⚫"},
+      {name:"Jasper (striated reds)",value:50,icon:"🔴"},
+      {name:"Star rose quartz",value:50,icon:"🌸"},
+      {name:"Carved ivory statuette",value:25,icon:"🗿"},
+      {name:"Gold ring (plain band)",value:75,icon:"💍"},
+    ],
+    [
+      {name:"Amber (insect trapped inside)",value:100,icon:"🟡"},
+      {name:"Amethyst (deep purple)",value:100,icon:"💜"},
+      {name:"Chrysoberyl (green-yellow)",value:100,icon:"💛"},
+      {name:"Coral (deep red)",value:100,icon:"🪸"},
+      {name:"Garnet (red-brown)",value:100,icon:"🔴"},
+      {name:"Jade (green or white)",value:100,icon:"🟢"},
+      {name:"Jet (pure black stone)",value:100,icon:"⚫"},
+      {name:"Pearl (freshwater)",value:100,icon:"⚪"},
+      {name:"Tourmaline (various colors)",value:100,icon:"🌈"},
+      {name:"Gold art object (small)",value:250,icon:"🏺"},
+    ],
+    [
+      {name:"Alexandrite (changes color in light)",value:500,icon:"✨"},
+      {name:"Aquamarine (pale blue-green)",value:500,icon:"🩵"},
+      {name:"Black pearl (deep lustre)",value:500,icon:"⚫"},
+      {name:"Peridot (olive green)",value:500,icon:"🟢"},
+      {name:"Topaz (golden yellow)",value:500,icon:"💛"},
+      {name:"Platinum ring (engraved sigil)",value:400,icon:"💍"},
+      {name:"Painted silk tapestry",value:250,icon:"🖼"},
+    ],
+    [
+      {name:"Black opal (dark with color play)",value:1000,icon:"🌌"},
+      {name:"Blue sapphire (deep blue)",value:1000,icon:"💙"},
+      {name:"Emerald (pure brilliant green)",value:1000,icon:"💚"},
+      {name:"Fire opal (bright orange)",value:1000,icon:"🔥"},
+      {name:"Star ruby (six-rayed asterism)",value:1000,icon:"⭐"},
+      {name:"Yellow sapphire (canary)",value:1000,icon:"💛"},
+      {name:"Noble gold signet ring",value:800,icon:"💍"},
+    ],
+    [
+      {name:"Black sapphire (near flawless)",value:5000,icon:"🖤"},
+      {name:"Diamond (clear, 1 carat)",value:5000,icon:"💎"},
+      {name:"Jacinth (deep fiery orange)",value:5000,icon:"🔴"},
+      {name:"Ruby (deep red)",value:5000,icon:"❤"},
+      {name:"Bejeweled crown (minor)",value:6000,icon:"👑"},
+    ],
+    [
+      {name:"Diamond (flawless, 5+ carat)",value:50000,icon:"💎"},
+      {name:"Ruby (exceptional, pigeon blood)",value:25000,icon:"❤"},
+      {name:"Legendary artifact (sealed chest)",value:0,icon:"✨"},
+    ],
   ];
   const gemCount = rng(tier === 0 ? 0 : 1, tier + 1);
   const gemPool = gemTables[tier];
@@ -5270,8 +5519,14 @@ function generateLoot() {
     if (g.value) totalGP += g.value;
   }
 
-  // Build loot entries list for checkboxes
-  const rarityClass = { common:'loot-rarity-common', uncommon:'loot-rarity-uncommon', rare:'loot-rarity-rare', very_rare:'loot-rarity-very-rare', legendary:'loot-rarity-legendary', gem:'' };
+  // Add mundane goods
+  if (typeof MUNDANE_LOOT !== "undefined" && MUNDANE_LOOT.length) {
+    const mCount = type === "hoard" ? Math.floor(Math.random()*3)+2 : (Math.random() < 0.65 ? 1 : 0);
+    const mShuf = [...MUNDANE_LOOT].sort(() => Math.random()-0.5);
+    for (let mi = 0; mi < mCount && mi < mShuf.length; mi++) items.push({...mShuf[mi], rarity:"mundane"});
+  }
+    // Build loot entries list for checkboxes
+  const rarityClass = { common:'loot-rarity-common', uncommon:'loot-rarity-uncommon', rare:'loot-rarity-rare', very_rare:'loot-rarity-very-rare', legendary:'loot-rarity-legendary', gem:"", mundane:"" };
   // Add magic item market values to total
   items.forEach(it => {
     if (it.value && it.value !== 'Priceless') {
