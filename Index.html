@@ -1462,17 +1462,7 @@
   /* Spell slot pip hover */
   .spell-pip:hover { transform: scale(1.2); }
 
-
-  /* ── Loot hover tooltip ── */
-  #loot-tip {
-    display:none; position:fixed; z-index:99999; pointer-events:none;
-    width:260px; padding:14px 16px;
-    background:linear-gradient(135deg,rgba(18,10,3,0.98),rgba(10,5,1,1));
-    border:1px solid rgba(212,175,55,0.5); border-radius:8px;
-    box-shadow:0 8px 40px rgba(0,0,0,0.9);
-    font-family:'Crimson Text',serif;
-  }
-  </style>
+</style>
 
 <!-- Firebase -->
 <script type="module">
@@ -1665,7 +1655,7 @@
   }
 </script>
 </head>
-<body style="background:#1a0f0a;color:#f0e6cc;"><div id="loot-tip"></div>
+<body style="background:#1a0f0a;color:#f0e6cc;">
 
 <!-- ===== PERSISTENT TOP BAR ===== -->
 <div id="top-bar">
@@ -1724,14 +1714,14 @@
 
 <!-- ===== NAV TABS ===== -->
 <nav class="nav-tabs">
-  <div class="nav-tab" onclick="switchTab('party')"><span class="tab-icon">🧝</span>Party</div>
-  <div class="nav-tab active" onclick="switchTab('initiative')"><span class="tab-icon">⚔</span>Initiative</div>
-  <div class="nav-tab" onclick="switchTab('npcs')"><span class="tab-icon">🧙</span>NPCs</div>
-  <div class="nav-tab" onclick="switchTab('locations')"><span class="tab-icon">🏰</span>Locations</div>
-  <div class="nav-tab" onclick="switchTab('sounds')"><span class="tab-icon">🎵</span>Sound</div>
-  <div class="nav-tab" onclick="switchTab('reference')"><span class="tab-icon">📜</span>Rules</div>
-  <div class="nav-tab" onclick="switchTab('notes')"><span class="tab-icon">🪶</span>Notes</div>
-  <div class="nav-tab" onclick="switchTab('loot')"><span class="tab-icon">💰</span>Loot</div>
+  <div class="nav-tab" onclick="switchTab('party',this)"><span class="tab-icon">🧝</span>Party</div>
+  <div class="nav-tab active" onclick="switchTab('initiative',this)"><span class="tab-icon">⚔</span>Initiative</div>
+  <div class="nav-tab" onclick="switchTab('npcs',this)"><span class="tab-icon">🧙</span>NPCs</div>
+  <div class="nav-tab" onclick="switchTab('locations',this)"><span class="tab-icon">🏰</span>Locations</div>
+  <div class="nav-tab" onclick="switchTab('sounds',this)"><span class="tab-icon">🎵</span>Sound</div>
+  <div class="nav-tab" onclick="switchTab('reference',this)"><span class="tab-icon">📜</span>Rules</div>
+  <div class="nav-tab" onclick="switchTab('notes',this)"><span class="tab-icon">🪶</span>Notes</div>
+  <div class="nav-tab" onclick="switchTab('loot',this)"><span class="tab-icon">💰</span>Loot</div>
 </nav>
 
 <!-- ============================================================ -->
@@ -2532,11 +2522,11 @@ let locations = [];
 // ============================================================
 // TABS
 // ============================================================
-function switchTab(name) {
+function switchTab(name, el) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  event.currentTarget.classList.add('active');
+  if (el) el.classList.add('active');
 }
 
 // ============================================================
@@ -3372,50 +3362,6 @@ function buildPlayerViewHTML(uid) {
 </div>
 <div id="pv-main"><div style="text-align:center;color:#555;padding:40px 0;font-style:italic;">Loading...</div></div>
 <script type="module">
-// ── Loot hover tooltip ──────────────────────────────────────────
-window._lootEntries = [];
-window.showLootTip = function(el, idx) {
-  var e = window._lootEntries[idx];
-  var tip = document.getElementById('loot-tip');
-  if (!e || !tip) return;
-  var RC = {common:'#aaa',uncommon:'#1eff00',rare:'#4db8ff',very_rare:'#c060ff',legendary:'#ff8c00',gem:'#ffe566'};
-  var rarColor = RC[e.rarity] || '#ccc';
-  var s10 = 'font-size:10px;letter-spacing:.12em;text-transform:uppercase;font-family:Cinzel,serif;';
-  var rarLine = (e.rarity && e.rarity !== 'gem')
-    ? '<div style="' + s10 + 'color:' + rarColor + ';margin-bottom:2px;">' + e.rarity.replace('_',' ') + '</div>' : '';
-  var gemLine = (e.rarity === 'gem')
-    ? '<div style="' + s10 + 'color:#ffe566;margin-bottom:2px;">' + (e.type||'Gem / Art Object') + '</div>' : '';
-  var typeLine = (e.type && e.rarity !== 'gem')
-    ? '<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-family:Cinzel,serif;color:#a89060;margin-bottom:6px;">' + e.type + '</div>' : '';
-  var valLine = e.value
-    ? '<div style="font-size:11px;color:#d4a820;font-family:Cinzel,serif;border-top:1px solid rgba(212,175,55,.2);padding-top:6px;margin-top:4px;">⚖ Market value: ' + e.value + '</div>' : '';
-  tip.innerHTML =
-    '<div style="font-family:Cinzel,serif;font-size:14px;font-weight:700;color:#d4a820;margin-bottom:3px;">' + (e.icon||'') + ' ' + e.name + '</div>' +
-    rarLine + gemLine + typeLine +
-    '<div style="height:1px;background:rgba(212,175,55,.2);margin:5px 0;"></div>' +
-    '<div style="font-size:13px;color:#d4b880;line-height:1.55;margin-bottom:4px;">' + (e.desc||'No description.') + '</div>' +
-    valLine;
-  tip.style.display = 'block';
-  window._placeLootTip(el);
-};
-window._placeLootTip = function(el) {
-  var tip = document.getElementById('loot-tip');
-  if (!tip) return;
-  var r = el.getBoundingClientRect();
-  var tipW = 260, tipH = tip.offsetHeight || 150;
-  var left = r.right + 12;
-  var top  = r.top + (r.height / 2) - (tipH / 2);
-  if (left + tipW > window.innerWidth - 8) left = r.left - tipW - 12;
-  top = Math.max(8, Math.min(top, window.innerHeight - tipH - 8));
-  tip.style.left = left + 'px';
-  tip.style.top  = top  + 'px';
-};
-window.hideLootTip = function() {
-  var tip = document.getElementById('loot-tip');
-  if (tip) tip.style.display = 'none';
-};
-// ────────────────────────────────────────────────────────────────
-
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   const app = initializeApp({apiKey:"AIzaSyAHeoD6eKkxm7ezwvBcEt5W6S7nVqZYknY",authDomain:"dm-grimoire-20df0.firebaseapp.com",projectId:"dm-grimoire-20df0"});
@@ -3550,14 +3496,14 @@ function renderParty() {
             </div>`;
           }).join('')}
         </div>` : ''}
-      <div style="display:flex;gap:6px;margin-top:12px;">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
-          <button onclick="togglePartyInspiration(${pc.id})" style="padding:4px 10px;background:${pc.inspiration?'rgba(255,224,0,0.2)':'rgba(255,255,255,0.05)'};border:1px solid ${pc.inspiration?'rgba(255,224,0,0.5)':'rgba(255,255,255,0.1)'};border-radius:4px;color:${pc.inspiration?'#ffe066':'var(--text-dim)'};font-size:12px;cursor:pointer;font-family:Cinzel,serif;letter-spacing:0.05em;" title="Toggle Inspiration">★ ${pc.inspiration?'INSPIRED':'Inspiration'}</button>
-        </div>
-        <button class="add-to-init-btn" onclick="addPCToInitiative(${pc.id})">⚔ Add to Initiative</button>
-        <button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;" onclick="editPlayer(${pc.id})">✏ Edit</button>
-        <button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;background:rgba(80,160,40,0.15);border-color:rgba(80,160,40,0.4);color:#8fd050;" onclick="levelUp(${pc.id})">⬆ Level Up</button>
-        <button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;color:var(--blood-light);border-color:rgba(139,26,26,0.4);" onclick="deletePlayer(${pc.id})">✕</button>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:12px;">
+        <button onclick="togglePartyInspiration(${pc.id})" style="padding:3px 8px;background:${pc.inspiration?\'rgba(255,224,0,0.18)\':\'rgba(255,255,255,0.05)\'};border:1px solid ${pc.inspiration?\'rgba(255,224,0,0.5)\':\'rgba(255,255,255,0.12)\'};border-radius:4px;color:${pc.inspiration?\'#ffe066\':\'#888\'};font-size:11px;cursor:pointer;font-family:Cinzel,serif;">★ ${pc.inspiration?\'Inspired\':\'Insp.\'}</button>
+        <button onclick="addPCToInitiative(${pc.id})" style="padding:3px 8px;background:rgba(212,175,55,0.1);border:1px solid rgba(212,175,55,0.3);border-radius:4px;color:#d4a820;font-size:11px;cursor:pointer;font-family:Cinzel,serif;">⚔ Init</button>
+        <button onclick="editPlayer(${pc.id})" style="padding:3px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#aaa;font-size:11px;cursor:pointer;font-family:Cinzel,serif;">✏ Edit</button>
+        <button onclick="shortRest(${pc.id})" style="padding:3px 8px;background:rgba(60,120,200,0.15);border:1px solid rgba(60,120,200,0.4);border-radius:4px;color:#90b8ff;font-size:11px;cursor:pointer;font-family:Cinzel,serif;">☽ Short</button>
+        <button onclick="longRest(${pc.id})" style="padding:3px 8px;background:rgba(100,60,180,0.15);border:1px solid rgba(100,60,180,0.4);border-radius:4px;color:#c090ff;font-size:11px;cursor:pointer;font-family:Cinzel,serif;">☀ Long</button>
+        <button onclick="levelUp(${pc.id})" style="padding:3px 8px;background:rgba(80,160,40,0.15);border:1px solid rgba(80,160,40,0.4);border-radius:4px;color:#8fd050;font-size:11px;cursor:pointer;font-family:Cinzel,serif;">⬆ Lvl</button>
+        <button onclick="deletePlayer(${pc.id})" style="padding:3px 8px;background:rgba(139,26,26,0.15);border:1px solid rgba(139,26,26,0.4);border-radius:4px;color:#c06060;font-size:11px;cursor:pointer;font-family:Cinzel,serif;">✕</button>
       </div>
     </div>`;
   }).join('');
@@ -5222,144 +5168,109 @@ function clearDiceHistory() {
 const MAGIC_ITEMS = {
   common: [
     {name:'Healing Potion',desc:'Restores 2d4+2 HP.',icon:'🧪',value:'50 gp',type:'Potion'},
-    {name:'Potion of Climbing',desc:'Gain a climbing speed equal to walking speed for 1 hour.',icon:'🧪',value:'75 gp',type:'Potion'},
-    {name:'Potion of Growth',desc:'Grow to Large size and gain +1d4 STR for 1d4 hours.',icon:'🧪',value:'150 gp',type:'Potion'},
-    {name:'Potion of Water Breathing',desc:'Breathe underwater for 1 hour.',icon:'🧪',value:'100 gp',type:'Potion'},
-    {name:'Potion of Fire Breath',desc:'3 uses — exhale 3d6 fire as a bonus action.',icon:'🧪',value:'150 gp',type:'Potion'},
-    {name:'Potion of Resistance',desc:'Gain resistance to one damage type for 1 hour.',icon:'🧪',value:'300 gp',type:'Potion'},
-    {name:'Spell Scroll (Cantrip)',desc:'Contains one random cantrip. Destroyed after use.',icon:'📜',value:'25 gp',type:'Scroll'},
-    {name:'Spell Scroll (1st Level)',desc:'Contains one random 1st-level spell.',icon:'📜',value:'75 gp',type:'Scroll'},
-    {name:'Spell Scroll (2nd Level)',desc:'Contains one random 2nd-level spell.',icon:'📜',value:'150 gp',type:'Scroll'},
-    {name:'Alchemy Jug',desc:'Produces various mundane liquids on command once per day.',icon:'🏺',value:'180 gp',type:'Wondrous Item'},
-    {name:'Rope of Mending',desc:'A severed rope mends itself when ends are pressed together.',icon:'🪢',value:'50 gp',type:'Wondrous Item'},
-    {name:'Sending Stones',desc:'Paired stones — send up to 25 words to each other once per day.',icon:'💎',value:'200 gp',type:'Wondrous Item'},
-    {name:'Driftglobe',desc:'Floats beside you, sheds light on command. Cast Daylight once per day.',icon:'💡',value:'750 gp',type:'Wondrous Item'},
-    {name:'Goggles of Night',desc:'Darkvision 60 ft while wearing.',icon:'🥽',value:'150 gp',type:'Wondrous Item'},
+    {name:'Potion of Climbing',desc:'Gain a climbing speed equal to your walking speed for 1 hour.',icon:'🧪',value:'75 gp',type:'Potion'},
+    {name:'Potion of Water Breathing',desc:'You can breathe underwater for 1 hour.',icon:'🧪',value:'100 gp',type:'Potion'},
+    {name:'Spell Scroll (Cantrip)',desc:'A single cantrip. Consumed on use.',icon:'📜',value:'25 gp',type:'Scroll'},
+    {name:'Spell Scroll (1st Level)',desc:'A single 1st-level spell. Consumed on use.',icon:'📜',value:'75 gp',type:'Scroll'},
+    {name:'Spell Scroll (2nd Level)',desc:'A single 2nd-level spell. Consumed on use.',icon:'📜',value:'150 gp',type:'Scroll'},
+    {name:'Alchemy Jug',desc:'Produces a mundane liquid on command once per day.',icon:'🏺',value:'180 gp',type:'Wondrous Item'},
+    {name:'Sending Stones',desc:'Paired stones - send a 25-word message to the other once per day.',icon:'💎',value:'200 gp',type:'Wondrous Item'},
+    {name:'Driftglobe',desc:'Floats beside you and sheds light on command.',icon:'💡',value:'750 gp',type:'Wondrous Item'},
+    {name:'Goggles of Night',desc:'Darkvision 60 ft. while wearing.',icon:'🥽',value:'150 gp',type:'Wondrous Item'},
     {name:'Hat of Disguise',desc:'Cast Disguise Self at will.',icon:'🎩',value:'900 gp',type:'Wondrous Item'},
-    {name:'Lantern of Revealing',desc:'Sheds light and reveals invisible creatures within 30 ft.',icon:'🏮',value:'5000 gp',type:'Wondrous Item'},
-    {name:'Mystery Key',desc:'1-in-20 chance it opens any lock.',icon:'🗝️',value:'100 gp',type:'Wondrous Item'},
-    {name:'Perfume of Bewitching',desc:'Advantage on Charisma checks against humanoids for 1 hour.',icon:'🧴',value:'100 gp',type:'Wondrous Item'},
-    {name:'Ruby of the War Mage',desc:'Attach to a weapon to make it a spellcasting focus.',icon:'💎',value:'100 gp',type:'Wondrous Item'},
-    {name:'Tankard of Sobriety',desc:'Drink any amount of alcohol and never become intoxicated.',icon:'🍺',value:'100 gp',type:'Wondrous Item'},
-    {name:'Wand of Magic Missiles',desc:'7 charges. Cast Magic Missile using 1-3 charges.',icon:'🪄',value:'800 gp',type:'Wand'},
-    {name:'Wand of Pyrotechnics',desc:'7 charges — launch harmless colorful firework bursts.',icon:'🪄',value:'100 gp',type:'Wand'},
-    {name:'Wand of Secrets',desc:'3 charges — detect secret doors and traps within 30 ft.',icon:'🪄',value:'1500 gp',type:'Wand'},
+    {name:'Lantern of Revealing',desc:'Reveals invisible creatures and objects within 30 ft.',icon:'🏮',value:'5000 gp',type:'Wondrous Item'},
+    {name:'Mystery Key',desc:'1-in-20 chance this key opens any lock.',icon:'🗝️',value:'100 gp',type:'Wondrous Item'},
+    {name:'Tankard of Sobriety',desc:'Drink any amount of alcohol with no intoxicating effect.',icon:'🍺',value:'100 gp',type:'Wondrous Item'},
+    {name:'Wand of Magic Missiles',desc:'7 charges. Expend 1-3 charges to cast Magic Missile.',icon:'🪄',value:'800 gp',type:'Wand'},
+    {name:'Wand of Secrets',desc:'3 charges. Detect secret doors and traps within 30 ft.',icon:'🪄',value:'1500 gp',type:'Wand'},
   ],
   uncommon: [
     {name:'Potion of Greater Healing',desc:'Restores 4d4+4 HP.',icon:'🧪',value:'150 gp',type:'Potion'},
-    {name:'Potion of Heroism',desc:'Gain 10 temporary HP and a Bardic Inspiration die for 1 hour.',icon:'🧪',value:'180 gp',type:'Potion'},
-    {name:'Potion of Invisibility',desc:'Become invisible for 1 hour or until you attack or cast.',icon:'🧪',value:'180 gp',type:'Potion'},
-    {name:'Potion of Speed',desc:'Haste for 1 minute — no concentration required.',icon:'🧪',value:'400 gp',type:'Potion'},
-    {name:'Spell Scroll (3rd Level)',desc:'Contains one random 3rd-level spell.',icon:'📜',value:'300 gp',type:'Scroll'},
+    {name:'Potion of Heroism',desc:'Gain 10 temp HP and a Bardic Inspiration die for 1 hour.',icon:'🧪',value:'180 gp',type:'Potion'},
+    {name:'Potion of Invisibility',desc:'Invisible for 1 hour or until you attack or cast.',icon:'🧪',value:'180 gp',type:'Potion'},
+    {name:'Potion of Speed',desc:'Gain the Haste effect for 1 minute with no concentration.',icon:'🧪',value:'400 gp',type:'Potion'},
+    {name:'Spell Scroll (3rd Level)',desc:'A single 3rd-level spell. Consumed on use.',icon:'📜',value:'300 gp',type:'Scroll'},
     {name:'+1 Longsword',desc:'+1 bonus to attack and damage rolls.',icon:'⚔️',value:'1000 gp',type:'Weapon'},
     {name:'+1 Shortsword',desc:'+1 bonus to attack and damage rolls.',icon:'🗡️',value:'800 gp',type:'Weapon'},
     {name:'+1 Dagger',desc:'+1 bonus to attack and damage rolls.',icon:'🗡️',value:'750 gp',type:'Weapon'},
     {name:'+1 Greataxe',desc:'+1 bonus to attack and damage rolls.',icon:'🪓',value:'1000 gp',type:'Weapon'},
-    {name:'+1 Rapier',desc:'+1 bonus to attack and damage rolls.',icon:'🗡️',value:'800 gp',type:'Weapon'},
     {name:'+1 Longbow',desc:'+1 bonus to attack and damage rolls.',icon:'🏹',value:'1000 gp',type:'Weapon'},
-    {name:'+1 Warhammer',desc:'+1 bonus to attack and damage rolls.',icon:'🔨',value:'1000 gp',type:'Weapon'},
-    {name:'Javelin of Lightning',desc:'Throw to create a 5d6 lightning bolt (DC 13). Loses magic after use.',icon:'🏹',value:'1500 gp',type:'Weapon'},
     {name:'Vicious Weapon',desc:'On a natural 20, deal an extra 2d6 damage.',icon:'⚔️',value:'350 gp',type:'Weapon'},
-    {name:'+1 Shield',desc:'+3 AC total including shield bonus.',icon:'🛡️',value:'1000 gp',type:'Armor'},
+    {name:'+1 Shield',desc:'+3 AC total including the shield bonus.',icon:'🛡️',value:'1000 gp',type:'Armor'},
     {name:'Adamantine Armor',desc:'Any critical hit against you becomes a normal hit.',icon:'🛡️',value:'1500 gp',type:'Armor'},
-    {name:'Mithral Armor',desc:'Not considered heavy armor. No Stealth disadvantage.',icon:'🛡️',value:'1000 gp',type:'Armor'},
-    {name:'Bag of Holding',desc:'Extradimensional space holds 64 cu ft and 500 lb.',icon:'💼',value:'500 gp',type:'Wondrous Item'},
-    {name:'Boots of Elvenkind',desc:'Advantage on Stealth checks involving movement.',icon:'👢',value:'500 gp',type:'Wondrous Item'},
-    {name:'Bracers of Archery',desc:'+2 damage bonus with longbows and shortbows.',icon:'💪',value:'1500 gp',type:'Wondrous Item'},
+    {name:'Mithral Armor',desc:'Not heavy armor. No Stealth disadvantage.',icon:'🛡️',value:'1000 gp',type:'Armor'},
+    {name:'Bag of Holding',desc:'Interior: 64 cu ft / 500 lb. Outside weight: 15 lb.',icon:'💼',value:'500 gp',type:'Wondrous Item'},
+    {name:'Boots of Elvenkind',desc:'Advantage on Stealth checks that rely on moving silently.',icon:'👢',value:'500 gp',type:'Wondrous Item'},
     {name:'Broom of Flying',desc:'Fly at 50 ft. Carries up to 400 lb.',icon:'🧹',value:'8000 gp',type:'Wondrous Item'},
     {name:'Cloak of Protection',desc:'+1 bonus to AC and all saving throws.',icon:'🧥',value:'3500 gp',type:'Wondrous Item'},
-    {name:'Gauntlets of Ogre Power',desc:'STR score becomes 19 if lower.',icon:'🧤',value:'1500 gp',type:'Wondrous Item'},
-    {name:'Headband of Intellect',desc:'INT score becomes 19 if lower.',icon:'👑',value:'1500 gp',type:'Wondrous Item'},
-    {name:'Immovable Rod',desc:'Button fixes the rod immovably in space. Supports 8000 lb.',icon:'🔱',value:'500 gp',type:'Rod'},
+    {name:'Gauntlets of Ogre Power',desc:'STR becomes 19 while wearing if lower.',icon:'🧤',value:'1500 gp',type:'Wondrous Item'},
+    {name:'Headband of Intellect',desc:'INT becomes 19 while wearing if lower.',icon:'👑',value:'1500 gp',type:'Wondrous Item'},
+    {name:'Immovable Rod',desc:'Press the button: rod fixes itself in space. Holds 8000 lb.',icon:'🔱',value:'500 gp',type:'Rod'},
     {name:'Pearl of Power',desc:'Recover one expended spell slot of 3rd level or lower once per day.',icon:'💎',value:'6000 gp',type:'Wondrous Item'},
     {name:'Ring of Jumping',desc:'Cast Jump on yourself at will.',icon:'💍',value:'1000 gp',type:'Ring'},
     {name:'Ring of Swimming',desc:'Swimming speed of 40 ft.',icon:'💍',value:'3000 gp',type:'Ring'},
-    {name:'Ring of Warmth',desc:'Cold resistance. Withstand temperatures as low as -100F.',icon:'💍',value:'1000 gp',type:'Ring'},
-    {name:'Ring of Water Walking',desc:'Walk on liquid surfaces as if solid.',icon:'💍',value:'1500 gp',type:'Ring'},
-    {name:'Rope of Climbing',desc:'Animated 60-ft rope. Ties and unties knots on command.',icon:'🪢',value:'2000 gp',type:'Wondrous Item'},
-    {name:'Slippers of Spider Climbing',desc:'Climb at walking speed with no hands required.',icon:'👢',value:'5000 gp',type:'Wondrous Item'},
+    {name:'Ring of Water Walking',desc:'Walk on any liquid surface as if solid ground.',icon:'💍',value:'1500 gp',type:'Ring'},
+    {name:'Rope of Climbing',desc:'60-ft. animated rope that climbs and ties knots on command.',icon:'🪢',value:'2000 gp',type:'Wondrous Item'},
+    {name:'Slippers of Spider Climbing',desc:'Climb any surface at walking speed. No hands needed.',icon:'👢',value:'5000 gp',type:'Wondrous Item'},
     {name:'Stone of Good Luck',desc:'+1 bonus to ability checks and saving throws.',icon:'🪨',value:'4200 gp',type:'Wondrous Item'},
-    {name:'Wand of Web',desc:'7 charges — cast Web (DC 15).',icon:'🪄',value:'1500 gp',type:'Wand'},
-    {name:'Winged Boots',desc:'Flying speed equals walking speed for up to 4 hours per day.',icon:'👢',value:'8000 gp',type:'Wondrous Item'},
+    {name:'Winged Boots',desc:'Fly at your walking speed for up to 4 hours per day.',icon:'👢',value:'8000 gp',type:'Wondrous Item'},
   ],
   rare: [
     {name:'Potion of Superior Healing',desc:'Restores 8d4+8 HP.',icon:'🧪',value:'450 gp',type:'Potion'},
-    {name:'Potion of Flying',desc:'Gain a flying speed of 60 ft for 1 hour.',icon:'🧪',value:'500 gp',type:'Potion'},
-    {name:'Spell Scroll (4th Level)',desc:'Contains one random 4th-level spell.',icon:'📜',value:'500 gp',type:'Scroll'},
-    {name:'Spell Scroll (5th Level)',desc:'Contains one random 5th-level spell.',icon:'📜',value:'1000 gp',type:'Scroll'},
+    {name:'Potion of Flying',desc:'Fly at 60 ft. for 1 hour.',icon:'🧪',value:'500 gp',type:'Potion'},
+    {name:'Spell Scroll (5th Level)',desc:'A single 5th-level spell. Consumed on use.',icon:'📜',value:'1000 gp',type:'Scroll'},
     {name:'+2 Longsword',desc:'+2 bonus to attack and damage rolls.',icon:'⚔️',value:'4000 gp',type:'Weapon'},
-    {name:'+2 Shortsword',desc:'+2 bonus to attack and damage rolls.',icon:'🗡️',value:'3500 gp',type:'Weapon'},
     {name:'+2 Longbow',desc:'+2 bonus to attack and damage rolls.',icon:'🏹',value:'3500 gp',type:'Weapon'},
-    {name:'+2 Dagger',desc:'+2 bonus to attack and damage rolls.',icon:'🗡️',value:'3000 gp',type:'Weapon'},
-    {name:'Dragon Slayer',desc:'+1 to attacks. Deal an extra 3d6 damage to dragons.',icon:'⚔️',value:'4000 gp',type:'Weapon'},
-    {name:'Flame Tongue',desc:'+2. Command word ignites blade dealing 2d6 extra fire damage.',icon:'⚔️',value:'5000 gp',type:'Weapon'},
-    {name:'Frost Brand',desc:'+1. Deals 1d6 cold damage. Douses flames within 30 ft.',icon:'⚔️',value:'5000 gp',type:'Weapon'},
-    {name:'Giant Slayer',desc:'+1. Deal extra 2d6 vs giants. DC 15 STR save or fall prone.',icon:'⚔️',value:'4000 gp',type:'Weapon'},
-    {name:'Scimitar of Speed',desc:'+2 to attack and damage. Make one attack as a bonus action.',icon:'⚔️',value:'6000 gp',type:'Weapon'},
-    {name:'Sunblade',desc:'+2. Blade of radiance deals 3d8 vs undead. Emits sunlight.',icon:'⚔️',value:'12000 gp',type:'Weapon'},
-    {name:'Wand of Fireballs',desc:'7 charges — cast Fireball at 3rd level (DC 15).',icon:'🪄',value:'8000 gp',type:'Wand'},
-    {name:'Wand of Lightning Bolts',desc:'7 charges — cast Lightning Bolt at 3rd level (DC 15).',icon:'🪄',value:'8000 gp',type:'Wand'},
-    {name:'Wand of Wonder',desc:'7 charges — roll d100 for a wild random magical effect.',icon:'🪄',value:'6000 gp',type:'Wand'},
+    {name:'Dragon Slayer',desc:'+1 to attacks. Extra 3d6 damage against dragons.',icon:'⚔️',value:'4000 gp',type:'Weapon'},
+    {name:'Flame Tongue',desc:'+2 longsword. Command word ignites it for 2d6 extra fire damage.',icon:'⚔️',value:'5000 gp',type:'Weapon'},
+    {name:'Frost Brand',desc:'+1. Deals 1d6 extra cold damage. Grants cold resistance.',icon:'⚔️',value:'5000 gp',type:'Weapon'},
+    {name:'Scimitar of Speed',desc:'+2. Make one extra attack with it as a bonus action.',icon:'⚔️',value:'6000 gp',type:'Weapon'},
+    {name:'Sunblade',desc:'+2 longsword. Radiant blade deals extra damage to undead.',icon:'⚔️',value:'12000 gp',type:'Weapon'},
+    {name:'Wand of Fireballs',desc:'7 charges. Fireball at 3rd level (DC 15). Recharges at dawn.',icon:'🪄',value:'8000 gp',type:'Wand'},
+    {name:'Wand of Lightning Bolts',desc:'7 charges. Lightning Bolt at 3rd level (DC 15). Recharges at dawn.',icon:'🪄',value:'8000 gp',type:'Wand'},
     {name:'+2 Plate Armor',desc:'AC 20.',icon:'🛡️',value:'4000 gp',type:'Armor'},
-    {name:'Armor of Resistance',desc:'Resistance to one damage type chosen at creation.',icon:'🛡️',value:'3000 gp',type:'Armor'},
-    {name:'Dragon Scale Mail',desc:'AC 14 + DEX. Advantage on saves vs dragon breath weapons.',icon:'🛡️',value:'4000 gp',type:'Armor'},
-    {name:'Spellguard Shield',desc:'+2 AC. Advantage on saves vs spells and magical effects.',icon:'🛡️',value:'6000 gp',type:'Armor'},
-    {name:'Amulet of Health',desc:'CON score becomes 19 if lower.',icon:'📿',value:'8000 gp',type:'Wondrous Item'},
-    {name:'Belt of Giant Strength (Hill)',desc:'STR becomes 21.',icon:'🧤',value:'12000 gp',type:'Wondrous Item'},
-    {name:'Boots of Speed',desc:'Bonus action to double speed. Opportunity attacks at disadvantage. 10 min/day.',icon:'👢',value:'4000 gp',type:'Wondrous Item'},
-    {name:'Carpet of Flying',desc:'Fly at 80 ft (1 person) or 25 ft (4 persons). Command word activates.',icon:'🪑',value:'12000 gp',type:'Wondrous Item'},
-    {name:'Necklace of Fireballs',desc:'1d6+3 beads. Each detonates as a Fireball dealing 3d6 per bead level.',icon:'🔮',value:'8000 gp',type:'Wondrous Item'},
-    {name:'Portable Hole',desc:'6-ft diameter extradimensional hole in a cloth. Fold it for travel.',icon:'🕳️',value:'8000 gp',type:'Wondrous Item'},
-    {name:'Ring of Evasion',desc:'3 charges — when you fail a DEX save, succeed instead.',icon:'💍',value:'8000 gp',type:'Ring'},
-    {name:'Ring of Feather Falling',desc:'Fall at 60 ft per round. Take no damage from falling.',icon:'💍',value:'2000 gp',type:'Ring'},
+    {name:'Dragon Scale Mail',desc:'AC 14 + DEX. Advantage on saves vs. that dragon type breath.',icon:'🛡️',value:'4000 gp',type:'Armor'},
+    {name:'Spellguard Shield',desc:'+2 AC. Advantage on saves vs. spells and magical effects.',icon:'🛡️',value:'6000 gp',type:'Armor'},
+    {name:'Amulet of Health',desc:'CON becomes 19 while wearing if lower.',icon:'📿',value:'8000 gp',type:'Wondrous Item'},
+    {name:'Belt of Giant Strength (Hill)',desc:'STR becomes 21 while wearing.',icon:'🧤',value:'12000 gp',type:'Wondrous Item'},
+    {name:'Carpet of Flying',desc:'Fly at 80 ft. (1 person) or 25 ft. (4 people).',icon:'🪑',value:'12000 gp',type:'Wondrous Item'},
+    {name:'Portable Hole',desc:'A 6-ft. extradimensional hole folded into a cloth.',icon:'🕳️',value:'8000 gp',type:'Wondrous Item'},
+    {name:'Ring of Evasion',desc:'3 charges. Use a reaction to succeed on a failed DEX save.',icon:'💍',value:'8000 gp',type:'Ring'},
+    {name:'Ring of Feather Falling',desc:'Fall at 60 ft./round and take no falling damage.',icon:'💍',value:'2000 gp',type:'Ring'},
     {name:'Ring of Free Action',desc:'Difficult terrain costs no extra movement. Immune to paralyzed and restrained.',icon:'💍',value:'8000 gp',type:'Ring'},
-    {name:'Ring of Protection',desc:'+1 bonus to AC and all saving throws.',icon:'💍',value:'3500 gp',type:'Ring'},
-    {name:'Ring of Spell Storing',desc:'Store up to 5 levels of spells. Anyone can cast the stored spells.',icon:'💍',value:'24000 gp',type:'Ring'},
-    {name:'Staff of Fire',desc:'10 charges — Burning Hands, Fireball, Wall of Fire.',icon:'🪄',value:'12000 gp',type:'Staff'},
-    {name:'Staff of Frost',desc:'10 charges — Fog Cloud, Ice Storm, Wall of Ice, Cone of Cold.',icon:'🪄',value:'12000 gp',type:'Staff'},
-    {name:'Staff of Healing',desc:'10 charges — Cure Wounds, Lesser Restoration, Mass Cure Wounds.',icon:'🪄',value:'12000 gp',type:'Staff'},
-    {name:'Wings of Flying',desc:'Feathered wings appear. Flying speed 60 ft for up to 1 hour per day.',icon:'🪶',value:'10000 gp',type:'Wondrous Item'},
+    {name:'Ring of Spell Storing',desc:'Stores up to 5 spell levels. Anyone can cast the stored spells.',icon:'💍',value:'24000 gp',type:'Ring'},
+    {name:'Staff of Fire',desc:'10 charges. Burning Hands, Fireball, Wall of Fire.',icon:'🪄',value:'12000 gp',type:'Staff'},
+    {name:'Staff of Healing',desc:'10 charges. Cure Wounds, Lesser Restoration, Mass Cure Wounds.',icon:'🪄',value:'12000 gp',type:'Staff'},
+    {name:'Wings of Flying',desc:'Feathered wings. Fly at 60 ft. for 1 hour per day.',icon:'🪶',value:'10000 gp',type:'Wondrous Item'},
   ],
   very_rare: [
     {name:'Potion of Supreme Healing',desc:'Restores 10d4+20 HP.',icon:'🧪',value:'1350 gp',type:'Potion'},
-    {name:'Potion of Giant Strength (Storm)',desc:'STR becomes 29 for 1 hour.',icon:'🧪',value:'2000 gp',type:'Potion'},
-    {name:'Spell Scroll (7th Level)',desc:'Contains one random 7th-level spell.',icon:'📜',value:'5000 gp',type:'Scroll'},
+    {name:'Spell Scroll (7th Level)',desc:'A single 7th-level spell. Consumed on use.',icon:'📜',value:'5000 gp',type:'Scroll'},
     {name:'+3 Longsword',desc:'+3 bonus to attack and damage rolls.',icon:'⚔️',value:'24000 gp',type:'Weapon'},
-    {name:'+3 Shortsword',desc:'+3 bonus to attack and damage rolls.',icon:'🗡️',value:'20000 gp',type:'Weapon'},
-    {name:'+3 Longbow',desc:'+3 bonus to attack and damage rolls.',icon:'🏹',value:'20000 gp',type:'Weapon'},
-    {name:'Defender',desc:'+3. Transfer some or all of the bonus to your AC each turn.',icon:'⚔️',value:'24000 gp',type:'Weapon'},
-    {name:'Staff of Power',desc:'20 charges. Magic Missile, Fireball, Lightning Bolt, Cone of Cold, and more.',icon:'🪄',value:'95000 gp',type:'Staff'},
-    {name:'Sword of Sharpness',desc:'+3. On a natural 20 deal 4d6 extra slashing and sever a limb.',icon:'⚔️',value:'48000 gp',type:'Weapon'},
+    {name:'Defender',desc:'+3 longsword. Transfer some or all of the bonus to AC each turn.',icon:'⚔️',value:'24000 gp',type:'Weapon'},
     {name:'Vorpal Sword',desc:'+3. On a natural 20 the target is decapitated if it has a head.',icon:'⚔️',value:'100000 gp',type:'Weapon'},
+    {name:'Staff of Power',desc:'20 charges. Magic Missile, Fireball, Lightning Bolt, Cone of Cold and more.',icon:'🪄',value:'95000 gp',type:'Staff'},
     {name:'+3 Plate Armor',desc:'AC 21.',icon:'🛡️',value:'16000 gp',type:'Armor'},
-    {name:'Armor of Invulnerability',desc:'Resistance to nonmagical damage. 10 min/day immunity to nonmagical damage.',icon:'🛡️',value:'18000 gp',type:'Armor'},
-    {name:'Cloak of Invisibility',desc:'Invisible while hood is raised. Ends when you attack or cast a spell.',icon:'🧥',value:'80000 gp',type:'Wondrous Item'},
-    {name:'Helm of Teleportation',desc:'3 charges — cast Teleport.',icon:'⛑️',value:'32000 gp',type:'Wondrous Item'},
-    {name:'Ioun Stone (Agility)',desc:'+2 DEX score.',icon:'💎',value:'3000 gp',type:'Wondrous Item'},
-    {name:'Ioun Stone (Fortitude)',desc:'+2 CON score.',icon:'💎',value:'3000 gp',type:'Wondrous Item'},
-    {name:'Ioun Stone (Intellect)',desc:'+2 INT score.',icon:'💎',value:'3000 gp',type:'Wondrous Item'},
-    {name:'Ioun Stone (Strength)',desc:'+2 STR score.',icon:'💎',value:'3000 gp',type:'Wondrous Item'},
-    {name:'Manual of Bodily Health',desc:'Read over 48 hours — permanent +2 CON and increased maximum.',icon:'📖',value:'27500 gp',type:'Wondrous Item'},
-    {name:'Manual of Gainful Exercise',desc:'Read over 48 hours — permanent +2 STR and increased maximum.',icon:'📖',value:'27500 gp',type:'Wondrous Item'},
-    {name:'Ring of Regeneration',desc:'Regain 1d6 HP every 10 minutes. Regrow lost limbs over 1d6+1 days.',icon:'💍',value:'12000 gp',type:'Ring'},
-    {name:'Robe of Stars',desc:'+1 to saves. Travel the Astral Plane. 6 charges shoot magic missiles.',icon:'🧥',value:'60000 gp',type:'Wondrous Item'},
-    {name:'Tome of Clear Thought',desc:'Read over 48 hours — permanent +2 INT and increased maximum.',icon:'📖',value:'27500 gp',type:'Wondrous Item'},
-    {name:'Tome of Leadership and Influence',desc:'Read over 48 hours — permanent +2 CHA and increased maximum.',icon:'📖',value:'27500 gp',type:'Wondrous Item'},
-    {name:'Tome of Understanding',desc:'Read over 48 hours — permanent +2 WIS and increased maximum.',icon:'📖',value:'27500 gp',type:'Wondrous Item'},
+    {name:'Cloak of Invisibility',desc:'Invisible while the hood is up. Ends when you attack or cast.',icon:'🧥',value:'80000 gp',type:'Wondrous Item'},
+    {name:'Helm of Teleportation',desc:'3 charges. Cast Teleport. Recharges at dawn.',icon:'⛑️',value:'32000 gp',type:'Wondrous Item'},
+    {name:'Manual of Bodily Health',desc:'Read over 6 days: CON score and max permanently increase by 2.',icon:'📖',value:'27500 gp',type:'Wondrous Item'},
+    {name:'Manual of Gainful Exercise',desc:'Read over 6 days: STR score and max permanently increase by 2.',icon:'📖',value:'27500 gp',type:'Wondrous Item'},
+    {name:'Ring of Regeneration',desc:'Regain 1d6 HP every 10 minutes.',icon:'💍',value:'12000 gp',type:'Ring'},
+    {name:'Robe of Stars',desc:'+1 to saves. Astral Projection. 6 charges: Magic Missile.',icon:'🧥',value:'60000 gp',type:'Wondrous Item'},
+    {name:'Tome of Clear Thought',desc:'Read over 6 days: INT score and max permanently increase by 2.',icon:'📖',value:'27500 gp',type:'Wondrous Item'},
+    {name:'Tome of Leadership',desc:'Read over 6 days: CHA score and max permanently increase by 2.',icon:'📖',value:'27500 gp',type:'Wondrous Item'},
+    {name:'Tome of Understanding',desc:'Read over 6 days: WIS score and max permanently increase by 2.',icon:'📖',value:'27500 gp',type:'Wondrous Item'},
   ],
   legendary: [
-    {name:'Holy Avenger',desc:'+3 sword. 2d10 extra radiant vs undead and fiends. 10 ft aura of protection.',icon:'⚔️',value:'Priceless',type:'Weapon'},
-    {name:'Luck Blade',desc:'+1 to +3. 3 luck charges to reroll any roll. Contains 1 Wish spell.',icon:'⚔️',value:'Priceless',type:'Weapon'},
-    {name:'Staff of the Magi',desc:'50 charges. Vast array of powerful spells. Retributive Strike on break.',icon:'🪄',value:'Priceless',type:'Staff'},
-    {name:'Deck of Many Things',desc:'13 or 22 cards — each dramatically alters fate with wishes, ruin, or treasure.',icon:'🃏',value:'Priceless',type:'Wondrous Item'},
-    {name:'Efreeti Bottle',desc:'33% chance each: bound djinn servant, hostile efreeti, or 3 wishes.',icon:'🫙',value:'Priceless',type:'Wondrous Item'},
-    {name:'Iron Flask',desc:'Trap an extraplanar creature and command it for 1 hour (DC 17).',icon:'🫙',value:'Priceless',type:'Wondrous Item'},
-    {name:'Ring of Three Wishes',desc:'3 charges — cast Wish. Becomes nonmagical when all charges are used.',icon:'💍',value:'Priceless',type:'Ring'},
-    {name:'Ring of Invisibility',desc:'Become invisible at will. Ends when you attack or cast a spell.',icon:'💍',value:'Priceless',type:'Ring'},
-    {name:'Robe of the Archmagi',desc:'+2 spell save DC and attack bonus. 15 AC. Advantage on magic resistance saves.',icon:'🧥',value:'Priceless',type:'Wondrous Item'},
-    {name:'Sphere of Annihilation',desc:'3-ft sphere of nothingness — destroys all matter it touches.',icon:'🌑',value:'Priceless',type:'Wondrous Item'},
-    {name:'Talisman of Pure Good',desc:'Destroys evil-aligned creatures on contact. Functions as a holy symbol.',icon:'✨',value:'Priceless',type:'Wondrous Item'},
-    {name:'Talisman of Ultimate Evil',desc:'Destroys good-aligned creatures on contact.',icon:'💀',value:'Priceless',type:'Wondrous Item'},
+    {name:'Holy Avenger',desc:'+3 longsword. Extra 2d10 radiant vs. undead and fiends. Allies within 10 ft. gain saves vs. spells.',icon:'⚔️',value:'Priceless',type:'Weapon'},
+    {name:'Luck Blade',desc:'+1 to +3. Luck charges let you reroll any d20. Contains one Wish spell.',icon:'⚔️',value:'Priceless',type:'Weapon'},
+    {name:'Staff of the Magi',desc:'50 charges. Absorb spells, counterspell, and many spell effects. Retributive Strike if broken.',icon:'🪄',value:'Priceless',type:'Staff'},
+    {name:'Deck of Many Things',desc:'Drawing cards radically alters fate: wishes, ruin, treasure, or the void.',icon:'🃏',value:'Priceless',type:'Wondrous Item'},
+    {name:'Ring of Three Wishes',desc:'3 charges. Cast Wish. Becomes nonmagical when all are used.',icon:'💍',value:'Priceless',type:'Ring'},
+    {name:'Ring of Invisibility',desc:'Become invisible at will. Ends when you attack or cast.',icon:'💍',value:'Priceless',type:'Ring'},
+    {name:'Robe of the Archmagi',desc:'+2 spell save DC and attack bonus. Base AC 15. Advantage on magic saves.',icon:'🧥',value:'Priceless',type:'Wondrous Item'},
+    {name:'Sphere of Annihilation',desc:'A 2-ft. orb of nothingness that destroys everything it touches.',icon:'🌑',value:'Priceless',type:'Wondrous Item'},
+    {name:'Talisman of Pure Good',desc:'Radiates holy power. Destroys evil-aligned creatures that touch it.',icon:'✨',value:'Priceless',type:'Wondrous Item'},
   ]
 };
 let lootSessionLog = [];
@@ -5410,30 +5321,25 @@ function generateLoot() {
   const gemTables = [
     [
       {name:'Azurite',value:10,icon:'🔵',desc:'Opaque mottled deep blue stone.',rarity:'gem',type:'Gem'},
-      {name:'Banded Agate',value:10,icon:'🟠',desc:'Translucent striped brown, blue, white, and red.',rarity:'gem',type:'Gem'},
-      {name:'Hematite',value:10,icon:'⚫',desc:'Opaque gray-black metallic mineral.',rarity:'gem',type:'Gem'},
       {name:'Lapis Lazuli',value:10,icon:'🔵',desc:'Opaque light and dark blue with yellow flecks.',rarity:'gem',type:'Gem'},
       {name:'Malachite',value:10,icon:'💚',desc:'Opaque striated light and dark green.',rarity:'gem',type:'Gem'},
       {name:'Obsidian',value:10,icon:'⬛',desc:'Opaque black volcanic glass.',rarity:'gem',type:'Gem'},
       {name:'Tiger Eye',value:10,icon:'🟡',desc:'Translucent brown with a golden center.',rarity:'gem',type:'Gem'},
       {name:'Turquoise',value:10,icon:'🩵',desc:'Opaque light blue-green stone.',rarity:'gem',type:'Gem'},
       {name:'Silver Ewer',value:25,icon:'🏺',desc:'Fine silver pitcher with decorative engravings.',rarity:'gem',type:'Art Object'},
-      {name:'Carved Bone Statuette',value:25,icon:'🗿',desc:'Small figure delicately carved from animal bone.',rarity:'gem',type:'Art Object'},
-      {name:'Gold Bracelet',value:25,icon:'📿',desc:'Plain gold band with minor craftsmanship.',rarity:'gem',type:'Art Object'},
+      {name:'Gold Bracelet',value:25,icon:'📿',desc:'Plain gold band of minor craftsmanship.',rarity:'gem',type:'Art Object'},
     ],
     [
-      {name:'Bloodstone',value:50,icon:'🔴',desc:'Opaque dark gray with red flecks.',rarity:'gem',type:'Gem'},
+      {name:'Bloodstone',value:50,icon:'🔴',desc:'Opaque dark gray stone with red flecks.',rarity:'gem',type:'Gem'},
       {name:'Carnelian',value:50,icon:'🟠',desc:'Opaque orange to red-brown stone.',rarity:'gem',type:'Gem'},
-      {name:'Citrine',value:50,icon:'🟡',desc:'Transparent pale yellow-brown quartz.',rarity:'gem',type:'Gem'},
       {name:'Moonstone',value:50,icon:'⚪',desc:'Translucent white with a pale blue glow.',rarity:'gem',type:'Gem'},
-      {name:'Onyx',value:50,icon:'⬛',desc:'Opaque bands of black, white, and brown.',rarity:'gem',type:'Gem'},
       {name:'Chrysoberyl',value:100,icon:'💛',desc:'Transparent yellow-green to pale green stone.',rarity:'gem',type:'Gem'},
       {name:'Garnet',value:100,icon:'🔴',desc:'Transparent red, brown-green, or violet stone.',rarity:'gem',type:'Gem'},
       {name:'Jade',value:100,icon:'💚',desc:'Translucent light or dark green stone.',rarity:'gem',type:'Gem'},
       {name:'Pearl',value:100,icon:'⚪',desc:'Lustrous smooth white pearl.',rarity:'gem',type:'Gem'},
-      {name:'Tourmaline',value:100,icon:'💗',desc:'Transparent pale green, blue, brown, or red stone.',rarity:'gem',type:'Gem'},
-      {name:'Carved Ivory Statuette',value:250,icon:'🗿',desc:'Ivory figurine of refined artistry.',rarity:'gem',type:'Art Object'},
-      {name:'Gold Locket with Portrait',value:250,icon:'📿',desc:'Fine gold locket containing a tiny hand-painted portrait.',rarity:'gem',type:'Art Object'},
+      {name:'Tourmaline',value:100,icon:'💗',desc:'Transparent pale green, blue, or red stone.',rarity:'gem',type:'Gem'},
+      {name:'Carved Ivory Statuette',value:250,icon:'🗿',desc:'Exquisite ivory figurine of refined artistry.',rarity:'gem',type:'Art Object'},
+      {name:'Gold Locket',value:250,icon:'📿',desc:'Fine gold locket with a hand-painted portrait inside.',rarity:'gem',type:'Art Object'},
     ],
     [
       {name:'Alexandrite',value:500,icon:'💜',desc:'Transparent dark green stone.',rarity:'gem',type:'Gem'},
@@ -5441,31 +5347,25 @@ function generateLoot() {
       {name:'Black Pearl',value:500,icon:'⚫',desc:'Lustrous pure black pearl. Exceptionally rare.',rarity:'gem',type:'Gem'},
       {name:'Topaz',value:500,icon:'💛',desc:'Transparent golden yellow stone.',rarity:'gem',type:'Gem'},
       {name:'Amber',value:500,icon:'🟡',desc:'Transparent rich gold with ancient organic inclusions.',rarity:'gem',type:'Gem'},
-      {name:'Violet Garnet',value:500,icon:'💜',desc:'Transparent deep violet-red garnet.',rarity:'gem',type:'Gem'},
-      {name:'Silver-gilt Statuette',value:750,icon:'🗿',desc:'Silver figurine covered in gold leaf.',rarity:'gem',type:'Art Object'},
       {name:'Jeweled Anklet',value:750,icon:'📿',desc:'Gold anklet set with small precious stones.',rarity:'gem',type:'Art Object'},
       {name:'Gold Music Box',value:750,icon:'🎵',desc:'Mechanical music box of masterful craftsmanship.',rarity:'gem',type:'Art Object'},
     ],
     [
-      {name:'Black Opal',value:1000,icon:'🖤',desc:'Translucent dark green with black mottling and golden fire.',rarity:'gem',type:'Gem'},
+      {name:'Black Opal',value:1000,icon:'🖤',desc:'Dark green with black mottling and golden fire.',rarity:'gem',type:'Gem'},
       {name:'Blue Sapphire',value:1000,icon:'💙',desc:'Transparent blue-white to medium blue stone.',rarity:'gem',type:'Gem'},
       {name:'Emerald',value:1000,icon:'💚',desc:'Transparent deep bright green stone.',rarity:'gem',type:'Gem'},
-      {name:'Fire Opal',value:1000,icon:'🔥',desc:'Transparent fiery red stone.',rarity:'gem',type:'Gem'},
-      {name:'Star Ruby',value:1000,icon:'⭐',desc:'Translucent ruby with white star-shaped highlights.',rarity:'gem',type:'Gem'},
+      {name:'Star Ruby',value:1000,icon:'⭐',desc:'Translucent ruby with white star highlights.',rarity:'gem',type:'Gem'},
       {name:'Star Sapphire',value:1000,icon:'⭐',desc:'Translucent blue sapphire with a white star.',rarity:'gem',type:'Gem'},
-      {name:'Diamond (small)',value:5000,icon:'💎',desc:'Transparent clear white stone. Brilliant cut.',rarity:'gem',type:'Gem'},
+      {name:'Diamond (small)',value:5000,icon:'💎',desc:'Transparent clear white diamond, brilliant cut.',rarity:'gem',type:'Gem'},
       {name:'Ruby',value:5000,icon:'❤️',desc:'Transparent clear red stone. Extremely rare.',rarity:'gem',type:'Gem'},
-      {name:'Jacinth',value:5000,icon:'🟠',desc:'Transparent fiery orange stone.',rarity:'gem',type:'Gem'},
-      {name:'Gold Crown with Garnets',value:2500,icon:'👑',desc:'Royal crown of worked gold set with deep red garnets.',rarity:'gem',type:'Art Object'},
-      {name:'Jeweled Gold Goblet',value:2500,icon:'🏆',desc:'Ornate gold cup set with precious gemstones.',rarity:'gem',type:'Art Object'},
+      {name:'Gold Crown with Garnets',value:2500,icon:'👑',desc:'Royal crown set with deep red garnets.',rarity:'gem',type:'Art Object'},
     ],
     [
       {name:'Diamond (large)',value:50000,icon:'💎',desc:'Flawless large diamond of museum quality.',rarity:'gem',type:'Gem'},
       {name:'Flawless Sapphire',value:25000,icon:'💙',desc:'Perfectly clear sapphire of legendary quality.',rarity:'gem',type:'Gem'},
-      {name:'Pigeon-blood Ruby',value:50000,icon:'❤️',desc:'Legendary pigeon-blood ruby of ultimate quality.',rarity:'gem',type:'Gem'},
+      {name:'Pigeon-blood Ruby',value:50000,icon:'❤️',desc:'Legendary deep red ruby of ultimate quality.',rarity:'gem',type:'Gem'},
       {name:'Adamantine Idol',value:20000,icon:'🗿',desc:'Small idol carved from pure adamantine.',rarity:'gem',type:'Art Object'},
       {name:'Mithral Crown',value:15000,icon:'👑',desc:'Delicate mithral crown of elven craftsmanship.',rarity:'gem',type:'Art Object'},
-      {name:'Royal Jeweled Chalice',value:7500,icon:'🏆',desc:'Ceremonial chalice set with multiple precious gems.',rarity:'gem',type:'Art Object'},
     ],
   ];
   const gemCount = rng(tier === 0 ? 0 : 1, tier + 1);
@@ -5499,12 +5399,11 @@ function generateLoot() {
   });
 
   // Render with checkboxes
-  window._lootEntries = pendingLootEntries.slice();
   let html2 = '';
   pendingLootEntries.forEach((entry, i) => {
     const mktStr = entry.mktVal ? ` · <span style="color:var(--gold);font-size:10px;">~${entry.mktVal.toLocaleString()} gp</span>` : '';
     const rarLabel = entry.rarity && entry.rarity !== 'gem' ? `<span style="font-size:10px;opacity:0.7;"> (${entry.rarity.replace('_',' ')})</span>` : '';
-    html2 += `<label class="loot-check-row" onmouseenter="showLootTip(this,${i})" onmouseleave="hideLootTip()" style="display:flex;align-items:flex-start;gap:8px;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;">
+    html2 += `<label class="loot-check-row" style="display:flex;align-items:flex-start;gap:8px;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;">
       <input type="checkbox" data-loot-idx="${i}" onchange="updateGiveBtn()" style="margin-top:2px;accent-color:var(--gold);cursor:pointer;flex-shrink:0;width:16px;height:16px;">
       <div style="display:flex;align-items:flex-start;gap:8px;min-width:0;flex:1;">
         <span style="font-size:18px;flex-shrink:0;line-height:1.2;">${entry.icon||'📦'}</span>
