@@ -152,6 +152,16 @@
       </div>
       <div style="font-size:10px;color:var(--text-dim);margin-top:5px;">Leave blank for no slots. Non-spellcasters (Barbarian, Monk, Fighter below lvl 3) auto-get none.</div>
     </div>
+    <!-- Skills Section -->
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <label style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:var(--text-dim);">SKILLS</label>
+        <button type="button" onclick="resetAllSkills()" style="font-size:10px;padding:3px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:3px;color:var(--text-dim);cursor:pointer;font-family:Cinzel,serif;">Clear All</button>
+      </div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px;">Click to cycle: <span style="color:#555;">&#9675; None</span> &rarr; <span style="color:#90c8ff;">&#9679; Proficient</span> &rarr; <span style="color:#ffe066;">&#9733; Expertise</span></div>
+      <div id="pc-skills-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;">
+      </div>
+    </div>
     <div class="modal-btns">
       <button class="btn btn-gold" onclick="savePlayer()">💾 Save Character</button>
       <button class="btn btn-ghost" onclick="closePlayerModal()">Cancel</button>
