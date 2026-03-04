@@ -24,6 +24,9 @@ let xpLog = [], totalXP = 0;
 let lastGeneratedNPC = null;
 let lastEncounterData = null;
 let diceOverlayExpanded = true;
+let worldTotalHours = 6;
+let worldSeason = 0;
+let lastGeneratedLocation = null;
 let turnTimerActive = false;
 let turnTimerSecs = 0;
 let turnTimerInt = null;
@@ -153,6 +156,21 @@ function saveAPIKey() {
   // BUG FIX: Allow clearing key by saving empty string
   window.ANTHROPIC_KEY = val;
   localStorage.setItem('dm_api_key', val);
-  showToast(val ? '🔑 API key saved!' : '🔑 API key cleared', 'success');
+  showToast(val ? 'API key saved!' : 'API key cleared', 'success');
   document.getElementById('api-key-panel').style.display = 'none';
 }
+
+// ============================================================
+// APP INITIALIZATION
+// ============================================================
+document.addEventListener('DOMContentLoaded', function() {
+  try { initNPCs(); } catch(e) { console.warn('initNPCs:', e); }
+  try { renderParty(); } catch(e) { console.warn('renderParty:', e); }
+  try { renderPresets(); } catch(e) { console.warn('renderPresets:', e); }
+  try { renderPartyInventory(); } catch(e) { console.warn('renderPartyInventory:', e); }
+  try { refreshNamePanel(); } catch(e) { console.warn('refreshNamePanel:', e); }
+  try { rollOneName(); } catch(e) { console.warn('rollOneName:', e); }
+  try { initSidebarDrag(); } catch(e) { console.warn('initSidebarDrag:', e); }
+  var mini = document.getElementById('dice-overlay-mini');
+  if (mini) mini.classList.add('dice-hidden');
+});

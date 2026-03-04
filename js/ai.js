@@ -1,8 +1,7 @@
 // ============================================================
 // AI INTEGRATION (Claude API via OpenRouter or direct Anthropic)
 // ============================================================
-let lastGeneratedNPC = null;
-
+// lastGeneratedNPC, lastEncounterData, lastGeneratedLocation declared in app.js
 
 async function callClaudeAPI(prompt, maxTokens) {
   if (maxTokens === undefined) maxTokens = 1000;
@@ -245,8 +244,6 @@ function saveGeneratedNPC() {
 // ============================================================
 // RANDOM ENCOUNTER GENERATOR
 // ============================================================
-let lastEncounterData = null;
-
 function openEncounterModal() {
   document.getElementById('encounter-modal').classList.add('show');
   document.getElementById('enc-result').style.display = 'none';
@@ -362,8 +359,6 @@ function loadEncounterToInitiative() {
 // ============================================================
 // LOCATION GENERATOR
 // ============================================================
-let lastGeneratedLocation = null;
-
 async function generateLocation() {
   const locType    = document.getElementById('loc-gen-type').value;
   const locMood    = document.getElementById('loc-gen-mood').value;

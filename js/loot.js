@@ -5,9 +5,7 @@
 //   pendingLootEntries, partyInventory, esc(), showToast()
 // ============================================================
 
-let lootSessionLog = [];
-let pendingLootEntries = [];
-let partyInventory = JSON.parse(localStorage.getItem('dm-party-inventory') || '[]');
+// lootSessionLog, pendingLootEntries, partyInventory declared in app.js
 
 // Fisher-Yates shuffle (unbiased)
 function shuffleArray(arr) {

@@ -1,5 +1,4 @@
-let worldTotalHours = 6; // start at dawn, day 1
-let worldSeason = 0; // 0=spring,1=summer,2=autumn,3=winter
+// worldTotalHours, worldSeason declared in app.js
 
 const TIME_OF_DAY = [
   { label:'Deep Night', hours:[0,4],   icon:'🌑' },

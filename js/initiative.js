@@ -2,8 +2,7 @@
 // INITIATIVE / COMBAT TRACKER
 // ============================================================
 
-// Combat log array (global)
-var combatLog = combatLog || [];
+// combatLog declared in app.js
 
 // Alias: currentRound mirrors the global `round` variable
 // (kept in sync so code referencing either name works)
@@ -733,6 +732,60 @@ function applyAoEDamage() {
   applyAoE();
 }
 
+// ============================================================
+// BATTLE PRESETS
+// ============================================================
+function renderPresets() {
+  var grid = document.getElementById('preset-grid');
+  if (!grid) return;
+  if (!battlePresets.length) {
+    grid.innerHTML = '<div style="color:var(--text-dim);font-size:13px;padding:8px;">No presets saved yet. Build an encounter then click "Save Current as Preset".</div>';
+    return;
+  }
+  grid.innerHTML = battlePresets.map(function(p,i) {
+    return '<div class="preset-card" onclick="loadPreset(' + i + ')">' +
+      '<div class="preset-card-name">' + p.name + '</div>' +
+      '<div class="preset-card-meta">' + p.combatants.length + ' combatants</div>' +
+      '<div style="margin-top:6px;font-size:10px;color:var(--text-dim);">' + p.combatants.map(function(c){return c.name;}).join(', ') + '</div>' +
+      '<button onclick="event.stopPropagation();deletePreset(' + i + ')" style="margin-top:8px;font-size:10px;color:var(--blood-light);background:none;border:none;cursor:pointer;padding:0;">&#10005; Delete</button>' +
+    '</div>';
+  }).join('');
+}
+
+function openSavePresetModal() {
+  if (!combatants.length) { alert('No combatants in tracker to save!'); return; }
+  document.getElementById('preset-name').value = '';
+  document.getElementById('preset-modal').classList.add('show');
+}
+
+function closePresetModal() { document.getElementById('preset-modal').classList.remove('show'); }
+
+function savePreset() {
+  var name = document.getElementById('preset-name').value.trim() || 'Unnamed Encounter';
+  battlePresets.push({ name: name, combatants: combatants.map(function(c) { return Object.assign({}, c, {id: Date.now()}); }) });
+  localStorage.setItem('dm_presets', JSON.stringify(battlePresets));
+  renderPresets();
+  closePresetModal();
+}
+
+function loadPreset(idx) {
+  var p = battlePresets[idx];
+  if (!p) return;
+  if (combatants.length && !confirm('This will ADD these combatants to the current tracker. Continue?')) return;
+  p.combatants.forEach(function(c) {
+    var fresh = Object.assign({}, c, {id: Date.now(), init: Math.floor(Math.random()*20)+1});
+    combatants.push(fresh);
+  });
+  combatants.sort(function(a,b) { return b.init - a.init; });
+  renderCombatants();
+}
+
+function deletePreset(idx) {
+  battlePresets.splice(idx, 1);
+  localStorage.setItem('dm_presets', JSON.stringify(battlePresets));
+  renderPresets();
+}
+
 // ─── Combat Log ──────────────────────────────────────────────
 function renderCombatLog() {
   var el = document.getElementById('combat-log-list');
@@ -811,127 +864,7 @@ function calculateEncounterDifficulty() {
 // ============================================================
 // COMBATANT HOVER CARD
 // ============================================================
-var MONSTER_ACTIONS = {
-  'Goblin': {
-    cr:'1/4',
-    actions:[
-      {name:'Scimitar',text:'Melee Weapon Attack: +4 to hit, reach 5 ft. Hit: 5 (1d6+2) slashing damage.'},
-      {name:'Shortbow',text:'Ranged Weapon Attack: +4 to hit, range 80/320 ft. Hit: 5 (1d6+2) piercing damage.'}
-    ],
-    bonus:[{name:'Nimble Escape',text:'Disengage or Hide as a bonus action each turn.'}],
-    reactions:[],
-    traits:[{name:'Nimble Escape',text:'Can Disengage or Hide as a bonus action.'}]
-  },
-  'Hobgoblin': {
-    cr:'1/2',
-    actions:[{name:'Longsword',text:'+3 to hit, 1d8+1 slashing. Two-handed: 1d10+1.'},{name:'Longbow',text:'+3 to hit, 150/600 ft, 1d8+1 piercing.'}],
-    bonus:[], reactions:[],
-    traits:[{name:'Martial Advantage',text:'Once per turn, deal extra 2d6 damage if ally is adjacent to target.'}]
-  },
-  'Orc': {
-    cr:'1/2',
-    actions:[{name:'Greataxe',text:'+5 to hit, reach 5 ft. Hit: 9 (1d12+3) slashing.'},{name:'Handaxe',text:'+5 to hit, range 20/60. Hit: 6 (1d6+3) slashing.'}],
-    bonus:[{name:'Aggressive',text:'Move up to speed toward hostile creature as a bonus action.'}],
-    reactions:[],traits:[]
-  },
-  'Orc Warrior': {
-    cr:'1/2',
-    actions:[{name:'Greataxe',text:'+5 to hit, reach 5 ft. Hit: 9 (1d12+3) slashing.'},{name:'Handaxe',text:'+5 to hit, range 20/60. Hit: 6 (1d6+3) slashing.'}],
-    bonus:[{name:'Aggressive',text:'Move up to speed toward hostile creature as a bonus action.'}],
-    reactions:[],traits:[]
-  },
-  'Skeleton': {
-    cr:'1/4',
-    actions:[{name:'Shortsword',text:'+4 to hit, reach 5 ft. Hit: 5 (1d6+2) piercing.'},{name:'Shortbow',text:'+4 to hit, 80/320 ft. Hit: 5 (1d6+2) piercing.'}],
-    bonus:[],reactions:[],
-    traits:[{name:'Undead Fortitude (none)',text:'Vulnerable to bludgeoning. Immune to poison, exhaustion.'}]
-  },
-  'Zombie': {
-    cr:'1/4',
-    actions:[{name:'Slam',text:'+3 to hit, reach 5 ft. Hit: 4 (1d6+1) bludgeoning.'}],
-    bonus:[],reactions:[],
-    traits:[{name:'Undead Fortitude',text:'If damage reduces to 0 HP, Con save DC 5 + damage taken. On success, drop to 1 HP instead.'}]
-  },
-  'Bandit': {
-    cr:'1/8',
-    actions:[{name:'Scimitar',text:'+3 to hit, reach 5 ft. Hit: 4 (1d6+1) slashing.'},{name:'Crossbow',text:'+3 to hit, 80/320 ft. Hit: 5 (1d8+1) piercing.'}],
-    bonus:[],reactions:[],traits:[]
-  },
-  'Bandit Captain': {
-    cr:'2',
-    actions:[{name:'Multiattack',text:'3 attacks: 2 scimitar, 1 dagger.'},{name:'Scimitar',text:'+5 to hit, 1d6+3 slashing.'},{name:'Dagger',text:'+5 to hit, 1d4+3 piercing.'}],
-    bonus:[],
-    reactions:[{name:'Parry',text:'Add +3 AC against one melee attack that would hit (while holding melee weapon).'}],
-    traits:[]
-  },
-  'Guard': {
-    cr:'1/8',
-    actions:[{name:'Spear',text:'+3 to hit, reach 5 ft or range 20/60. Hit: 4 (1d6+1) piercing.'}],
-    bonus:[],reactions:[],traits:[]
-  },
-  'Giant Spider': {
-    cr:'1',
-    actions:[{name:'Bite',text:'+5 to hit. Hit: 7 (1d8+3) piercing + 9 (2d8) poison (DC 11 Con save or poisoned/paralyzed).'},{name:'Web',text:'Recharge 5–6. Ranged +5, range 30/60. Restrained, DC 12 Str to escape.'}],
-    bonus:[],reactions:[],
-    traits:[{name:'Spider Climb',text:'Can climb difficult surfaces and ceilings without checks.'},{name:'Web Sense',text:'Knows exact location of creatures touching its web.'}]
-  },
-  'Ghoul': {
-    cr:'1',
-    actions:[{name:'Bite',text:'+2 to hit. Hit: 9 (2d6+2) piercing.'},{name:'Claws',text:'+4 to hit. Hit: 7 (2d4+2) slashing. DC 10 Con or paralyzed 1 min (not elves/undead).'}],
-    bonus:[],reactions:[],
-    traits:[{name:'Paralyzing Claws',text:'Humanoids hit by claws must save or be paralyzed.'}]
-  },
-  'Troll': {
-    cr:'5',
-    actions:[{name:'Multiattack',text:'One Bite + two Claws.'},{name:'Bite',text:'+7 to hit. Hit: 7 (1d6+4).'},{name:'Claw',text:'+7 to hit. Hit: 11 (2d6+4).'}],
-    bonus:[],reactions:[],
-    traits:[{name:'Regeneration',text:'Regains 10 HP at start of turn. Does not regenerate if took acid or fire damage this turn.'},{name:'Keen Smell',text:'Advantage on Perception checks using smell.'}]
-  },
-  'Ogre': {
-    cr:'2',
-    actions:[{name:'Greatclub',text:'+6 to hit, reach 5 ft. Hit: 13 (2d8+4) bludgeoning.'},{name:'Javelin',text:'+6 to hit, range 30/120. Hit: 11 (2d6+4) piercing.'}],
-    bonus:[],reactions:[],traits:[]
-  },
-  'Wight': {
-    cr:'3',
-    actions:[{name:'Multiattack',text:'Longsword + Life Drain, or 2 longbows.'},{name:'Life Drain',text:'+4 to hit. Hit: 5 (1d6+2) necrotic. DC 13 Con or max HP reduced by damage until long rest.'},{name:'Longsword',text:'+4 to hit. Hit: 6 (1d8+2) slashing.'}],
-    bonus:[],reactions:[],
-    traits:[{name:'Sunlight Sensitivity',text:'Disadvantage on attacks and Perception in sunlight.'},{name:'Undead Fortitude',text:'Resistant to necrotic, immune to poison/exhaustion.'}]
-  },
-  'Mind Flayer': {
-    cr:'7',
-    actions:[{name:'Tentacles',text:'+7 to hit. Hit: 15 (2d10+4) psychic. DC 15 Int or stunned 1 min.'},{name:'Extract Brain',text:'Grappled stunned creature: instant kill on failed DC 15 Int save.'},{name:'Mind Blast',text:'Recharge 5–6. 60ft cone, DC 15 Int save or 22 (4d8+4) psychic + stunned 1 min.'}],
-    bonus:[],reactions:[],
-    traits:[{name:'Magic Resistance',text:'Advantage on saves against spells and magical effects.'},{name:'Innate Spellcasting',text:'Detect Thoughts, Levitate, Plane Shift (self only), Dominate Monster (once/day).'}]
-  },
-  'Beholder': {
-    cr:'13',
-    actions:[{name:'Bite',text:'+9 to hit. Hit: 14 (4d6) piercing.'},{name:'Eye Rays',text:'3 random rays: Charm, Paralyzing, Fear, Slowing, Enervation, Telekinetic, Sleep, Petrification, Disintegration, Death.'}],
-    bonus:[],reactions:[],
-    traits:[{name:'Antimagic Cone',text:'Central eye creates 150-ft cone. No spells or magic items work inside.'},{name:'Legendary Resistance',text:'3/day: choose to succeed on failed save.'}]
-  },
-  'Vampire': {
-    cr:'13',
-    actions:[{name:'Multiattack',text:'Two attacks or Unarmed + Bite.'},{name:'Unarmed',text:'+9 to hit. Hit: 8 (1d8+4) bludgeoning + grapple DC 18.'},{name:'Bite',text:'Grappled/restrained/willing target only. +9 to hit. 10 (1d6+4) piercing + 21 (6d6) necrotic. Regains HP equal to necrotic dealt.'}],
-    bonus:[],
-    reactions:[],
-    traits:[{name:'Legendary Resistance (3/day)',text:'Succeed on failed saves.'},{name:'Regeneration',text:'+20 HP/turn unless in sunlight/running water or took radiant damage.'},{name:'Vampire Weaknesses',text:'Running water, sunlight, and stakes deal severe damage.'}]
-  },
-  'Lich': {
-    cr:'21',
-    actions:[{name:'Paralyzing Touch',text:'+12 to hit. Hit: 10 (3d6) cold. DC 18 Con or paralyzed 1 min.'},{name:'Spellcasting',text:'9th-level wizard. DC 20. Has Fireball, Lightning Bolt, Disintegrate, Power Word Kill, Finger of Death, etc.'}],
-    bonus:[],
-    reactions:[{name:'Legendary Resistance (3/day)',text:'Succeed on failed saves.'}],
-    traits:[{name:'Turn Resistance',text:'Advantage on saves against being turned.'},{name:'Rejuvenation',text:'If has a phylactery, returns to life in 1d10 days.'}]
-  },
-  'Dragon': {
-    cr:'varies',
-    actions:[{name:'Multiattack',text:'One Bite + Two Claws (young). Three: Bite + Claw + Claw (adult).'},{name:'Bite',text:'+10 to hit, reach 10ft. Hit: 17 (2d10+6) piercing + element damage.'},{name:'Breath Weapon',text:'Recharge 5–6. 60-ft cone or 90-ft line (varies). DC 21 Dex/Con save or ~91 (26d6) damage.'}],
-    bonus:[],
-    reactions:[{name:'Legendary Resistance (3/day)',text:'Succeed on failed saves.'}],
-    traits:[{name:'Legendary Actions (3/turn)',text:'Detect (Perception), Tail Attack (+13 to hit, 1d12+7), Wing Attack (DC 21 Str or knocked prone).'}]
-  }
-};
+// MONSTER_ACTIONS declared in data/monsters.js
 
 // Default actions for unknown creatures
 function getDefaultActions(c) {

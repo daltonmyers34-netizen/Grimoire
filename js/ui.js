@@ -1,7 +1,7 @@
 // ============================================================
 // MONSTER AUTOCOMPLETE
 // ============================================================
-let acSelectedIdx = -1;
+// acSelectedIdx declared in app.js
 
 function monsterAutocomplete(val) {
   const dd = document.getElementById('ac-dropdown');
@@ -57,12 +57,4 @@ document.addEventListener('click', e => {
   if (dd && !dd.closest('.autocomplete-wrap').contains(e.target)) dd.classList.remove('open');
 });
 
-// ============================================================
-// APP INITIALIZATION
-// ============================================================
-// BUG FIX: Wrapped in DOMContentLoaded and added try-catch for renderParty/renderPresets
-document.addEventListener('DOMContentLoaded', function initApp() {
-  try { initNPCs(); } catch(e) { console.warn("initNPCs();", e); }
-  try { renderParty(); } catch(e) { console.error('renderParty failed:', e); }
-  try { renderPresets(); } catch(e) { console.error('renderPresets failed:', e); }
-});
+// DOMContentLoaded init moved to app.js

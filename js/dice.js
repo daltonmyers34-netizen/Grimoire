@@ -5,8 +5,7 @@
 //   diceOverlayExpanded, esc(), showToast()
 // ============================================================
 
-let diceHistory = [];
-let diceAdvMode = 'normal'; // 'normal','adv','dis'
+// diceHistory, diceAdvMode, diceOverlayExpanded, widgetDieSides declared in app.js
 
 function toggleAdvantage() {
   diceAdvMode = diceAdvMode === 'adv' ? 'normal' : 'adv';
@@ -90,8 +89,6 @@ function clearDiceHistory() {
 }
 
 // ── Dice overlay collapse ──────────────────────────────────────────
-let diceOverlayExpanded = true;
-
 function toggleDiceOverlay() {
   diceOverlayExpanded = !diceOverlayExpanded;
   const row  = document.getElementById('dice-overlay-row');
@@ -239,8 +236,6 @@ function toggleDiceOverlay() {
 // ============================================================
 // DICE WIDGET
 // ============================================================
-let widgetDieSides = 20;
-
 function setWidgetDie(sides) {
   widgetDieSides = sides;
   // Update top-bar pips
