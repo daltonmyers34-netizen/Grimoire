@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Player View — DM Grimoire</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1a0f0a;
+    --parchment: #f0e6cc;
+    --gold: #d4a820;
+    --gold-light: #f0c030;
+    --gold-dim: #9a7a18;
+    --blood: #8b1a1a;
+    --blood-light: #e05050;
+    --text-dim: #a89060;
+    --text-secondary: #d4b880;
+    --border: #6a4a28;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #0d0804;
+    color: #d4b880;
+    font-family: 'Crimson Text', serif;
+    font-size: 19px;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(ellipse at 20% 20%, rgba(201,150,10,0.04) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, rgba(139,26,26,0.06) 0%, transparent 50%);
+  }
+  body { padding: 0; }
+
+  /* ===== SCROLLBAR ===== */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+  ::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.3); border-radius: 3px; }
+
+  /* ===== HEADER ===== */
+  .pv-header {
+    background: linear-gradient(180deg, rgba(42,26,14,0.98) 0%, rgba(20,12,6,0.98) 100%);
+    border-bottom: 2px solid var(--border);
+    padding: 14px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+  }
+  .pv-title {
+    font-family: 'Cinzel Decorative', cursive;
+    font-size: clamp(14px, 3vw, 20px);
+    color: var(--gold);
+    text-shadow: 0 0 15px rgba(201,150,10,0.4);
+  }
+  .pv-status {
+    font-size: 11px;
+    font-family: 'Cinzel', serif;
+    color: #8fd050;
+  }
+
+  /* ===== MAIN CONTENT ===== */
+  .pv-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+
+  /* ===== CHARACTER SELECTION ===== */
+  .select-screen {
+    text-align: center;
+    padding: 40px 16px;
+  }
+  .select-title {
+    font-family: 'Cinzel', serif;
+    font-size: clamp(18px, 4vw, 28px);
+    color: var(--gold);
+    margin-bottom: 8px;
+  }
+  .select-subtitle {
+    font-size: 14px;
+    color: var(--text-dim);
+    font-style: italic;
+    margin-bottom: 32px;
+  }
+  .select-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+    max-width: 700px;
+    margin: 0 auto;
+  }
+  .select-card {
+    background: linear-gradient(135deg, rgba(38,24,10,0.98), rgba(28,16,6,1));
+    border: 2px solid rgba(212,175,55,0.2);
+    border-radius: 10px;
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    text-align: center;
+  }
+  .select-card:hover {
+    border-color: rgba(212,175,55,0.6);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 30px rgba(212,175,55,0.15);
+  }
+  .select-avatar {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    margin: 0 auto 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Cinzel', serif;
+    font-size: 22px; font-weight: 700;
+    color: #fff;
+    border: 3px solid rgba(255,255,255,0.15);
+  }
+  .select-card-name {
+    font-family: 'Cinzel', serif;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--gold);
+    margin-bottom: 4px;
+  }
+  .select-card-info {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  /* ===== CARDS ===== */
+  .card {
+    background: linear-gradient(135deg, rgba(38,24,10,0.98), rgba(28,16,6,1));
+    border: 1px solid rgba(212,175,55,0.25);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 14px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  .card-section-label {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(212,175,55,0.15);
+  }
+
+  /* ===== HP BAR ===== */
+  .hp-bar-wrap {
+    background: rgba(0,0,0,0.4);
+    border-radius: 5px;
+    height: 10px;
+    overflow: hidden;
+    margin: 8px 0;
+  }
+  .hp-bar {
+    height: 100%;
+    border-radius: 5px;
+    transition: width 0.6s ease;
+  }
+
+  /* ===== ABILITY SCORES ===== */
+  .ability-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+    margin: 12px 0;
+  }
+  .ability-box {
+    text-align: center;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(212,175,55,0.15);
+    border-radius: 6px;
+    padding: 8px 4px;
+  }
+  .ability-mod {
+    font-family: 'Cinzel', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--gold-light);
+  }
+  .ability-score {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .ability-label {
+    font-family: 'Cinzel', serif;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  /* ===== SKILLS ===== */
+  .skills-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 12px;
+  }
+  .skill-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 4px;
+    border-radius: 3px;
+  }
+  .skill-icon {
+    font-size: 12px;
+    width: 16px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .skill-name {
+    font-size: 12px;
+    flex: 1;
+  }
+  .skill-bonus {
+    font-size: 12px;
+    font-family: 'Cinzel', serif;
+    font-weight: 600;
+    min-width: 28px;
+    text-align: right;
+  }
+
+  /* ===== SPELL PIPS ===== */
+  .pip {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    margin: 2px;
+    cursor: default;
+  }
+
+  /* ===== MESSAGES ===== */
+  .msg-banner {
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .party-msg {
+    background: rgba(212,175,55,0.1);
+    border: 1px solid rgba(212,175,55,0.35);
+    color: #ffe066;
+  }
+  .personal-msg {
+    background: rgba(100,180,255,0.08);
+    border: 1px solid rgba(100,180,255,0.35);
+    color: #b8d8ff;
+  }
+
+  /* ===== CONDITIONS ===== */
+  .cond-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 9px;
+    border-radius: 4px;
+    font-size: 12px;
+    background: rgba(255,100,100,0.12);
+    border: 1px solid rgba(255,100,100,0.3);
+    color: #ff9090;
+    margin: 2px 2px 2px 0;
+  }
+
+  /* ===== SMALL PARTY CARDS ===== */
+  .party-mini-card {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(212,175,55,0.15);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+  .party-mini-avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Cinzel', serif;
+    font-size: 13px; font-weight: 700;
+    color: #fff;
+    border: 2px solid rgba(255,255,255,0.12);
+    flex-shrink: 0;
+  }
+
+  /* ===== INITIATIVE TABLE ===== */
+  .init-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+  }
+  .init-current {
+    background: rgba(212,175,55,0.1);
+    border: 1px solid rgba(212,175,55,0.35);
+  }
+
+  /* ===== BUTTONS ===== */
+  .btn-pv {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-family: 'Cinzel', serif;
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid rgba(212,175,55,0.3);
+    background: rgba(212,175,55,0.1);
+    color: var(--gold);
+    transition: all 0.2s;
+  }
+  .btn-pv:hover {
+    background: rgba(212,175,55,0.2);
+    border-color: rgba(212,175,55,0.5);
+  }
+
+  /* ===== INSPIRATION ===== */
+  .insp-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    background: rgba(255,215,0,0.15);
+    border: 1px solid rgba(255,215,0,0.45);
+    color: #ffd700;
+  }
+
+  /* ===== RESPONSIVE ===== */
+  @media (max-width: 600px) {
+    .pv-container { padding: 10px; }
+    .ability-grid { gap: 4px; }
+    .ability-mod { font-size: 15px; }
+    .ability-box { padding: 6px 2px; }
+    .skills-grid { grid-template-columns: 1fr; }
+    .select-grid { grid-template-columns: 1fr; }
+    .card { padding: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="pv-header">
+  <div class="pv-title">DM Grimoire</div>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <span class="pv-status" id="pv-status">Connecting...</span>
+  </div>
+</div>
+
+<div class="pv-container">
+  <div id="pv-root">
+    <div style="text-align:center;color:#555;padding:60px 0;font-style:italic;">Connecting to your DM...</div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const app = initializeApp({
+  apiKey: "AIzaSyAHeoD6eKkxm7ezwvBcEt5W6S7nVqZYknY",
+  authDomain: "dm-grimoire-20df0.firebaseapp.com",
+  projectId: "dm-grimoire-20df0"
+});
+const db = getFirestore(app);
+
+// ── Get DM UID from URL ──────────────────────────────────────
+const params = new URLSearchParams(window.location.search);
+const dmUid = params.get('dm');
+if (!dmUid) {
+  document.getElementById('pv-root').innerHTML =
+    '<div style="text-align:center;padding:60px 20px;">' +
+    '<div style="font-size:48px;margin-bottom:16px;">📖</div>' +
+    '<div style="font-family:Cinzel,serif;font-size:22px;color:var(--gold);margin-bottom:8px;">No DM Link Found</div>' +
+    '<div style="color:var(--text-dim);font-size:14px;">Ask your DM for the Player View link.</div></div>';
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+const AVATAR_COLORS = ['#7b3a14','#1e4d7a','#3a6b47','#6b2d5e','#7a5c10','#1d5e6b','#6b3a1e','#2d4e7a'];
+function avatarColor(name) {
+  let h = 0;
+  for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
+function initials(name) {
+  return String(name).split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function mod(score) { return Math.floor((score - 10) / 2); }
+function fmtMod(n) { return n >= 0 ? '+' + n : '' + n; }
+
+function profBonus(level) {
+  if (level <= 4) return 2;
+  if (level <= 8) return 3;
+  if (level <= 12) return 4;
+  if (level <= 16) return 5;
+  return 6;
+}
+
+function hpColor(pct) {
+  if (pct > 50) return '#4caf50';
+  if (pct > 25) return '#ff9800';
+  return '#f44336';
+}
+
+function hpPct(cur, max) {
+  return Math.max(0, Math.min(100, (cur / (max || 1)) * 100));
+}
+
+// ── Skills data ──────────────────────────────────────────────
+const SKILL_LIST = [
+  { key: 'acrobatics',      label: 'Acrobatics',      ability: 'dex' },
+  { key: 'animal_handling',  label: 'Animal Handling',  ability: 'wis' },
+  { key: 'arcana',          label: 'Arcana',           ability: 'int' },
+  { key: 'athletics',       label: 'Athletics',        ability: 'str' },
+  { key: 'deception',       label: 'Deception',        ability: 'cha' },
+  { key: 'history',         label: 'History',          ability: 'int' },
+  { key: 'insight',         label: 'Insight',          ability: 'wis' },
+  { key: 'intimidation',    label: 'Intimidation',     ability: 'cha' },
+  { key: 'investigation',   label: 'Investigation',    ability: 'int' },
+  { key: 'medicine',        label: 'Medicine',         ability: 'wis' },
+  { key: 'nature',          label: 'Nature',           ability: 'int' },
+  { key: 'perception',      label: 'Perception',       ability: 'wis' },
+  { key: 'performance',     label: 'Performance',      ability: 'cha' },
+  { key: 'persuasion',      label: 'Persuasion',       ability: 'cha' },
+  { key: 'religion',        label: 'Religion',         ability: 'int' },
+  { key: 'sleight_of_hand', label: 'Sleight of Hand',  ability: 'dex' },
+  { key: 'stealth',         label: 'Stealth',          ability: 'dex' },
+  { key: 'survival',        label: 'Survival',         ability: 'wis' }
+];
+
+// ── State ────────────────────────────────────────────────────
+let selectedPcId = sessionStorage.getItem('pv_selected_pc') || null;
+let latestData = null;
+
+// ── Copy link ────────────────────────────────────────────────
+function copyLink() {
+  navigator.clipboard.writeText(window.location.href).then(() => {
+    const btn = document.getElementById('copy-link-btn');
+    if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = '📋 Copy Link'; }, 2000); }
+  });
+}
+window._pvCopyLink = copyLink;
+
+// ── Change character ─────────────────────────────────────────
+function changeCharacter() {
+  selectedPcId = null;
+  sessionStorage.removeItem('pv_selected_pc');
+  if (latestData) renderRoot(latestData);
+}
+window._pvChangeChar = changeCharacter;
+
+// ── Select a character ───────────────────────────────────────
+function selectCharacter(id) {
+  selectedPcId = String(id);
+  sessionStorage.setItem('pv_selected_pc', selectedPcId);
+  if (latestData) renderRoot(latestData);
+}
+window._pvSelectChar = selectCharacter;
+
+// ══════════════════════════════════════════════════════════════
+// RENDER: Root dispatcher
+// ══════════════════════════════════════════════════════════════
+function renderRoot(d) {
+  latestData = d;
+  const root = document.getElementById('pv-root');
+  const party = d.party || [];
+
+  if (!party.length) {
+    root.innerHTML = '<div style="text-align:center;color:#555;padding:60px 0;font-style:italic;">No party members yet. Ask your DM to add characters.</div>';
+    return;
+  }
+
+  // Check if selected PC still exists
+  if (selectedPcId) {
+    const found = party.find(pc => String(pc.id) === selectedPcId);
+    if (!found) {
+      selectedPcId = null;
+      sessionStorage.removeItem('pv_selected_pc');
+    }
+  }
+
+  if (!selectedPcId) {
+    root.innerHTML = renderSelectionScreen(party);
+  } else {
+    root.innerHTML = renderCharacterView(d);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// RENDER: Character Selection Screen
+// ══════════════════════════════════════════════════════════════
+function renderSelectionScreen(party) {
+  const classIcons = {
+    Barbarian:'\u2694', Bard:'\uD83C\uDFB5', Cleric:'\u2720', Druid:'\uD83C\uDF3F',
+    Fighter:'\uD83D\uDDE1', Monk:'\u262F', Paladin:'\u2728', Ranger:'\uD83C\uDFF9',
+    Rogue:'\uD83D\uDDE1', Sorcerer:'\uD83D\uDD25', Warlock:'\uD83D\uDC7F', Wizard:'\uD83E\uDE84'
+  };
+
+  return '<div class="select-screen">' +
+    '<div class="select-title">Who Are You?</div>' +
+    '<div class="select-subtitle">Select your character to view your sheet</div>' +
+    '<div class="select-grid">' +
+    party.map(pc => {
+      const icon = classIcons[pc.cls] || '\u2694';
+      return '<div class="select-card" onclick="_pvSelectChar(' + pc.id + ')">' +
+        '<div class="select-avatar" style="background:' + avatarColor(pc.name) + ';">' + initials(pc.name) + '</div>' +
+        '<div class="select-card-name">' + esc(pc.name) + '</div>' +
+        '<div class="select-card-info">' + icon + ' ' + esc(pc.race || '') + ' ' + esc(pc.cls) + ' Lv' + (pc.level || 1) + '</div>' +
+        (pc.player ? '<div style="font-size:11px;color:#555;margin-top:4px;">played by ' + esc(pc.player) + '</div>' : '') +
+      '</div>';
+    }).join('') +
+    '</div>' +
+    '<div style="margin-top:28px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">' +
+      '<button class="btn-pv" id="copy-link-btn" onclick="_pvCopyLink()">📋 Copy Link</button>' +
+    '</div>' +
+  '</div>';
+}
+
+// ══════════════════════════════════════════════════════════════
+// RENDER: Full Character View (after selection)
+// ══════════════════════════════════════════════════════════════
+function renderCharacterView(d) {
+  const party = d.party || [];
+  const combatants = d.combatants || [];
+  const msgs = d.pvMessages || {};
+  const partyMsg = d.pvPartyMessage || '';
+
+  const pc = party.find(p => String(p.id) === selectedPcId);
+  if (!pc) return renderSelectionScreen(party);
+
+  const cmb = combatants.find(x => x.name === pc.name && x.type === 'ally');
+  const curHp = cmb ? cmb.hp : (pc.maxhp || 0);
+  const maxHp = cmb ? cmb.maxHp : (pc.maxhp || 0);
+  const pct = hpPct(curHp, maxHp);
+  const hc = hpColor(pct);
+  const conditions = (cmb && cmb.conditions) || [];
+  const personalMsg = msgs[pc.id] || msgs[String(pc.id)] || '';
+
+  let html = '';
+
+  // ── Toolbar ──
+  html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' +
+    '<button class="btn-pv" onclick="_pvChangeChar()">&#8592; Change Character</button>' +
+    '<button class="btn-pv" id="copy-link-btn" onclick="_pvCopyLink()">📋 Copy Link</button>' +
+  '</div>';
+
+  // ── Party message ──
+  if (partyMsg) {
+    html += '<div class="msg-banner party-msg">📢 <strong>DM to Party:</strong> ' + esc(partyMsg) + '</div>';
+  }
+
+  // ── Personal message ──
+  if (personalMsg) {
+    html += '<div class="msg-banner personal-msg">📨 <strong>DM to You:</strong> ' + esc(personalMsg) + '</div>';
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // SECTION A: Your Character
+  // ══════════════════════════════════════════════════════════
+  html += '<div class="card">';
+  html += '<div class="card-section-label">Your Character</div>';
+
+  // Name + basic info
+  html += '<div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:12px;">' +
+    '<div class="select-avatar" style="width:56px;height:56px;font-size:20px;background:' + avatarColor(pc.name) + ';">' + initials(pc.name) + '</div>' +
+    '<div style="flex:1;">' +
+      '<div style="font-family:Cinzel,serif;font-size:22px;font-weight:700;color:var(--gold);">' + esc(pc.name) + '</div>' +
+      '<div style="font-size:14px;color:var(--text-dim);">' + (pc.race ? esc(pc.race) + ' ' : '') + esc(pc.cls) + ' &middot; Level ' + (pc.level || 1) + '</div>' +
+      (pc.player ? '<div style="font-size:12px;color:#555;">played by ' + esc(pc.player) + '</div>' : '') +
+    '</div>' +
+    '<div style="text-align:right;">' +
+      '<div style="font-size:28px;font-weight:700;color:' + hc + ';">' + curHp + '<span style="font-size:14px;color:#555;">/' + maxHp + '</span></div>' +
+      '<div style="font-size:10px;color:#555;">HP</div>' +
+    '</div>' +
+  '</div>';
+
+  // HP bar
+  html += '<div class="hp-bar-wrap"><div class="hp-bar" style="width:' + pct + '%;background:' + hc + ';"></div></div>';
+
+  // AC + Init + Inspiration
+  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;">' +
+    '<span style="padding:5px 14px;border-radius:5px;font-size:13px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#aaa;">🛡 AC <strong style="color:var(--parchment);">' + (pc.ac || '?') + '</strong></span>' +
+    '<span style="padding:5px 14px;border-radius:5px;font-size:13px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#aaa;">⚡ Init <strong style="color:var(--parchment);">' + fmtMod(pc.initBonus || 0) + '</strong></span>' +
+    (pc.inspiration ? '<span class="insp-badge">★ Inspired</span>' : '') +
+  '</div>';
+
+  // Conditions
+  if (conditions.length) {
+    html += '<div style="margin:8px 0;">' + conditions.map(c => '<span class="cond-tag">' + esc(c) + '</span>').join('') + '</div>';
+  }
+
+  // Ability scores
+  html += '<div class="ability-grid">';
+  ['STR','DEX','CON','INT','WIS','CHA'].forEach((label, i) => {
+    const keys = ['str','dex','con','int','wis','cha'];
+    const val = pc[keys[i]] || 10;
+    const m = mod(val);
+    html += '<div class="ability-box">' +
+      '<div class="ability-mod">' + fmtMod(m) + '</div>' +
+      '<div class="ability-score">' + val + '</div>' +
+      '<div class="ability-label">' + label + '</div>' +
+    '</div>';
+  });
+  html += '</div>';
+
+  // Skills
+  const skills = pc.skills || {};
+  const hasSkills = SKILL_LIST.some(sk => (skills[sk.key] || 0) > 0);
+  if (hasSkills) {
+    const pb = profBonus(pc.level || 1);
+    html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);">';
+    html += '<div class="card-section-label" style="border:none;padding:0;margin-bottom:8px;">Skills <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(Prof +' + pb + ')</span></div>';
+    html += '<div class="skills-grid">';
+    SKILL_LIST.forEach(sk => {
+      const val = skills[sk.key] || 0;
+      const abilityMod = mod(pc[sk.ability] || 10);
+      let bonus = abilityMod;
+      if (val === 1) bonus += pb;
+      if (val === 2) bonus += pb * 2;
+      const icon = val === 0 ? '<span style="color:#444;">\u25CB</span>' : val === 1 ? '<span style="color:#90c8ff;">\u25CF</span>' : '<span style="color:#ffe066;">\u2733</span>';
+      const nameColor = val > 0 ? '#d4b880' : '#666';
+      const bonusColor = val === 2 ? '#ffe066' : val === 1 ? '#90c8ff' : '#666';
+      html += '<div class="skill-row">' +
+        '<span class="skill-icon">' + icon + '</span>' +
+        '<span class="skill-name" style="color:' + nameColor + ';">' + sk.label + '</span>' +
+        '<span class="skill-bonus" style="color:' + bonusColor + ';">' + fmtMod(bonus) + '</span>' +
+      '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  // Spell slots
+  const spellSlots = pc.spellSlots || [];
+  if (spellSlots.length) {
+    const lvlNames = ['1st','2nd','3rd','4th','5th','6th','7th','8th','9th'];
+    html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);">';
+    html += '<div class="card-section-label" style="border:none;padding:0;margin-bottom:8px;">Spell Slots</div>';
+    spellSlots.forEach((slot, i) => {
+      const available = slot.max - slot.used;
+      html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">' +
+        '<span style="font-size:11px;color:var(--text-dim);width:28px;flex-shrink:0;">' + lvlNames[i] + '</span>';
+      for (let j = 0; j < slot.max; j++) {
+        const spent = j >= available;
+        html += '<span class="pip" style="background:' + (spent ? 'rgba(255,255,255,0.07)' : 'rgba(100,180,255,0.65)') + ';border:1px solid ' + (spent ? 'rgba(255,255,255,0.12)' : 'rgba(100,180,255,0.9)') + ';' + (spent ? '' : 'box-shadow:0 0 4px rgba(100,180,255,0.3);') + '"></span>';
+      }
+      html += '<span style="font-size:11px;color:' + (available > 0 ? '#90c8ff' : '#555') + ';margin-left:4px;">' + available + '/' + slot.max + '</span></div>';
+    });
+    html += '</div>';
+  }
+
+  // Abilities / Moves
+  const moves = (pc.moves || '').split('\n').filter(Boolean);
+  if (moves.length) {
+    html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);">';
+    html += '<div class="card-section-label" style="border:none;padding:0;margin-bottom:8px;">Abilities &amp; Features</div>';
+    moves.forEach(m => {
+      const parts = m.split('\u2014');
+      const name = parts[0];
+      const rest = parts.slice(1).join('\u2014');
+      html += '<div style="padding:4px 0;font-size:14px;border-bottom:1px solid rgba(255,255,255,0.04);">' +
+        '<strong style="color:var(--gold-light);">' + esc(name.trim()) + '</strong>' +
+        (rest ? ' <span style="color:var(--text-dim);">\u2014 ' + esc(rest.trim()) + '</span>' : '') +
+      '</div>';
+    });
+    html += '</div>';
+  }
+
+  html += '</div>'; // close Your Character card
+
+  // ══════════════════════════════════════════════════════════
+  // SECTION B: The Party
+  // ══════════════════════════════════════════════════════════
+  const otherPCs = party.filter(p => String(p.id) !== selectedPcId);
+  if (otherPCs.length) {
+    html += '<div class="card">';
+    html += '<div class="card-section-label">The Party</div>';
+    otherPCs.forEach(opc => {
+      const oCmb = combatants.find(x => x.name === opc.name && x.type === 'ally');
+      const oCur = oCmb ? oCmb.hp : (opc.maxhp || 0);
+      const oMax = oCmb ? oCmb.maxHp : (opc.maxhp || 0);
+      const oPct = hpPct(oCur, oMax);
+      const oHc = hpColor(oPct);
+      const oConds = (oCmb && oCmb.conditions) || [];
+
+      html += '<div class="party-mini-card">' +
+        '<div style="display:flex;align-items:center;gap:10px;">' +
+          '<div class="party-mini-avatar" style="background:' + avatarColor(opc.name) + ';">' + initials(opc.name) + '</div>' +
+          '<div style="flex:1;min-width:0;">' +
+            '<div style="font-family:Cinzel,serif;font-size:14px;font-weight:700;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(opc.name) + '</div>' +
+            '<div style="font-size:11px;color:var(--text-dim);">' + esc(opc.cls) + ' Lv' + (opc.level || 1) + '</div>' +
+          '</div>' +
+          '<div style="text-align:right;">' +
+            '<div style="font-size:18px;font-weight:700;color:' + oHc + ';">' + oCur + '<span style="font-size:11px;color:#555;">/' + oMax + '</span></div>' +
+          '</div>' +
+          '<span style="padding:3px 8px;border-radius:4px;font-size:11px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#888;">AC ' + (opc.ac || '?') + '</span>' +
+        '</div>' +
+        '<div class="hp-bar-wrap" style="height:5px;margin:6px 0 0;"><div class="hp-bar" style="width:' + oPct + '%;background:' + oHc + ';"></div></div>' +
+        (oConds.length ? '<div style="margin-top:6px;">' + oConds.map(c => '<span class="cond-tag">' + esc(c) + '</span>').join('') + '</div>' : '') +
+      '</div>';
+    });
+    html += '</div>';
+  }
+
+  // ── Initiative tracker ──
+  if (combatants.length) {
+    html += '<div class="card">';
+    html += '<div class="card-section-label">Initiative &mdash; Round ' + (d.currentRound || 0) + '</div>';
+    combatants.forEach((c, i) => {
+      const isAlly = c.type === 'ally';
+      const cHpPct = hpPct(c.hp, c.maxHp);
+      const cHc = hpColor(cHpPct);
+      const isCurrent = i === 0 && d.combatActive;
+      html += '<div class="init-row' + (isCurrent ? ' init-current' : '') + '" style="background:' + (isCurrent ? 'rgba(212,175,55,0.1)' : 'rgba(0,0,0,0.2)') + ';">' +
+        '<span style="font-size:16px;font-weight:700;color:var(--gold);width:28px;text-align:center;">' + (c.initiative || c.init || '?') + '</span>' +
+        '<span style="font-size:14px;color:' + (isAlly ? '#90c8ff' : '#ff9090') + ';flex:1;">' + esc(c.name) + (isCurrent ? ' \u25C0' : '') + '</span>' +
+        '<div style="display:flex;align-items:center;gap:6px;">' +
+          '<div style="width:50px;height:5px;background:rgba(255,255,255,0.08);border-radius:3px;"><div style="height:100%;width:' + cHpPct + '%;background:' + cHc + ';border-radius:3px;"></div></div>' +
+          '<span style="font-size:12px;color:' + cHc + ';">' + c.hp + '/' + c.maxHp + '</span>' +
+        '</div>' +
+      '</div>';
+    });
+    html += '</div>';
+  }
+
+  // ── Party Inventory ──
+  const inv = d.partyInventory || [];
+  if (inv.length) {
+    html += '<div class="card">';
+    html += '<div class="card-section-label">Party Inventory</div>';
+    inv.forEach(item => {
+      html += '<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);">' +
+        '<span style="font-size:20px;">' + (item.icon || '?') + '</span>' +
+        '<div>' +
+          '<div style="font-size:14px;color:#d4b880;">' + esc(item.name) + '</div>' +
+          (item.desc ? '<div style="font-size:12px;color:#555;">' + esc(item.desc) + '</div>' : '') +
+        '</div>' +
+      '</div>';
+    });
+    html += '</div>';
+  }
+
+  return html;
+}
+
+// ══════════════════════════════════════════════════════════════
+// FIREBASE LISTENER
+// ══════════════════════════════════════════════════════════════
+if (dmUid) {
+  const statusEl = document.getElementById('pv-status');
+  let firstLoad = true;
+
+  onSnapshot(doc(db, 'playerView', dmUid), snap => {
+    if (!snap.exists()) {
+      statusEl.textContent = 'Waiting for DM...';
+      document.getElementById('pv-root').innerHTML =
+        '<div style="text-align:center;color:#555;padding:60px 0;font-style:italic;">Waiting for your DM to start the session...</div>';
+      return;
+    }
+
+    const d = snap.data();
+    renderRoot(d);
+
+    const now = new Date();
+    statusEl.textContent = (firstLoad ? 'Live ' : '') +
+      now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    statusEl.style.color = '#8fd050';
+    firstLoad = false;
+  }, err => {
+    console.error('Snapshot error:', err);
+    document.getElementById('pv-status').textContent = 'Connection lost';
+    document.getElementById('pv-status').style.color = '#e05050';
+  });
+}
+</script>
+</body>
+</html>

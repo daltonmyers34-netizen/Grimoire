@@ -4,6 +4,91 @@
 
 // party array is initialized in app.js
 
+// ══════════════════════════════════════════════════════════════
+// SKILLS DATA & HELPERS
+// ══════════════════════════════════════════════════════════════
+var SKILL_LIST = [
+  { key: 'acrobatics',      label: 'Acrobatics',      ability: 'dex' },
+  { key: 'animal_handling',  label: 'Animal Handling',  ability: 'wis' },
+  { key: 'arcana',          label: 'Arcana',           ability: 'int' },
+  { key: 'athletics',       label: 'Athletics',        ability: 'str' },
+  { key: 'deception',       label: 'Deception',        ability: 'cha' },
+  { key: 'history',         label: 'History',          ability: 'int' },
+  { key: 'insight',         label: 'Insight',          ability: 'wis' },
+  { key: 'intimidation',    label: 'Intimidation',     ability: 'cha' },
+  { key: 'investigation',   label: 'Investigation',    ability: 'int' },
+  { key: 'medicine',        label: 'Medicine',         ability: 'wis' },
+  { key: 'nature',          label: 'Nature',           ability: 'int' },
+  { key: 'perception',      label: 'Perception',       ability: 'wis' },
+  { key: 'performance',     label: 'Performance',      ability: 'cha' },
+  { key: 'persuasion',      label: 'Persuasion',       ability: 'cha' },
+  { key: 'religion',        label: 'Religion',         ability: 'int' },
+  { key: 'sleight_of_hand', label: 'Sleight of Hand',  ability: 'dex' },
+  { key: 'stealth',         label: 'Stealth',          ability: 'dex' },
+  { key: 'survival',        label: 'Survival',         ability: 'wis' }
+];
+
+var _skillValues = {};
+
+function buildSkillsGrid() {
+  var grid = document.getElementById('pc-skills-grid');
+  if (!grid) return;
+  grid.innerHTML = SKILL_LIST.map(function(sk) {
+    var val = _skillValues[sk.key] || 0;
+    var icon = val === 0 ? '\u25CB' : val === 1 ? '\u25CF' : '\u2733';
+    var color = val === 0 ? '#555' : val === 1 ? '#90c8ff' : '#ffe066';
+    return '<div onclick="cycleSkill(\'' + sk.key + '\')" style="display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:pointer;border-radius:4px;background:rgba(255,255,255,0.03);user-select:none;" title="' + sk.label + ' (' + sk.ability.toUpperCase() + ')">' +
+      '<span style="font-size:16px;color:' + color + ';width:18px;text-align:center;">' + icon + '</span>' +
+      '<span style="font-size:12px;color:' + (val > 0 ? '#d4b880' : '#777') + ';">' + sk.label + '</span>' +
+      '<span style="font-size:9px;color:#555;margin-left:auto;">' + sk.ability.toUpperCase() + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+function cycleSkill(key) {
+  var cur = _skillValues[key] || 0;
+  _skillValues[key] = (cur + 1) % 3;
+  buildSkillsGrid();
+}
+
+function resetAllSkills() {
+  _skillValues = {};
+  buildSkillsGrid();
+}
+
+function collectSkillsFromGrid() {
+  var skills = {};
+  var hasAny = false;
+  SKILL_LIST.forEach(function(sk) {
+    var val = _skillValues[sk.key] || 0;
+    skills[sk.key] = val;
+    if (val > 0) hasAny = true;
+  });
+  return hasAny ? skills : {};
+}
+
+function populateSkillsGrid(skills) {
+  _skillValues = {};
+  if (skills) {
+    SKILL_LIST.forEach(function(sk) {
+      _skillValues[sk.key] = skills[sk.key] || 0;
+    });
+  }
+  buildSkillsGrid();
+}
+
+function getSkillsSummary(skills) {
+  if (!skills) return '';
+  var prof = 0, exp = 0;
+  SKILL_LIST.forEach(function(sk) {
+    var v = skills[sk.key] || 0;
+    if (v === 1) prof++;
+    if (v === 2) { prof++; exp++; }
+  });
+  if (prof === 0) return '';
+  return prof + ' skill' + (prof !== 1 ? 's' : '') + (exp > 0 ? ', ' + exp + ' expertise' : '');
+}
+
 function savePartyStorage() {
   localStorage.setItem('dm_party', JSON.stringify(party));
   if (window.cloudSave) window.cloudSave();
@@ -65,9 +150,27 @@ function togglePartyInspiration(id) {
 // ══════════════════════════════════════════════════════════════
 function openPlayerView() {
   if (!window.__fbUid) { showToast('Sign in first to use Player View', 'warn'); return; }
-  var win = window.open('', '_blank', 'width=900,height=700');
-  win.document.write(buildPlayerViewHTML(window.__fbUid));
-  win.document.close();
+  var link = window.location.origin + '/player-view.html?dm=' + window.__fbUid;
+  var existing = document.getElementById('pv-link-modal');
+  if (existing) existing.remove();
+  var m = document.createElement('div');
+  m.id = 'pv-link-modal'; m.className = 'modal-overlay show'; m.style.zIndex = '2500';
+  m.innerHTML = '<div class="modal" style="max-width:480px;width:95vw;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+      '<h3 style="margin:0;font-family:Cinzel,serif;color:var(--gold);">👁 Player View</h3>' +
+      '<button onclick="document.getElementById(\'pv-link-modal\').remove()" style="background:none;border:none;color:var(--text-dim);font-size:22px;cursor:pointer;">✕</button>' +
+    '</div>' +
+    '<div style="font-size:13px;color:var(--text-dim);margin-bottom:14px;font-family:Crimson Text,serif;">Share this link with your players. They can open it on their phone or laptop to see their character sheet, party status, and your messages in real time.</div>' +
+    '<div style="display:flex;gap:6px;margin-bottom:16px;">' +
+      '<input id="pv-link-input" readonly value="' + link + '" style="flex:1;font-size:12px;padding:10px;background:rgba(0,0,0,0.4);border:1px solid rgba(212,175,55,0.3);border-radius:5px;color:var(--parchment);font-family:monospace;" onclick="this.select()">' +
+      '<button onclick="navigator.clipboard.writeText(document.getElementById(\'pv-link-input\').value).then(function(){showToast(\'Link copied!\',\'success\');})" style="padding:10px 16px;background:linear-gradient(135deg,var(--gold-dim),var(--gold));color:var(--ink);border:none;border-radius:5px;font-family:Cinzel,serif;font-size:12px;font-weight:bold;cursor:pointer;white-space:nowrap;">📋 Copy</button>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;">' +
+      '<button onclick="window.open(\'' + link + '\',\'_blank\')" style="flex:1;padding:10px;background:rgba(100,180,255,0.1);border:1px solid rgba(100,180,255,0.3);border-radius:5px;color:#90c8ff;font-family:Cinzel,serif;font-size:11px;cursor:pointer;">🔗 Open Preview</button>' +
+      '<button onclick="var w=window.open(\'\',\'_blank\',\'width=900,height=700\');w.document.write(buildPlayerViewHTML(window.__fbUid));w.document.close();" style="flex:1;padding:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:5px;color:var(--text-dim);font-family:Cinzel,serif;font-size:11px;cursor:pointer;">📺 Legacy Popup</button>' +
+    '</div>' +
+  '</div>';
+  document.body.appendChild(m);
 }
 
 function buildPlayerViewHTML(uid) {
@@ -223,6 +326,7 @@ function renderParty() {
         '<span>❤ <strong style="color:var(--parchment);">' + pc.maxhp + '</strong> HP</span>' +
         '<span>🛡 <strong style="color:var(--parchment);">' + pc.ac + '</strong> AC</span>' +
         '<span>⚡ <strong style="color:var(--parchment);">' + fmt(pc.initBonus || 0) + '</strong> Init</span>' +
+        (getSkillsSummary(pc.skills) ? '<span style="color:#90c8ff;">' + getSkillsSummary(pc.skills) + '</span>' : '') +
       '</div>' +
       (moves.length ? '<div class="party-moves"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:4px;">ABILITIES</div>' + moves.slice(0,4).map(function(m) { var parts = m.split('—'); var name = parts[0]; var rest = parts.slice(1); return '<div class="party-move"><strong>' + name.trim() + '</strong>' + (rest.length ? ' — ' + rest.join('—') : '') + '</div>'; }).join('') + (moves.length > 4 ? '<div class="party-move" style="color:var(--text-dim);">+' + (moves.length - 4) + ' more...</div>' : '') + '</div>' : '') +
       (pc.spellSlots && pc.spellSlots.length ? '<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.07);"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);">SPELL SLOTS</div>' +
@@ -265,6 +369,7 @@ function openAddPlayerModal() {
   document.getElementById('pc-ac').value = '';
   document.getElementById('pc-init-bonus').value = 0;
   ['str','dex','con','int','wis','cha'].forEach(function(s) { document.getElementById('pc-' + s).value = 10; });
+  populateSkillsGrid({});
   document.getElementById('player-modal').classList.add('show');
 }
 
@@ -358,6 +463,7 @@ function editPlayer(id) {
     el.value = slot ? slot.max : '';
     el.style.opacity = slot ? '1' : '0.4';
   }
+  populateSkillsGrid(pc.skills || {});
   document.getElementById('player-modal').classList.add('show');
 }
 
@@ -383,6 +489,7 @@ function savePlayer() {
     wis: parseInt(document.getElementById('pc-wis').value) || 10,
     cha: parseInt(document.getElementById('pc-cha').value) || 10,
     moves: document.getElementById('pc-moves').value,
+    skills: collectSkillsFromGrid(),
     spellSlots: (function() {
       var cls = document.getElementById('pc-class').value;
       var level = parseInt(document.getElementById('pc-level').value) || 1;
@@ -412,6 +519,10 @@ function savePlayer() {
     if (existingPC.inspiration !== undefined) pc.inspiration = existingPC.inspiration;
     if (existingPC.exhaustion !== undefined) pc.exhaustion = existingPC.exhaustion;
     if (existingPC.lastRest !== undefined) pc.lastRest = existingPC.lastRest;
+    // Preserve skills if not changed (empty skills from grid means no change when editing)
+    if (!pc.skills || Object.keys(pc.skills).length === 0) {
+      if (existingPC.skills) pc.skills = existingPC.skills;
+    }
   }
 
   if (editId) {
