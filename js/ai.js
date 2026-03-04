@@ -211,11 +211,11 @@ function renderGeneratedNPC(npc) {
           <div style="font-size:11px;color:var(--text-dim);">HP ${npc.hp} · AC ${npc.ac} · CR ${npc.cr}</div>
         </div>
       </div>
-      ${npc.stats ? \`<div class="party-stats-row" style="margin-bottom:10px;">\${statsHTML}</div>\` : ''}
+      ${npc.stats ? `<div class="party-stats-row" style="margin-bottom:10px;">${statsHTML}</div>` : ''}
       <div style="font-size:13px;color:var(--parchment);line-height:1.6;margin-bottom:8px;"><strong style="color:var(--gold-light);font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;">APPEARANCE</strong><br>${npc.appearance}</div>
       <div style="font-size:13px;color:var(--parchment);line-height:1.6;margin-bottom:8px;"><strong style="color:var(--gold-light);font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;">PERSONALITY</strong><br>${npc.personality}</div>
       <div style="font-size:13px;color:var(--parchment);line-height:1.6;margin-bottom:8px;font-style:italic;"><strong style="color:var(--gold-light);font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;">STORY HOOK</strong><br>${npc.hook}</div>
-      ${traitsHTML ? \`<div style="margin-top:8px;"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:4px;">TRAITS</div>\${traitsHTML}</div>\` : ''}
+      ${traitsHTML ? `<div style="margin-top:8px;"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:4px;">TRAITS</div>${traitsHTML}</div>` : ''}
     </div>`;
 }
 
@@ -312,7 +312,7 @@ Rules:
     enc.enemies.forEach(e => {
       const sign = e.initiative_bonus >= 0 ? '+' : '';
       html += `<div style="background:rgba(180,30,30,0.15);border:1px solid rgba(180,30,30,0.3);border-radius:4px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <span style="color:var(--parchment);font-weight:bold;">${e.count > 1 ? \`\${e.count}× \` : ''}${e.name}</span>
+        <span style="color:var(--parchment);font-weight:bold;">${e.count > 1 ? `${e.count}× ` : ''}${e.name}</span>
         <span style="color:var(--text-dim);font-size:12px;">HP ${e.hp} · AC ${e.ac} · Init ${sign}${e.initiative_bonus}</span>
         <span style="color:var(--text-dim);font-size:11px;font-style:italic;flex:1;text-align:right;">${e.notes}</span>
       </div>`;
@@ -415,10 +415,10 @@ function renderGeneratedLocation(loc) {
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">${loc.type} · <span style="color:${color};">${loc.mood}</span></div>
       <div style="font-size:13px;color:#f0e6cc;line-height:1.7;margin-bottom:10px;font-style:italic;">"${loc.description}"</div>
       <div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.12em;color:var(--text-dim);margin-bottom:6px;">DETAILS</div>
-      ${(loc.details||[]).map(d=>\`<div style="font-size:12px;color:#d4c090;padding:2px 0;padding-left:10px;border-left:2px solid \${color}44;">• \${d}</div>\`).join('')}
-      ${loc.secret ? \`<div style="margin-top:10px;padding:8px;background:rgba(0,0,0,0.3);border-radius:6px;border-left:3px solid #9b59b6;"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:#9b59b6;margin-bottom:3px;">🔒 SECRET</div><div style="font-size:12px;color:#f0e6cc;">\${loc.secret}</div></div>\` : ''}
-      ${loc.encounter_hook ? \`<div style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.3);border-radius:6px;border-left:3px solid var(--blood-light);"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--blood-light);margin-bottom:3px;">⚡ HOOK</div><div style="font-size:12px;color:#f0e6cc;">\${loc.encounter_hook}</div></div>\` : ''}
-      ${loc.npcs?.length ? \`<div style="margin-top:8px;"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:4px;">POSSIBLE NPCS</div>\${loc.npcs.map(n=>\`<div style="font-size:12px;color:#d4c090;">🧑 \${n}</div>\`).join('')}</div>\` : ''}
+      ${(loc.details||[]).map(d=>`<div style="font-size:12px;color:#d4c090;padding:2px 0;padding-left:10px;border-left:2px solid ${color}44;">• ${d}</div>`).join('')}
+      ${loc.secret ? `<div style="margin-top:10px;padding:8px;background:rgba(0,0,0,0.3);border-radius:6px;border-left:3px solid #9b59b6;"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:#9b59b6;margin-bottom:3px;">🔒 SECRET</div><div style="font-size:12px;color:#f0e6cc;">${loc.secret}</div></div>` : ''}
+      ${loc.encounter_hook ? `<div style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.3);border-radius:6px;border-left:3px solid var(--blood-light);"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--blood-light);margin-bottom:3px;">⚡ HOOK</div><div style="font-size:12px;color:#f0e6cc;">${loc.encounter_hook}</div></div>` : ''}
+      ${loc.npcs?.length ? `<div style="margin-top:8px;"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:4px;">POSSIBLE NPCS</div>${loc.npcs.map(n=>`<div style="font-size:12px;color:#d4c090;">🧑 ${n}</div>`).join('')}</div>` : ''}
     </div>`;
 }
 

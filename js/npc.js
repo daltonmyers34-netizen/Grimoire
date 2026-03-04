@@ -126,7 +126,7 @@ function renderNPCs(filter = '') {
         <div style="font-family:Cinzel,serif;font-size:11px;color:var(--text-dim);">${n.alignment || ''}</div>
       </div>
       <div class="npc-desc">${n.desc}</div>
-      <div class="npc-tags">${(n.tags||[]).map(t => \`<span class="tag">\${t}</span>\`).join('')}</div>
+      <div class="npc-tags">${(n.tags||[]).map(t => `<span class="tag">${t}</span>`).join('')}</div>
     </div>
   `).join('');
 }
@@ -159,7 +159,7 @@ function showNPCDetail(id) {
         ${['STR','DEX','CON','INT','WIS','CHA'].map((s,i) => {
           const keys = ['str','dex','con','int','wis','cha'];
           const v = stats[keys[i]] || 10;
-          return \`<div class="npc-stat"><div class="npc-stat-name">\${s}</div><div class="npc-stat-val">\${v}</div><div class="npc-stat-mod">\${mod(v)}</div></div>\`;
+          return `<div class="npc-stat"><div class="npc-stat-name">${s}</div><div class="npc-stat-val">${v}</div><div class="npc-stat-mod">${mod(v)}</div></div>`;
         }).join('')}
       </div>
     </div>
@@ -167,9 +167,9 @@ function showNPCDetail(id) {
     <p style="font-size:16px;line-height:1.7;color:#d4b880">${n.desc}</p>
     <div class="npc-section-title">Personality & Motivation</div>
     <p style="font-size:16px;line-height:1.7;color:#d4b880">${n.personality}</p>
-    ${traits ? \`<div class="npc-section-title">Traits & Abilities</div>\${traits}\` : ''}
+    ${traits ? `<div class="npc-section-title">Traits & Abilities</div>${traits}` : ''}
     <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
-      ${(n.tags||[]).map(t => \`<span class="tag">\${t}</span>\`).join('')}
+      ${(n.tags||[]).map(t => `<span class="tag">${t}</span>`).join('')}
     </div>
     <div style="margin-top:16px;display:flex;gap:8px;">
       <button class="btn btn-gold btn-sm" onclick="addToInitiativeFromNPC(${n.id})">+ Add to Initiative</button>

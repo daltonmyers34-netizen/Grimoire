@@ -89,6 +89,38 @@ function getSkillsSummary(skills) {
   return prof + ' skill' + (prof !== 1 ? 's' : '') + (exp > 0 ? ', ' + exp + ' expertise' : '');
 }
 
+function getProfBonus(level) {
+  if (level >= 17) return 6;
+  if (level >= 13) return 5;
+  if (level >= 9) return 4;
+  if (level >= 5) return 3;
+  return 2;
+}
+
+function buildSkillsCardHTML(pc) {
+  if (!pc.skills) return '';
+  var abilityMap = {};
+  SKILL_LIST.forEach(function(sk) { abilityMap[sk.key] = sk.ability; });
+  var profBonus = getProfBonus(pc.level || 1);
+  var mod = function(s) { return Math.floor((s - 10) / 2); };
+  var fmt = function(n) { return n >= 0 ? '+' + n : '' + n; };
+  var profSkills = [];
+  SKILL_LIST.forEach(function(sk) {
+    var val = pc.skills[sk.key] || 0;
+    if (val === 0) return;
+    var ability = sk.ability;
+    var abilityScore = pc[ability] || 10;
+    var bonus = mod(abilityScore) + profBonus * val;
+    var icon = val === 2 ? '★' : '●';
+    var color = val === 2 ? '#ffe066' : '#90c8ff';
+    profSkills.push('<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:3px;font-size:11px;background:rgba(100,180,255,0.08);border:1px solid ' + (val === 2 ? 'rgba(255,224,0,0.25)' : 'rgba(100,180,255,0.2)') + ';color:' + color + ';margin:1px;">' + icon + ' ' + sk.label + ' <strong>' + fmt(bonus) + '</strong></span>');
+  });
+  if (!profSkills.length) return '';
+  return '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.07);">' +
+    '<div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:4px;">SKILLS</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:2px;">' + profSkills.join('') + '</div></div>';
+}
+
 function savePartyStorage() {
   localStorage.setItem('dm_party', JSON.stringify(party));
   if (window.cloudSave) window.cloudSave();
@@ -150,7 +182,8 @@ function togglePartyInspiration(id) {
 // ══════════════════════════════════════════════════════════════
 function openPlayerView() {
   if (!window.__fbUid) { showToast('Sign in first to use Player View', 'warn'); return; }
-  var link = window.location.origin + '/player-view.html?dm=' + window.__fbUid;
+  var basePath = window.location.pathname.replace(/\/[^\/]*$/, '/');
+  var link = window.location.origin + basePath + 'player-view.html?dm=' + window.__fbUid;
   var existing = document.getElementById('pv-link-modal');
   if (existing) existing.remove();
   var m = document.createElement('div');
@@ -329,6 +362,7 @@ function renderParty() {
         (getSkillsSummary(pc.skills) ? '<span style="color:#90c8ff;">' + getSkillsSummary(pc.skills) + '</span>' : '') +
       '</div>' +
       (moves.length ? '<div class="party-moves"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:4px;">ABILITIES</div>' + moves.slice(0,4).map(function(m) { var parts = m.split('—'); var name = parts[0]; var rest = parts.slice(1); return '<div class="party-move"><strong>' + name.trim() + '</strong>' + (rest.length ? ' — ' + rest.join('—') : '') + '</div>'; }).join('') + (moves.length > 4 ? '<div class="party-move" style="color:var(--text-dim);">+' + (moves.length - 4) + ' more...</div>' : '') + '</div>' : '') +
+      buildSkillsCardHTML(pc) +
       (pc.spellSlots && pc.spellSlots.length ? '<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.07);"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);">SPELL SLOTS</div>' +
         (pc.cls === 'Warlock' ? '<span style="font-size:9px;color:#c8a0ff;font-family:Cinzel,serif;margin-right:4px;">Short Rest ↓</span>' : '<span style="font-size:9px;color:var(--text-dim);font-family:Cinzel,serif;margin-right:4px;">Long Rest ↓</span>') +
         '<button onclick="restoreAllSlots(' + pc.id + ')" style="font-size:9px;padding:2px 7px;background:' + (pc.cls === 'Warlock' ? 'rgba(180,100,255,0.15)' : 'rgba(100,180,255,0.1)') + ';border:1px solid ' + (pc.cls === 'Warlock' ? 'rgba(180,100,255,0.35)' : 'rgba(100,180,255,0.25)') + ';border-radius:3px;color:' + (pc.cls === 'Warlock' ? '#c8a0ff' : '#90c8ff') + ';cursor:pointer;font-family:Cinzel,serif;" title="' + (pc.cls === 'Warlock' ? 'Warlocks recover on Short Rest' : 'Recover on Long Rest') + '">↺</button></div>' +
