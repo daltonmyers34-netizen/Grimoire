@@ -804,19 +804,7 @@ function renderCombatLog() {
   }).join('');
 }
 
-// ─── Encounter Modal ─────────────────────────────────────────
-function openEncounterModal() {
-  document.getElementById('encounter-modal').classList.add('show');
-  document.getElementById('enc-result').style.display = 'none';
-  document.getElementById('enc-load-btn').style.display = 'none';
-  document.getElementById('enc-generate-btn').textContent = '⚡ Generate Encounter';
-  document.getElementById('enc-generate-btn').disabled = false;
-  lastEncounterData = null;
-}
-
-function closeEncounterModal() {
-  document.getElementById('encounter-modal').classList.remove('show');
-}
+// openEncounterModal and closeEncounterModal defined in ai.js
 
 // ─── Encounter Difficulty Calculator ──────────────────────────
 function calcEncounterDifficulty() {
