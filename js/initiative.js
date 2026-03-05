@@ -368,7 +368,18 @@ function renderCombatants() {
       li.addEventListener('mouseenter', function(e) { showCombatantHoverCard(e, cid); });
       li.addEventListener('mouseleave', hideCombatantHoverCard);
       li.addEventListener('mousemove', function(e) {
+        // Hide hover card when mouse moves over action buttons
+        var tgt = e.target;
+        var overButton = false;
+        while (tgt && tgt.tagName !== 'LI') {
+          if (tgt.tagName === 'BUTTON' || tgt.tagName === 'SELECT') { overButton = true; break; }
+          tgt = tgt.parentElement;
+        }
         var card = document.getElementById('combatant-hover-card');
+        if (overButton) {
+          hideCombatantHoverCard();
+          return;
+        }
         if (card && card.style.display !== 'none') {
           var x = e.clientX + 16;
           if (e.clientX + (card.offsetWidth || 280) + 20 > window.innerWidth) x = e.clientX - (card.offsetWidth || 280) - 10;
@@ -888,6 +899,12 @@ function getDefaultActions(c) {
 
 function showCombatantHoverCard(e, combatantId) {
   if (!e || !e.clientX) return; // mobile touch - skip
+  // Don't show hover card when mouse is over action buttons
+  var tgt = e.target;
+  while (tgt && tgt.tagName !== 'LI') {
+    if (tgt.tagName === 'BUTTON' || tgt.tagName === 'SELECT') return;
+    tgt = tgt.parentElement;
+  }
   clearTimeout(hoverCardTimeout);
   hoverCardTimeout = setTimeout(function() {
     try {
