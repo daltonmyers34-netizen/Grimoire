@@ -108,7 +108,10 @@ function callClaudeXHR(url, key, bodyObj, provider) {
       } catch(e) { reject(new Error('Parse error: ' + e.message)); }
     };
     xhr.onerror = function() {
-      reject(new Error('Network blocked. You need to host this file on HTTPS. See github.com/new — free hosting in 2 min.'));
+      var hint = key.indexOf('sk-or-') !== 0
+        ? 'Your key doesn\'t start with sk-or-. You need an OpenRouter key — get one free at openrouter.ai/keys'
+        : 'API request blocked by browser. Check your key at openrouter.ai/keys and make sure it has credits.';
+      reject(new Error(hint));
     };
     xhr.send(JSON.stringify(bodyObj));
   });
@@ -237,6 +240,7 @@ function saveGeneratedNPC() {
   };
   npcs.push(newNPC);
   renderNPCs();
+  if (window.cloudSave) window.cloudSave();
   const btn = document.querySelector('[onclick="saveGeneratedNPC()"]');
   if (btn) { btn.textContent = '✅ Saved!'; setTimeout(() => btn.textContent = '💾 Save to NPC List', 2000); }
 }
