@@ -12,6 +12,11 @@ Object.defineProperty(window, 'currentRound', {
   configurable: true
 });
 
+// Sync state to cloud/localStorage after any combat change
+function syncCombatState() {
+  if (window.cloudSave) window.cloudSave();
+}
+
 function addCombatant() {
   var name = document.getElementById('new-name').value.trim();
   var init = parseInt(document.getElementById('new-init').value) || 0;
@@ -26,6 +31,7 @@ function addCombatant() {
   document.getElementById('new-hp').value = '';
   document.getElementById('new-ac').value = '';
   renderCombatants();
+  syncCombatState();
 }
 
 // Add a combatant from a monster database entry
@@ -43,6 +49,7 @@ function addCombatantFromDB(m) {
   });
   combatants.sort(function(a,b) { return b.init - a.init; });
   renderCombatants();
+  syncCombatState();
   showToast(m.name + ' added to initiative!', 'success');
 }
 
@@ -51,6 +58,7 @@ function toggleCombatantInspiration(id) {
   if (!c) return;
   c.inspiration = !c.inspiration;
   renderCombatants();
+  syncCombatState();
   showToast(c.inspiration ? '★ ' + c.name + ' has Inspiration!' : c.name + ' — Inspiration spent', c.inspiration ? 'success' : 'info');
 }
 
@@ -66,11 +74,12 @@ function togglePartyInspiration(id) {
 function setCombatantConc(id) {
   var c = combatants.find(function(x) { return x.id === id; });
   if (!c) return;
-  if (c.concentrating) { c.concentrating = null; renderCombatants(); showToast(c.name + ' dropped concentration', 'info'); return; }
+  if (c.concentrating) { c.concentrating = null; renderCombatants(); syncCombatState(); showToast(c.name + ' dropped concentration', 'info'); return; }
   var spell = window.prompt(c.name + ' is concentrating on...', '');
   if (spell === null) return;
   c.concentrating = spell || 'a spell';
   renderCombatants();
+  syncCombatState();
   showToast(c.name + ' concentrating on ' + c.concentrating, 'success');
 }
 
@@ -104,6 +113,7 @@ function shortRest() {
   renderCombatants();
   combatLog.unshift({round: currentRound || 0, text: '— Party took a Short Rest —', type: 'round', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})});
   renderCombatLog();
+  syncCombatState();
   var wlMsg = warlockCount ? ' — ' + warlockCount + ' Warlock slot' + (warlockCount > 1 ? 's' : '') + ' restored' : '';
   showToast('🌙 Short Rest — hit dice spent, HP restored' + wlMsg, 'success');
 }
@@ -126,6 +136,7 @@ function longRest() {
   renderCombatants();
   combatLog.unshift({round: currentRound || 0, text: '— Party took a Long Rest — all HP and resources restored —', type: 'round', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})});
   renderCombatLog();
+  syncCombatState();
   showToast('☀ Long Rest complete — all HP and spell slots restored!', 'success');
 }
 
@@ -146,6 +157,7 @@ function editInit(id) {
     c.init = isNaN(v) ? old : v;
     combatants.sort(function(a,b) { return b.init - a.init; });
     renderCombatants();
+    syncCombatState();
   }
   inp.addEventListener('blur', commit);
   inp.addEventListener('keydown', function(e) {
@@ -171,6 +183,7 @@ function editHP(id) {
     var v = parseInt(inp.value);
     c.hp = isNaN(v) ? old : Math.max(0, Math.min(c.maxHp, v));
     renderCombatants();
+    syncCombatState();
   }
   inp.addEventListener('blur', commit);
   inp.addEventListener('keydown', function(e) {
@@ -186,6 +199,7 @@ function commitInit(id, val) {
   if (!isNaN(n)) c.init = n;
   combatants.sort(function(a,b) { return b.init - a.init; });
   renderCombatants();
+  syncCombatState();
 }
 
 function addPreset(name, hp, ac, type) {
@@ -193,6 +207,7 @@ function addPreset(name, hp, ac, type) {
   combatants.push({ id: uniqueId(), name: name, init: init, hp: parseInt(hp), maxHp: parseInt(hp), ac: ac, type: type, conditions: [] });
   combatants.sort(function(a,b) { return b.init - a.init; });
   renderCombatants();
+  syncCombatState();
 }
 
 function startCombat() {
@@ -202,6 +217,7 @@ function startCombat() {
   currentTurn = 0;
   updateRoundDisplay();
   renderCombatants();
+  syncCombatState();
 }
 
 // BUG FIX: Added safety counter to prevent infinite loop if all combatants are hidden or dead
@@ -223,6 +239,7 @@ function nextTurn() {
   }
   updateRoundDisplay();
   renderCombatants();
+  syncCombatState();
 
   // Reset turn timer if active
   if (typeof turnTimerActive !== 'undefined' && turnTimerActive) {
@@ -264,6 +281,7 @@ function prevTurn() {
   }
   updateRoundDisplay();
   renderCombatants();
+  syncCombatState();
 
   // Reset turn timer if active
   if (typeof turnTimerActive !== 'undefined' && turnTimerActive) {
@@ -290,6 +308,7 @@ function endCombat() {
   document.querySelector('.round-display span').textContent = 'Combat Not Started';
   document.getElementById('turn-indicator').textContent = '';
   renderCombatants();
+  syncCombatState();
   showToast('Combat ended.', 'info');
 }
 
@@ -303,6 +322,7 @@ function resetCombat() {
   document.querySelector('.round-display span').textContent = 'Combat Not Started';
   document.getElementById('turn-indicator').textContent = '';
   renderCombatants();
+  syncCombatState();
 }
 
 function updateRoundDisplay() {
@@ -420,6 +440,7 @@ function applyHP(type) {
   }
   closeHPModal();
   renderCombatants();
+  syncCombatState();
   // Animate after render
   requestAnimationFrame(function() {
     var numEl = document.getElementById('hp-num-' + c.id);
@@ -470,6 +491,7 @@ function addCondition(cond) {
   if (!c) return;
   if (!c.conditions.includes(cond)) c.conditions.push(cond);
   renderCombatants();
+  syncCombatState();
   closeCondModal();
 }
 
@@ -484,12 +506,14 @@ function toggleCondition(cond) {
     c.conditions.push(cond);
   }
   renderCombatants();
+  syncCombatState();
 }
 
 // Apply all selected conditions and close the modal
 function applyConditions() {
   closeCondModal();
   renderCombatants();
+  syncCombatState();
 }
 
 function removeCondition(id, cond) {
@@ -497,6 +521,7 @@ function removeCondition(id, cond) {
   if (!c) return;
   c.conditions = c.conditions.filter(function(x) { return x !== cond; });
   renderCombatants();
+  syncCombatState();
 }
 
 function closeCondModal() {
@@ -507,6 +532,7 @@ function closeCondModal() {
 function removeCombatant(id) {
   combatants = combatants.filter(function(x) { return x.id !== id; });
   renderCombatants();
+  syncCombatState();
 }
 
 // Toggle combatant visibility (hidden from players)
@@ -515,6 +541,7 @@ function toggleCombatantVisibility(id) {
   if (!c) return;
   c.hidden = !c.hidden;
   renderCombatants();
+  syncCombatState();
   showToast(c.hidden ? c.name + ' hidden from players' : c.name + ' visible to players', 'info');
 }
 
@@ -526,6 +553,7 @@ function rollInitiativeAll() {
   });
   combatants.sort(function(a,b) { return b.init - a.init; });
   renderCombatants();
+  syncCombatState();
   showToast('Initiative rolled for all combatants!', 'success');
 }
 
@@ -544,6 +572,7 @@ function quickAddMonster() {
     combatants.push({ id: uniqueId(), name: name, init: init, hp: 10, maxHp: 10, ac: 10, type: 'enemy', conditions: [] });
     combatants.sort(function(a,b) { return b.init - a.init; });
     renderCombatants();
+    syncCombatState();
     showToast(name + ' added (generic stats)', 'success');
   }
   if (nameInput) nameInput.value = '';
@@ -789,6 +818,7 @@ function loadPreset(idx) {
   });
   combatants.sort(function(a,b) { return b.init - a.init; });
   renderCombatants();
+  syncCombatState();
 }
 
 function deletePreset(idx) {

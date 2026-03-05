@@ -22,6 +22,7 @@ window.__db = db; window.__doc = doc; window.__onSnapshot = onSnapshot;
 let currentUid   = null;
 let syncTimeout  = null;
 let unsubSnapshot = null;
+let lastWriteTime = 0;  // guard against onSnapshot echoing our own writes
 
 // -- Auth state --------------------------------------------------------
 onAuthStateChanged(auth, user => {
@@ -73,8 +74,10 @@ async function loadCloudState(uid) {
     // Live listener for multi-device sync
     if (unsubSnapshot) unsubSnapshot();
     unsubSnapshot = onSnapshot(doc(db, 'users', uid, 'data', 'state'), snap => {
-      // Only apply if this tab didn't trigger the write (debounce guard)
+      // Skip local pending writes
       if (snap.metadata.hasPendingWrites) return;
+      // Skip echoes of our own recent writes (within 5 seconds)
+      if (Date.now() - lastWriteTime < 5000) return;
       const state = snap.data()?.state;
       if (!state) return;
       if (typeof applyState === 'function') applyState(state);
@@ -103,6 +106,7 @@ window.cloudSave = () => {
     try {
       const state = typeof collectState === 'function' ? collectState() : {};
       state.partyInventory = window.partyInventory || [];
+      lastWriteTime = Date.now();
       await setDoc(doc(db, 'users', currentUid, 'data', 'state'), {
         state,
         updatedAt: new Date().toISOString()

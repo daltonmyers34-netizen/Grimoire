@@ -352,6 +352,7 @@ function loadEncounterToInitiative() {
   });
   combatants.sort((a, b) => b.init - a.init);
   renderCombatants();
+  if (window.cloudSave) window.cloudSave();
   closeEncounterModal();
   // Switch to initiative tab
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -442,6 +443,7 @@ function saveGeneratedLocation() {
   if (!window.locations) window.locations = [];
   window.locations.push(newLoc);
   if (typeof renderLocations === 'function') renderLocations();
+  if (window.cloudSave) window.cloudSave();
   const btn = document.querySelector('[onclick="saveGeneratedLocation()"]');
   if (btn) { btn.textContent = '✅ Saved!'; setTimeout(()=>btn.textContent='💾 Save to Locations',2000); }
 }

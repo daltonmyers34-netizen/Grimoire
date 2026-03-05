@@ -194,7 +194,11 @@ function clearSession() {
   showToast('Session cleared', 'info');
 }
 
-// Auto-save every 60 seconds
+// Auto-save every 60 seconds (silent — no toast)
 setInterval(function() {
-  try { saveSession(); } catch(e) {}
+  try {
+    var state = collectState();
+    localStorage.setItem(SESSION_KEY, JSON.stringify(state));
+    if (window.cloudSave) window.cloudSave();
+  } catch(e) {}
 }, 60000);
