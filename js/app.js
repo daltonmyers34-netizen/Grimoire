@@ -134,11 +134,13 @@ function promptAPIKey() {
     'z-index:9999;background:linear-gradient(135deg,#1a0f06,#2a1a0a);border:1px solid var(--gold);' +
     'border-radius:12px;padding:24px;width:min(360px,90vw);box-shadow:0 8px 40px rgba(0,0,0,0.9);';
   panel.innerHTML =
-    '<div style="font-family:Cinzel,serif;font-size:15px;color:var(--gold);margin-bottom:8px;">🔑 Anthropic API Key</div>' +
+    '<div style="font-family:Cinzel,serif;font-size:15px;color:var(--gold);margin-bottom:8px;">🔑 AI API Key</div>' +
     '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;line-height:1.5;">' +
-    'Required for AI features (NPC Generator, Encounter Generator, Location Generator).<br>' +
-    'Your key is stored only in your browser\'s localStorage.</div>' +
-    '<input id="api-key-input" type="password" placeholder="sk-or-... (OpenRouter) or sk-ant-... (Anthropic)" ' +
+    'Required for AI features (NPC, Encounter, Location generators).<br>' +
+    '<strong style="color:#ffe066;">You must use an OpenRouter key</strong> (starts with <code style="color:#90c8ff;">sk-or-</code>).<br>' +
+    'Get one free at <a href="https://openrouter.ai/keys" target="_blank" style="color:#90c8ff;">openrouter.ai/keys</a><br>' +
+    '<span style="color:#ff9090;">Direct Anthropic keys (sk-ant-) do NOT work from browsers due to CORS.</span></div>' +
+    '<input id="api-key-input" type="password" placeholder="sk-or-v1-abc123... (OpenRouter key)" ' +
     'style="width:100%;padding:10px;background:rgba(0,0,0,0.4);border:1px solid rgba(212,175,55,0.3);' +
     'border-radius:6px;color:#f0e6cc;font-size:13px;margin-bottom:12px;" ' +
     'value="' + esc(window.ANTHROPIC_KEY) + '">' +
@@ -153,10 +155,13 @@ function promptAPIKey() {
 
 function saveAPIKey() {
   const val = document.getElementById('api-key-input').value.trim();
-  // BUG FIX: Allow clearing key by saving empty string
   window.ANTHROPIC_KEY = val;
   localStorage.setItem('dm_api_key', val);
-  showToast(val ? 'API key saved!' : 'API key cleared', 'success');
+  if (val && val.indexOf('sk-or-') !== 0) {
+    showToast('Warning: Only OpenRouter keys (sk-or-...) work from browsers. Get one at openrouter.ai/keys', 'danger');
+  } else {
+    showToast(val ? 'API key saved!' : 'API key cleared', 'success');
+  }
   document.getElementById('api-key-panel').style.display = 'none';
 }
 
