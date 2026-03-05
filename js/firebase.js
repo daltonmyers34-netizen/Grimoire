@@ -91,6 +91,12 @@ async function loadCloudState(uid) {
 
 // -- Save to Firestore (debounced 2s) ----------------------------------
 window.cloudSave = () => {
+  // Always save to localStorage immediately as a backup
+  try {
+    const state = typeof collectState === 'function' ? collectState() : {};
+    state.partyInventory = window.partyInventory || [];
+    localStorage.setItem('dm_grimoire_session', JSON.stringify(state));
+  } catch(e) { console.warn('localStorage backup:', e); }
   if (!currentUid) return;
   clearTimeout(syncTimeout);
   syncTimeout = setTimeout(async () => {

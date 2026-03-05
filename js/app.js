@@ -169,6 +169,14 @@ function saveAPIKey() {
 // APP INITIALIZATION
 // ============================================================
 document.addEventListener('DOMContentLoaded', function() {
+  // Auto-restore from localStorage before anything else so NPCs/state survive page refreshes
+  try {
+    var savedSession = localStorage.getItem('dm_grimoire_session');
+    if (savedSession) {
+      var s = JSON.parse(savedSession);
+      if (s && s.version) applyState(s);
+    }
+  } catch(e) { console.warn('Auto-restore:', e); }
   try { initNPCs(); } catch(e) { console.warn('initNPCs:', e); }
   try { renderParty(); } catch(e) { console.warn('renderParty:', e); }
   try { renderPresets(); } catch(e) { console.warn('renderPresets:', e); }

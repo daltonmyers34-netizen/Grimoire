@@ -100,8 +100,13 @@ const PRELOADED_LOCATIONS = [
 ];
 
 function initNPCs() {
-  npcs = [...PRELOADED_NPCS];
-  locations = [...PRELOADED_LOCATIONS];
+  // Only set preloaded defaults if npcs array is empty (cloud state may have already loaded)
+  if (!npcs || npcs.length === 0) {
+    npcs = [...PRELOADED_NPCS];
+  }
+  if (!locations || locations.length === 0) {
+    locations = [...PRELOADED_LOCATIONS];
+  }
   renderNPCs();
   renderLocations();
   loadNotes();
@@ -185,6 +190,8 @@ function addToInitiativeFromNPC(id) {
   const init = Math.floor(Math.random() * 20) + 1;
   combatants.push({ id: Date.now(), name: n.name, init, hp: n.hp, maxHp: n.hp, ac: n.ac, type: 'enemy', conditions: [] });
   combatants.sort((a,b) => b.init - a.init);
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
   closeNPCDetailBtn();
   alert(`${n.name} added to initiative with roll of ${init}! Switch to the Initiative tab.`);
 }

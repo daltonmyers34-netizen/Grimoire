@@ -240,6 +240,7 @@ function saveGeneratedNPC() {
   };
   npcs.push(newNPC);
   renderNPCs();
+  if (window.cloudSave) window.cloudSave();
   const btn = document.querySelector('[onclick="saveGeneratedNPC()"]');
   if (btn) { btn.textContent = '✅ Saved!'; setTimeout(() => btn.textContent = '💾 Save to NPC List', 2000); }
 }
