@@ -718,7 +718,7 @@ function renderCharacterView(d) {
       const isAlly = c.type === 'ally';
       const cHpPct = hpPct(c.hp, c.maxHp);
       const cHc = hpColor(cHpPct);
-      const isCurrent = i === 0 && d.combatActive;
+      const isCurrent = d.combatActive && i === (d.currentTurn >= 0 ? d.currentTurn : 0);
       html += '<div class="init-row' + (isCurrent ? ' init-current' : '') + '" style="background:' + (isCurrent ? 'rgba(212,175,55,0.1)' : 'rgba(0,0,0,0.2)') + ';">' +
         '<span style="font-size:16px;font-weight:700;color:var(--gold);width:28px;text-align:center;">' + (c.initiative || c.init || '?') + '</span>' +
         '<span style="font-size:14px;color:' + (isAlly ? '#90c8ff' : '#ff9090') + ';flex:1;">' + esc(c.name) + (isCurrent ? ' \u25C0' : '') + '</span>' +

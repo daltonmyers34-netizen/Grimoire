@@ -106,6 +106,7 @@ window.cloudSave = () => {
         party: state.party || [],
         combatants: state.combatants || [],
         currentRound: state.currentRound || 0,
+        currentTurn: state.currentTurn >= 0 ? state.currentTurn : -1,
         combatActive: state.combatActive || false,
         partyInventory: state.partyInventory || [],
         pvMessages: state.pvMessages || {},

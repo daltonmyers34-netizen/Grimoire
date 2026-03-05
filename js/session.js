@@ -18,8 +18,9 @@ function collectState() {
     totalXP: totalXP,
     xpLog: xpLog,
     timerSeconds: timerSeconds,
-    currentRound: window.currentRound || 0,
-    combatActive: window.combatActive || false,
+    currentRound: round,
+    currentTurn: currentTurn,
+    combatActive: combatActive,
     pvMessages: window.pvMessages || {},
     pvPartyMessage: window.pvPartyMessage || '',
     notes: {
@@ -39,9 +40,11 @@ function applyState(s) {
   if (s.totalXP !== undefined) { totalXP = s.totalXP; xpLog = s.xpLog||[]; renderXP(); }
   if (s.timerSeconds) timerSeconds = s.timerSeconds;
   if (s.currentRound !== undefined) {
-    window.currentRound = s.currentRound;
+    round = s.currentRound;
     var re = document.getElementById('round-display'); if(re) re.textContent = s.currentRound;
   }
+  if (s.currentTurn !== undefined) { currentTurn = s.currentTurn; }
+  if (s.combatActive !== undefined) { combatActive = s.combatActive; }
   if (s.pvMessages) { window.pvMessages = s.pvMessages; }
   if (s.pvPartyMessage) { window.pvPartyMessage = s.pvPartyMessage; }
   if (s.notes) {
