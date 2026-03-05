@@ -29,7 +29,7 @@
       radial-gradient(ellipse at 20% 20%, rgba(201,150,10,0.04) 0%, transparent 50%),
       radial-gradient(ellipse at 80% 80%, rgba(139,26,26,0.06) 0%, transparent 50%);
   }
-  body { padding: 0; }
+  body { padding: 0; overflow-x: hidden; }
 
   /* ===== SCROLLBAR ===== */
   ::-webkit-scrollbar { width: 6px; }
@@ -61,17 +61,30 @@
     color: #8fd050;
   }
 
-  /* ===== MAIN CONTENT ===== */
-  .pv-container {
-    max-width: 900px;
+  /* ===== TWO-COLUMN LAYOUT ===== */
+  .pv-layout {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 16px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 16px;
+    min-height: calc(100vh - 60px);
+  }
+
+  .pv-main {
+    min-width: 0;
+  }
+
+  .pv-sidebar {
+    min-width: 0;
   }
 
   /* ===== CHARACTER SELECTION ===== */
   .select-screen {
     text-align: center;
     padding: 40px 16px;
+    grid-column: 1 / -1;
   }
   .select-title {
     font-family: 'Cinzel', serif;
@@ -126,6 +139,39 @@
   .select-card-info {
     font-size: 12px;
     color: var(--text-dim);
+  }
+
+  /* ===== TAB TOGGLE ===== */
+  .pv-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 14px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(212,175,55,0.25);
+  }
+  .pv-tab {
+    flex: 1;
+    padding: 10px 16px;
+    font-family: 'Cinzel', serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-align: center;
+    cursor: pointer;
+    background: rgba(0,0,0,0.3);
+    color: var(--text-dim);
+    border: none;
+    transition: all 0.2s;
+  }
+  .pv-tab:hover {
+    background: rgba(212,175,55,0.08);
+    color: var(--gold);
+  }
+  .pv-tab.active {
+    background: rgba(212,175,55,0.15);
+    color: var(--gold);
+    box-shadow: inset 0 -2px 0 var(--gold);
   }
 
   /* ===== CARDS ===== */
@@ -207,23 +253,9 @@
     padding: 3px 4px;
     border-radius: 3px;
   }
-  .skill-icon {
-    font-size: 12px;
-    width: 16px;
-    text-align: center;
-    flex-shrink: 0;
-  }
-  .skill-name {
-    font-size: 12px;
-    flex: 1;
-  }
-  .skill-bonus {
-    font-size: 12px;
-    font-family: 'Cinzel', serif;
-    font-weight: 600;
-    min-width: 28px;
-    text-align: right;
-  }
+  .skill-icon { font-size: 12px; width: 16px; text-align: center; flex-shrink: 0; }
+  .skill-name { font-size: 12px; flex: 1; }
+  .skill-bonus { font-size: 12px; font-family: 'Cinzel', serif; font-weight: 600; min-width: 28px; text-align: right; }
 
   /* ===== SPELL PIPS ===== */
   .pip {
@@ -267,37 +299,85 @@
     margin: 2px 2px 2px 0;
   }
 
-  /* ===== SMALL PARTY CARDS ===== */
-  .party-mini-card {
+  /* ===== SIDEBAR PARTY CARDS ===== */
+  .sidebar-pc {
     background: rgba(0,0,0,0.3);
     border: 1px solid rgba(212,175,55,0.15);
     border-radius: 8px;
-    padding: 12px;
+    padding: 10px 12px;
     margin-bottom: 8px;
   }
-  .party-mini-avatar {
-    width: 36px; height: 36px;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
+  .sidebar-pc.is-you {
+    border-color: rgba(212,175,55,0.4);
+    background: rgba(212,175,55,0.06);
+  }
+  .sidebar-pc-name {
     font-family: 'Cinzel', serif;
-    font-size: 13px; font-weight: 700;
-    color: #fff;
-    border: 2px solid rgba(255,255,255,0.12);
-    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gold);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sidebar-pc-sub {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .sidebar-hp-bar {
+    background: rgba(0,0,0,0.4);
+    border-radius: 3px;
+    height: 6px;
+    overflow: hidden;
+  }
+  .sidebar-hp-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.6s ease;
+  }
+  .sidebar-hp-text {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 3px;
+    text-align: right;
+  }
+  .sidebar-conds {
+    margin-top: 5px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+  }
+  .sidebar-cond-tag {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    background: rgba(255,100,100,0.12);
+    border: 1px solid rgba(255,100,100,0.3);
+    color: #ff9090;
+  }
+  .sidebar-death-saves {
+    margin-top: 5px;
+    font-size: 10px;
+    display: flex;
+    gap: 8px;
   }
 
-  /* ===== INITIATIVE TABLE ===== */
+  /* ===== INITIATIVE ROWS (in main panel) ===== */
   .init-row {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 10px;
+    padding: 10px 12px;
     border-radius: 6px;
     margin-bottom: 4px;
   }
   .init-current {
-    background: rgba(212,175,55,0.1);
+    background: rgba(212,175,55,0.12);
     border: 1px solid rgba(212,175,55,0.35);
+  }
+  .init-row:not(.init-current) {
+    background: rgba(0,0,0,0.2);
   }
 
   /* ===== BUTTONS ===== */
@@ -331,9 +411,42 @@
     color: #ffd700;
   }
 
+  /* ===== COMBAT BANNER ===== */
+  .combat-banner {
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-family: 'Cinzel', serif;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .combat-active {
+    background: rgba(224,80,80,0.12);
+    border: 1px solid rgba(224,80,80,0.35);
+    color: #ff9090;
+  }
+  .combat-inactive {
+    background: rgba(80,180,80,0.08);
+    border: 1px solid rgba(80,180,80,0.2);
+    color: #8fd050;
+  }
+
   /* ===== RESPONSIVE ===== */
-  @media (max-width: 600px) {
-    .pv-container { padding: 10px; }
+  @media (max-width: 720px) {
+    .pv-layout {
+      grid-template-columns: 1fr;
+      gap: 12px;
+      padding: 10px;
+    }
+    .pv-sidebar {
+      order: -1;
+    }
+    .sidebar-pc {
+      display: inline-block;
+      width: calc(50% - 4px);
+      vertical-align: top;
+    }
     .ability-grid { gap: 4px; }
     .ability-mod { font-size: 15px; }
     .ability-box { padding: 6px 2px; }
@@ -352,10 +465,8 @@
   </div>
 </div>
 
-<div class="pv-container">
-  <div id="pv-root">
-    <div style="text-align:center;color:#555;padding:60px 0;font-style:italic;">Connecting to your DM...</div>
-  </div>
+<div id="pv-root">
+  <div style="text-align:center;color:#555;padding:60px 0;font-style:italic;">Connecting to your DM...</div>
 </div>
 
 <script type="module">
@@ -440,6 +551,7 @@ const SKILL_LIST = [
 // ── State ────────────────────────────────────────────────────
 let selectedPcId = sessionStorage.getItem('pv_selected_pc') || null;
 let latestData = null;
+let activeTab = 'character'; // 'character' or 'initiative'
 
 // ── Copy link ────────────────────────────────────────────────
 function copyLink() {
@@ -466,6 +578,13 @@ function selectCharacter(id) {
 }
 window._pvSelectChar = selectCharacter;
 
+// ── Tab switching ────────────────────────────────────────────
+function switchPvTab(tab) {
+  activeTab = tab;
+  if (latestData) renderRoot(latestData);
+}
+window._pvSwitchTab = switchPvTab;
+
 // ══════════════════════════════════════════════════════════════
 // RENDER: Root dispatcher
 // ══════════════════════════════════════════════════════════════
@@ -491,7 +610,7 @@ function renderRoot(d) {
   if (!selectedPcId) {
     root.innerHTML = renderSelectionScreen(party);
   } else {
-    root.innerHTML = renderCharacterView(d);
+    root.innerHTML = renderTwoColumnView(d);
   }
 }
 
@@ -526,16 +645,68 @@ function renderSelectionScreen(party) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// RENDER: Full Character View (after selection)
+// RENDER: Two-Column Layout (main + sidebar)
 // ══════════════════════════════════════════════════════════════
-function renderCharacterView(d) {
+function renderTwoColumnView(d) {
   const party = d.party || [];
   const combatants = d.combatants || [];
+  const hasCombat = combatants.length > 0;
+
+  let html = '<div class="pv-layout">';
+
+  // ── LEFT: Main panel ──
+  html += '<div class="pv-main">';
+
+  // Toolbar
+  html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' +
+    '<button class="btn-pv" onclick="_pvChangeChar()">\u2190 Change Character</button>' +
+    '<button class="btn-pv" id="copy-link-btn" onclick="_pvCopyLink()">📋 Copy Link</button>' +
+  '</div>';
+
+  // Messages
   const msgs = d.pvMessages || {};
   const partyMsg = d.pvPartyMessage || '';
-
   const pc = party.find(p => String(p.id) === selectedPcId);
-  if (!pc) return renderSelectionScreen(party);
+  if (pc) {
+    const personalMsg = msgs[pc.id] || msgs[String(pc.id)] || '';
+    if (partyMsg) html += '<div class="msg-banner party-msg">📢 <strong>DM to Party:</strong> ' + esc(partyMsg) + '</div>';
+    if (personalMsg) html += '<div class="msg-banner personal-msg">📨 <strong>DM to You:</strong> ' + esc(personalMsg) + '</div>';
+  }
+
+  // Tab toggle (only show if there are combatants)
+  if (hasCombat) {
+    html += '<div class="pv-tabs">' +
+      '<button class="pv-tab' + (activeTab === 'character' ? ' active' : '') + '" onclick="_pvSwitchTab(\'character\')">My Character</button>' +
+      '<button class="pv-tab' + (activeTab === 'initiative' ? ' active' : '') + '" onclick="_pvSwitchTab(\'initiative\')">\u2694 Initiative</button>' +
+    '</div>';
+  }
+
+  // Tab content
+  if (activeTab === 'initiative' && hasCombat) {
+    html += renderInitiativePanel(d);
+  } else {
+    html += renderCharacterCard(d);
+  }
+
+  html += '</div>'; // close pv-main
+
+  // ── RIGHT: Party sidebar ──
+  html += '<div class="pv-sidebar">';
+  html += renderPartySidebar(d);
+  html += '</div>';
+
+  html += '</div>'; // close pv-layout
+  return html;
+}
+
+// ══════════════════════════════════════════════════════════════
+// RENDER: Character Card (left panel)
+// ══════════════════════════════════════════════════════════════
+function renderCharacterCard(d) {
+  const party = d.party || [];
+  const combatants = d.combatants || [];
+  const pc = party.find(p => String(p.id) === selectedPcId);
+  if (!pc) return '';
 
   const cmb = combatants.find(x => x.name === pc.name && x.type === 'ally');
   const curHp = cmb ? cmb.hp : (pc.maxhp || 0);
@@ -543,31 +714,8 @@ function renderCharacterView(d) {
   const pct = hpPct(curHp, maxHp);
   const hc = hpColor(pct);
   const conditions = (cmb && cmb.conditions) || [];
-  const personalMsg = msgs[pc.id] || msgs[String(pc.id)] || '';
 
-  let html = '';
-
-  // ── Toolbar ──
-  html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' +
-    '<button class="btn-pv" onclick="_pvChangeChar()">&#8592; Change Character</button>' +
-    '<button class="btn-pv" id="copy-link-btn" onclick="_pvCopyLink()">📋 Copy Link</button>' +
-  '</div>';
-
-  // ── Party message ──
-  if (partyMsg) {
-    html += '<div class="msg-banner party-msg">📢 <strong>DM to Party:</strong> ' + esc(partyMsg) + '</div>';
-  }
-
-  // ── Personal message ──
-  if (personalMsg) {
-    html += '<div class="msg-banner personal-msg">📨 <strong>DM to You:</strong> ' + esc(personalMsg) + '</div>';
-  }
-
-  // ══════════════════════════════════════════════════════════
-  // SECTION A: Your Character
-  // ══════════════════════════════════════════════════════════
-  html += '<div class="card">';
-  html += '<div class="card-section-label">Your Character</div>';
+  let html = '<div class="card">';
 
   // Name + basic info
   html += '<div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:12px;">' +
@@ -589,8 +737,8 @@ function renderCharacterView(d) {
   // AC + Init + Inspiration
   html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;">' +
     '<span style="padding:5px 14px;border-radius:5px;font-size:13px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#aaa;">🛡 AC <strong style="color:var(--parchment);">' + (pc.ac || '?') + '</strong></span>' +
-    '<span style="padding:5px 14px;border-radius:5px;font-size:13px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#aaa;">⚡ Init <strong style="color:var(--parchment);">' + fmtMod(pc.initBonus || 0) + '</strong></span>' +
-    (pc.inspiration ? '<span class="insp-badge">★ Inspired</span>' : '') +
+    '<span style="padding:5px 14px;border-radius:5px;font-size:13px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#aaa;">\u26A1 Init <strong style="color:var(--parchment);">' + fmtMod(pc.initBonus || 0) + '</strong></span>' +
+    (pc.inspiration ? '<span class="insp-badge">\u2605 Inspired</span>' : '') +
   '</div>';
 
   // Conditions
@@ -674,71 +822,14 @@ function renderCharacterView(d) {
     html += '</div>';
   }
 
-  html += '</div>'; // close Your Character card
-
-  // ══════════════════════════════════════════════════════════
-  // SECTION B: The Party
-  // ══════════════════════════════════════════════════════════
-  const otherPCs = party.filter(p => String(p.id) !== selectedPcId);
-  if (otherPCs.length) {
-    html += '<div class="card">';
-    html += '<div class="card-section-label">The Party</div>';
-    otherPCs.forEach(opc => {
-      const oCmb = combatants.find(x => x.name === opc.name && x.type === 'ally');
-      const oCur = oCmb ? oCmb.hp : (opc.maxhp || 0);
-      const oMax = oCmb ? oCmb.maxHp : (opc.maxhp || 0);
-      const oPct = hpPct(oCur, oMax);
-      const oHc = hpColor(oPct);
-      const oConds = (oCmb && oCmb.conditions) || [];
-
-      html += '<div class="party-mini-card">' +
-        '<div style="display:flex;align-items:center;gap:10px;">' +
-          '<div class="party-mini-avatar" style="background:' + avatarColor(opc.name) + ';">' + initials(opc.name) + '</div>' +
-          '<div style="flex:1;min-width:0;">' +
-            '<div style="font-family:Cinzel,serif;font-size:14px;font-weight:700;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(opc.name) + '</div>' +
-            '<div style="font-size:11px;color:var(--text-dim);">' + esc(opc.cls) + ' Lv' + (opc.level || 1) + '</div>' +
-          '</div>' +
-          '<div style="text-align:right;">' +
-            '<div style="font-size:18px;font-weight:700;color:' + oHc + ';">' + oCur + '<span style="font-size:11px;color:#555;">/' + oMax + '</span></div>' +
-          '</div>' +
-          '<span style="padding:3px 8px;border-radius:4px;font-size:11px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#888;">AC ' + (opc.ac || '?') + '</span>' +
-        '</div>' +
-        '<div class="hp-bar-wrap" style="height:5px;margin:6px 0 0;"><div class="hp-bar" style="width:' + oPct + '%;background:' + oHc + ';"></div></div>' +
-        (oConds.length ? '<div style="margin-top:6px;">' + oConds.map(c => '<span class="cond-tag">' + esc(c) + '</span>').join('') + '</div>' : '') +
-      '</div>';
-    });
-    html += '</div>';
-  }
-
-  // ── Initiative tracker ──
-  if (combatants.length) {
-    html += '<div class="card">';
-    html += '<div class="card-section-label">Initiative &mdash; Round ' + (d.currentRound || 0) + '</div>';
-    combatants.forEach((c, i) => {
-      const isAlly = c.type === 'ally';
-      const cHpPct = hpPct(c.hp, c.maxHp);
-      const cHc = hpColor(cHpPct);
-      const isCurrent = d.combatActive && i === (d.currentTurn >= 0 ? d.currentTurn : 0);
-      html += '<div class="init-row' + (isCurrent ? ' init-current' : '') + '" style="background:' + (isCurrent ? 'rgba(212,175,55,0.1)' : 'rgba(0,0,0,0.2)') + ';">' +
-        '<span style="font-size:16px;font-weight:700;color:var(--gold);width:28px;text-align:center;">' + (c.initiative || c.init || '?') + '</span>' +
-        '<span style="font-size:14px;color:' + (isAlly ? '#90c8ff' : '#ff9090') + ';flex:1;">' + esc(c.name) + (isCurrent ? ' \u25C0' : '') + '</span>' +
-        '<div style="display:flex;align-items:center;gap:6px;">' +
-          '<div style="width:50px;height:5px;background:rgba(255,255,255,0.08);border-radius:3px;"><div style="height:100%;width:' + cHpPct + '%;background:' + cHc + ';border-radius:3px;"></div></div>' +
-          '<span style="font-size:12px;color:' + cHc + ';">' + c.hp + '/' + c.maxHp + '</span>' +
-        '</div>' +
-      '</div>';
-    });
-    html += '</div>';
-  }
-
-  // ── Party Inventory ──
+  // Party Inventory
   const inv = d.partyInventory || [];
   if (inv.length) {
-    html += '<div class="card">';
-    html += '<div class="card-section-label">Party Inventory</div>';
+    html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);">';
+    html += '<div class="card-section-label" style="border:none;padding:0;margin-bottom:8px;">Party Inventory</div>';
     inv.forEach(item => {
-      html += '<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);">' +
-        '<span style="font-size:20px;">' + (item.icon || '?') + '</span>' +
+      html += '<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">' +
+        '<span style="font-size:18px;">' + (item.icon || '?') + '</span>' +
         '<div>' +
           '<div style="font-size:14px;color:#d4b880;">' + esc(item.name) + '</div>' +
           (item.desc ? '<div style="font-size:12px;color:#555;">' + esc(item.desc) + '</div>' : '') +
@@ -748,6 +839,130 @@ function renderCharacterView(d) {
     html += '</div>';
   }
 
+  html += '</div>'; // close card
+  return html;
+}
+
+// ══════════════════════════════════════════════════════════════
+// RENDER: Initiative Panel (left panel, when tab active)
+// ══════════════════════════════════════════════════════════════
+function renderInitiativePanel(d) {
+  const combatants = d.combatants || [];
+  if (!combatants.length) return '';
+
+  let html = '<div class="card">';
+
+  // Combat status banner
+  if (d.combatActive) {
+    html += '<div class="combat-banner combat-active">\u2694 COMBAT \u2014 Round ' + (d.currentRound || 1) + '</div>';
+  } else {
+    html += '<div class="combat-banner combat-inactive">Initiative Set \u2014 Combat Not Started</div>';
+  }
+
+  // Initiative rows
+  combatants.forEach((c, i) => {
+    const isAlly = c.type === 'ally';
+    const cHpPct = hpPct(c.hp, c.maxHp);
+    const cHc = hpColor(cHpPct);
+    const isCurrent = d.combatActive && i === (d.currentTurn >= 0 ? d.currentTurn : 0);
+    const conds = c.conditions || [];
+
+    html += '<div class="init-row' + (isCurrent ? ' init-current' : '') + '">';
+
+    // Initiative number
+    html += '<span style="font-size:18px;font-weight:700;color:var(--gold);width:30px;text-align:center;flex-shrink:0;">' + (c.initiative || c.init || '?') + '</span>';
+
+    // Name + conditions
+    html += '<div style="flex:1;min-width:0;">' +
+      '<div style="font-size:15px;font-weight:600;color:' + (isAlly ? '#90c8ff' : '#ff9090') + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+        esc(c.name) + (isCurrent ? ' \u25C0' : '') +
+      '</div>';
+    if (conds.length) {
+      html += '<div style="margin-top:3px;">' + conds.map(cn => '<span class="cond-tag" style="font-size:10px;padding:1px 6px;">' + esc(cn) + '</span>').join('') + '</div>';
+    }
+    html += '</div>';
+
+    // HP bar + numbers
+    html += '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
+      '<div style="width:60px;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;"><div style="height:100%;width:' + cHpPct + '%;background:' + cHc + ';border-radius:3px;"></div></div>' +
+      '<span style="font-size:13px;font-weight:600;color:' + cHc + ';min-width:50px;text-align:right;">' + c.hp + '/' + c.maxHp + '</span>' +
+    '</div>';
+
+    html += '</div>'; // close init-row
+  });
+
+  html += '</div>'; // close card
+  return html;
+}
+
+// ══════════════════════════════════════════════════════════════
+// RENDER: Party Sidebar (right column)
+// ══════════════════════════════════════════════════════════════
+function renderPartySidebar(d) {
+  const party = d.party || [];
+  const combatants = d.combatants || [];
+
+  let html = '<div class="card" style="position:sticky;top:70px;">';
+  html += '<div class="card-section-label">The Party</div>';
+
+  party.forEach(pc => {
+    const isYou = String(pc.id) === selectedPcId;
+    const cmb = combatants.find(x => x.name === pc.name && x.type === 'ally');
+    const curHp = cmb ? cmb.hp : (pc.maxhp || 0);
+    const maxHp = cmb ? cmb.maxHp : (pc.maxhp || 0);
+    const pct = hpPct(curHp, maxHp);
+    const hc = hpColor(pct);
+    const conds = (cmb && cmb.conditions) || [];
+
+    html += '<div class="sidebar-pc' + (isYou ? ' is-you' : '') + '">';
+
+    // Name row
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' +
+      '<div style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
+        'font-family:Cinzel,serif;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;' +
+        'background:' + avatarColor(pc.name) + ';border:2px solid ' + (isYou ? 'var(--gold)' : 'rgba(255,255,255,0.12)') + ';">' +
+        initials(pc.name) +
+      '</div>' +
+      '<div style="min-width:0;flex:1;">' +
+        '<div class="sidebar-pc-name">' + esc(pc.name) + (isYou ? ' <span style="font-size:10px;color:var(--text-dim);">(You)</span>' : '') + '</div>' +
+        '<div class="sidebar-pc-sub">' + esc(pc.cls) + ' Lv' + (pc.level || 1) + '</div>' +
+      '</div>' +
+    '</div>';
+
+    // HP bar
+    html += '<div style="display:flex;align-items:center;gap:6px;">' +
+      '<div class="sidebar-hp-bar" style="flex:1;"><div class="sidebar-hp-fill" style="width:' + pct + '%;background:' + hc + ';"></div></div>' +
+      '<span class="sidebar-hp-text" style="margin:0;min-width:38px;">' + curHp + '/' + maxHp + '</span>' +
+    '</div>';
+
+    // Conditions
+    if (conds.length) {
+      html += '<div class="sidebar-conds">' + conds.map(c => '<span class="sidebar-cond-tag">' + esc(c) + '</span>').join('') + '</div>';
+    }
+
+    // Death saves (if HP is 0)
+    if (curHp <= 0 && maxHp > 0) {
+      const ds = pc.deathSaves || { successes: 0, failures: 0 };
+      const successes = ds.successes || 0;
+      const failures = ds.failures || 0;
+      html += '<div class="sidebar-death-saves">' +
+        '<span style="color:#8fd050;">';
+      for (let s = 0; s < 3; s++) {
+        html += s < successes ? '\u25CF ' : '\u25CB ';
+      }
+      html += '</span>' +
+        '<span style="color:#e05050;">';
+      for (let f = 0; f < 3; f++) {
+        html += f < failures ? '\u25CF ' : '\u25CB ';
+      }
+      html += '</span>' +
+      '</div>';
+    }
+
+    html += '</div>'; // close sidebar-pc
+  });
+
+  html += '</div>'; // close card
   return html;
 }
 
