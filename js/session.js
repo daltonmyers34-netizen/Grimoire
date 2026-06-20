@@ -21,6 +21,7 @@ function collectState() {
     currentRound: round,
     currentTurn: currentTurn,
     combatActive: combatActive,
+    savedEncounters: savedEncounters || [],
     pvMessages: window.pvMessages || {},
     pvPartyMessage: window.pvPartyMessage || '',
     notes: {
@@ -45,6 +46,7 @@ function applyState(s) {
   }
   if (s.currentTurn !== undefined) { currentTurn = s.currentTurn; }
   if (s.combatActive !== undefined) { combatActive = s.combatActive; }
+  if (s.savedEncounters) { savedEncounters = s.savedEncounters; if(typeof renderSavedEncounters==='function') renderSavedEncounters(); }
   if (s.pvMessages) { window.pvMessages = s.pvMessages; }
   if (s.pvPartyMessage) { window.pvPartyMessage = s.pvPartyMessage; }
   if (s.notes) {

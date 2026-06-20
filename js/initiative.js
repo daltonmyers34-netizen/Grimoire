@@ -648,6 +648,7 @@ function toggleDeathSave(id, type, index) {
     showToast('💀 ' + c.name + ' has died!', 'danger');
   }
   renderCombatants();
+  syncCombatState();
 }
 
 // Toggle death saves display for a combatant
@@ -658,6 +659,7 @@ function toggleDeathSaves(id) {
   if (!c.deathSuccess) c.deathSuccess = 0;
   if (!c.deathFail) c.deathFail = 0;
   renderCombatants();
+  syncCombatState();
 }
 
 // Roll a death save for a combatant
@@ -698,6 +700,7 @@ function rollDeathSave(id, type) {
   if (combatLog.length > 200) combatLog.pop();
   renderCombatLog();
   renderCombatants();
+  syncCombatState();
 }
 
 // ─── AoE Damage ──────────────────────────────────────────────
@@ -763,6 +766,7 @@ function applyAoE() {
     }
   });
   renderCombatants();
+  syncCombatState();
   showToast('💥 ' + (type === 'damage' ? 'Dealt' : 'Healed') + ' ' + amt + ' to ' + aoeSelected.size + ' target' + (aoeSelected.size > 1 ? 's' : ''), type === 'damage' ? 'danger' : 'success');
   closeModal('modal-aoe');
 }

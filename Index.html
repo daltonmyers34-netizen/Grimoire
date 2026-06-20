@@ -260,6 +260,14 @@
     </div>
   </div>
 
+  <!-- Saved Encounters -->
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-title"><span class="ornament">📋</span> Saved Encounters</div>
+    <div id="saved-encounters-grid" class="preset-grid">
+      <div style="color:var(--text-dim);font-size:13px;padding:8px;">No saved encounters yet. Generate an encounter and click "Save Encounter".</div>
+    </div>
+  </div>
+
   <ul class="combatant-list" id="combatant-list">
     <li class="empty-state"><div class="icon">⚔</div>No combatants yet. Add some above!</li>
   </ul>
@@ -372,6 +380,7 @@
     <div class="modal-btns">
       <button class="btn btn-blood" id="enc-generate-btn" onclick="generateEncounter()">⚡ Generate Encounter</button>
       <button class="btn btn-gold" id="enc-load-btn" onclick="loadEncounterToInitiative()" style="display:none;">⚔ Load into Initiative</button>
+      <button class="btn btn-ghost" id="enc-save-btn" onclick="saveEncounter()" style="display:none;">💾 Save Encounter</button>
       <button class="btn btn-ghost" onclick="closeEncounterModal()">Close</button>
     </div>
   </div>

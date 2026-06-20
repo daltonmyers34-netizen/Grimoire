@@ -942,9 +942,8 @@ function renderPartySidebar(d) {
 
     // Death saves (if HP is 0)
     if (curHp <= 0 && maxHp > 0) {
-      const ds = pc.deathSaves || { successes: 0, failures: 0 };
-      const successes = ds.successes || 0;
-      const failures = ds.failures || 0;
+      const successes = cmb ? (cmb.deathSuccess || 0) : 0;
+      const failures = cmb ? (cmb.deathFail || 0) : 0;
       html += '<div class="sidebar-death-saves">' +
         '<span style="color:#8fd050;">';
       for (let s = 0; s < 3; s++) {
