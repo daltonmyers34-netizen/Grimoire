@@ -954,10 +954,43 @@ function drawPlayerMap(d) {
     }
   }
 
+  // Walls
+  (m.walls || []).forEach(key => {
+    const parts = key.split(',');
+    const wx = parseInt(parts[0]), wy = parseInt(parts[1]);
+    ctx.fillStyle = '#1c1815';
+    ctx.fillRect(wx * m.cell, wy * m.cell, m.cell, m.cell);
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(wx * m.cell, wy * m.cell, m.cell, 3);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(wx * m.cell, (wy + 1) * m.cell - 3, m.cell, 3);
+  });
+
+  // AoE templates (spell areas the DM dropped)
+  (m.props || []).forEach(p => {
+    if (p.kind !== 'aoe') return;
+    const acx = (p.x + 0.5) * m.cell, acy = (p.y + 0.5) * m.cell;
+    ctx.beginPath();
+    ctx.arc(acx, acy, p.r * m.cell, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(' + (p.color || '255,120,30') + ',0.22)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(' + (p.color || '255,120,30') + ',0.75)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(' + (p.color || '255,120,30') + ',0.9)';
+    ctx.font = 'bold ' + Math.floor(m.cell * 0.28) + 'px Cinzel, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText((p.r * 5) + 'ft', acx, acy);
+  });
+
   // Props
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   (m.props || []).forEach(p => {
+    if (p.kind === 'aoe') return;
     ctx.font = Math.floor(m.cell * (p.size || 0.8)) + 'px serif';
     ctx.fillText(p.icon, (p.x + 0.5) * m.cell, (p.y + 0.55) * m.cell);
   });

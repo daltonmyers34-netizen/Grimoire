@@ -17,10 +17,14 @@ function defaultMapState() {
     ground: 'stone',
     seed: 7,
     props: [],
+    walls: [],
     fog: [],
     tokens: {}
   };
 }
+
+var mapMeasure = null;       // {x0,y0,x1,y1} while dragging with the ruler
+var mapSelectedAoE = { r: 4, color: '255,120,30' }; // radius in cells (20ft fireball default)
 
 var MAP_PROPS = [
   '🪨','🌳','🌲','🌿','🪵','🔥','💧','⛰',
@@ -60,10 +64,74 @@ function renderMap() {
   var ctx = canvas.getContext('2d');
 
   drawMapGround(ctx, m, false);
+  drawMapWalls(ctx, m);
+  drawMapAoE(ctx, m);
   drawMapProps(ctx, m);
   drawMapTokens(ctx, m, false);
   drawMapFog(ctx, m, false);
   drawMapGrid(ctx, m);
+  drawMapMeasure(ctx, m);
+}
+
+function drawMapWalls(ctx, m) {
+  (m.walls || []).forEach(function(key) {
+    var p = key.split(',');
+    var x = parseInt(p[0]), y = parseInt(p[1]);
+    ctx.fillStyle = '#1c1815';
+    ctx.fillRect(x * m.cell, y * m.cell, m.cell, m.cell);
+    // subtle top-edge highlight for a raised look
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(x * m.cell, y * m.cell, m.cell, 3);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(x * m.cell, (y + 1) * m.cell - 3, m.cell, 3);
+  });
+}
+
+function drawMapAoE(ctx, m) {
+  (m.props || []).forEach(function(p) {
+    if (p.kind !== 'aoe') return;
+    var cx = (p.x + 0.5) * m.cell, cy = (p.y + 0.5) * m.cell;
+    var r = p.r * m.cell;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(' + (p.color || '255,120,30') + ',0.22)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(' + (p.color || '255,120,30') + ',0.75)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(' + (p.color || '255,120,30') + ',0.9)';
+    ctx.font = 'bold ' + Math.floor(m.cell * 0.28) + 'px Cinzel, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText((p.r * 5) + 'ft', cx, cy);
+  });
+}
+
+function drawMapMeasure(ctx, m) {
+  if (!mapMeasure) return;
+  var x0 = (mapMeasure.x0 + 0.5) * m.cell, y0 = (mapMeasure.y0 + 0.5) * m.cell;
+  var x1 = (mapMeasure.x1 + 0.5) * m.cell, y1 = (mapMeasure.y1 + 0.5) * m.cell;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+  ctx.strokeStyle = '#ffe066';
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([8, 5]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // 5e standard: diagonals count 5 ft (Chebyshev distance)
+  var sq = Math.max(Math.abs(mapMeasure.x1 - mapMeasure.x0), Math.abs(mapMeasure.y1 - mapMeasure.y0));
+  var label = (sq * 5) + ' ft';
+  var mx = (x0 + x1) / 2, my = (y0 + y1) / 2 - 12;
+  ctx.font = 'bold 15px Cinzel, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+  ctx.strokeText(label, mx, my);
+  ctx.fillStyle = '#ffe066';
+  ctx.fillText(label, mx, my);
 }
 
 function drawMapGround(ctx, m, forPlayers) {
@@ -100,6 +168,7 @@ function drawMapProps(ctx, m) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   (m.props || []).forEach(function(p) {
+    if (p.kind === 'aoe') return; // drawn in drawMapAoE
     ctx.font = Math.floor(m.cell * (p.size || 0.8)) + 'px serif';
     ctx.fillText(p.icon, (p.x + 0.5) * m.cell, (p.y + 0.55) * m.cell);
   });
@@ -120,10 +189,16 @@ function mapTokenList(forPlayers) {
       } else {
         pos = { x: mapState.cols - 2 - (placedEnemies % (mapState.cols - 2)), y: 1 };
       }
-      // avoid stacking on an occupied cell
+      // avoid stacking on an occupied cell or a wall
       var tries = 0;
-      while (tries < 50 && list.some(function(t){ return t.x === pos.x && t.y === pos.y; })) {
-        pos.x = (pos.x + 1) % mapState.cols; tries++;
+      var blocked = function(p) {
+        return list.some(function(t){ return t.x === p.x && t.y === p.y; }) ||
+               (mapState.walls || []).indexOf(p.x + ',' + p.y) >= 0;
+      };
+      while (tries < 80 && blocked(pos)) {
+        pos.x = (pos.x + 1) % mapState.cols;
+        if (pos.x === 0) pos.y = (pos.y + 1) % mapState.rows;
+        tries++;
       }
       mapState.tokens[c.id] = pos;
       mapNeedsSync = true;
@@ -192,8 +267,16 @@ function setMapTool(tool) {
   });
   var palette = document.getElementById('map-prop-palette');
   if (palette) palette.style.display = tool === 'prop' ? 'flex' : 'none';
+  var aoePal = document.getElementById('map-aoe-palette');
+  if (aoePal) aoePal.style.display = tool === 'aoe' ? 'flex' : 'none';
   var canvas = document.getElementById('battle-map-canvas');
   if (canvas) canvas.style.cursor = tool === 'move' ? 'grab' : tool === 'erase' ? 'not-allowed' : 'crosshair';
+}
+
+function setMapAoE(radiusFt, color, btn) {
+  mapSelectedAoE = { r: radiusFt / 5, color: color };
+  document.querySelectorAll('.map-aoe-btn').forEach(function(b) { b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
 }
 
 function setMapProp(icon, btn) {
@@ -324,14 +407,46 @@ function mapMouseDown(e) {
     mapPaintFog(pt, mapTool === 'reveal');
     renderMap();
   }
+  else if (mapTool === 'wall') {
+    if (pt.x < 0 || pt.y < 0 || pt.x >= mapState.cols || pt.y >= mapState.rows) return;
+    mapFogPainting = true; // reuse the drag-paint flag
+    mapPaintWall(pt);
+    renderMap();
+  }
+  else if (mapTool === 'measure') {
+    mapMeasure = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
+    mapFogPainting = true;
+    renderMap();
+  }
+  else if (mapTool === 'aoe') {
+    if (pt.x < 0 || pt.y < 0 || pt.x >= mapState.cols || pt.y >= mapState.rows) return;
+    mapState.props.push({ id: Date.now(), kind: 'aoe', x: pt.x, y: pt.y, r: mapSelectedAoE.r, color: mapSelectedAoE.color });
+    renderMap();
+    mapNeedsSync = true;
+  }
   else if (mapTool === 'erase') {
     var hit = mapHitProp(pt);
     if (hit) {
       mapState.props = mapState.props.filter(function(p) { return p.id !== hit.id; });
       renderMap();
       mapNeedsSync = true;
+    } else {
+      var wkey = pt.x + ',' + pt.y;
+      var widx = (mapState.walls || []).indexOf(wkey);
+      if (widx >= 0) {
+        mapState.walls.splice(widx, 1);
+        renderMap();
+        mapNeedsSync = true;
+      }
     }
   }
+}
+
+function mapPaintWall(pt) {
+  if (pt.x < 0 || pt.y < 0 || pt.x >= mapState.cols || pt.y >= mapState.rows) return;
+  if (!mapState.walls) mapState.walls = [];
+  var key = pt.x + ',' + pt.y;
+  if (mapState.walls.indexOf(key) < 0) { mapState.walls.push(key); mapNeedsSync = true; }
 }
 
 function mapMouseMove(e) {
@@ -347,8 +462,16 @@ function mapMouseMove(e) {
     renderMap();
     mapNeedsSync = true;
   } else if (mapFogPainting) {
-    mapPaintFog(pt, mapTool === 'reveal');
-    renderMap();
+    if (mapTool === 'measure' && mapMeasure) {
+      mapMeasure.x1 = pt.x; mapMeasure.y1 = pt.y;
+      renderMap();
+    } else if (mapTool === 'wall') {
+      mapPaintWall(pt);
+      renderMap();
+    } else {
+      mapPaintFog(pt, mapTool === 'reveal');
+      renderMap();
+    }
   }
 }
 
@@ -356,6 +479,7 @@ function mapMouseUp() {
   if (mapDrag || mapFogPainting || mapNeedsSync) {
     mapDrag = null;
     mapFogPainting = false;
+    if (mapMeasure) { mapMeasure = null; renderMap(); }
     if (mapNeedsSync) { mapNeedsSync = false; syncMapState(); }
   }
 }
@@ -399,6 +523,236 @@ function initMapTab() {
     var mr = document.getElementById('map-rows'); if (mr) mr.value = mapState.rows;
   }
   renderMap();
+  renderSavedMaps();
   // First render may have auto-placed new tokens — push them to players
   if (mapNeedsSync) { mapNeedsSync = false; syncMapState(); }
+}
+
+// ============================================================
+// MAP GENERATORS — procedural dungeon / tavern / forest
+// ============================================================
+
+function mapSyncControls() {
+  var gsel = document.getElementById('map-ground'); if (gsel) gsel.value = mapState.ground;
+  var mc = document.getElementById('map-cols'); if (mc) mc.value = mapState.cols;
+  var mr = document.getElementById('map-rows'); if (mr) mr.value = mapState.rows;
+}
+
+function mapRandInt(min, max) { return min + Math.floor(Math.random() * (max - min + 1)); }
+
+function mapGenDungeon() {
+  var m = mapState;
+  m.ground = Math.random() < 0.5 ? 'stone' : 'cave';
+  m.seed = Math.floor(Math.random() * 100000);
+  m.props = [];
+  m.tokens = {};
+  m.fog = [];
+
+  // Start with everything as wall, carve rooms + corridors
+  var floor = {};
+  var rooms = [];
+  var attempts = 0;
+  var targetRooms = mapRandInt(4, 7);
+  while (rooms.length < targetRooms && attempts < 80) {
+    attempts++;
+    var w = mapRandInt(3, 6), h = mapRandInt(3, 5);
+    var x = mapRandInt(1, m.cols - w - 2), y = mapRandInt(1, m.rows - h - 2);
+    var overlaps = rooms.some(function(r) {
+      return x < r.x + r.w + 1 && x + w + 1 > r.x && y < r.y + r.h + 1 && y + h + 1 > r.y;
+    });
+    if (overlaps) continue;
+    rooms.push({ x: x, y: y, w: w, h: h, cx: x + Math.floor(w/2), cy: y + Math.floor(h/2) });
+  }
+  rooms.forEach(function(r) {
+    for (var yy = r.y; yy < r.y + r.h; yy++)
+      for (var xx = r.x; xx < r.x + r.w; xx++)
+        floor[xx + ',' + yy] = true;
+  });
+  // L-shaped corridors between consecutive room centers
+  for (var i = 1; i < rooms.length; i++) {
+    var a = rooms[i - 1], b = rooms[i];
+    var x0 = a.cx, y0 = a.cy, x1 = b.cx, y1 = b.cy;
+    var xx2, yy2;
+    if (Math.random() < 0.5) {
+      for (xx2 = Math.min(x0, x1); xx2 <= Math.max(x0, x1); xx2++) floor[xx2 + ',' + y0] = true;
+      for (yy2 = Math.min(y0, y1); yy2 <= Math.max(y0, y1); yy2++) floor[x1 + ',' + yy2] = true;
+    } else {
+      for (yy2 = Math.min(y0, y1); yy2 <= Math.max(y0, y1); yy2++) floor[x0 + ',' + yy2] = true;
+      for (xx2 = Math.min(x0, x1); xx2 <= Math.max(x0, x1); xx2++) floor[xx2 + ',' + y1] = true;
+    }
+  }
+  // Walls = every non-floor cell
+  var walls = [];
+  for (var wy = 0; wy < m.rows; wy++)
+    for (var wx = 0; wx < m.cols; wx++)
+      if (!floor[wx + ',' + wy]) walls.push(wx + ',' + wy);
+  m.walls = walls;
+
+  // Dress the rooms: torches, a chest, bones
+  rooms.forEach(function(r, idx) {
+    m.props.push({ id: Date.now() + idx * 7 + 1, x: r.x, y: r.y, icon: '🕯', size: 0.6 });
+    if (idx === rooms.length - 1) {
+      m.props.push({ id: Date.now() + idx * 7 + 2, x: r.cx, y: r.cy, icon: '📦', size: 0.8 });
+    }
+    if (Math.random() < 0.4) {
+      m.props.push({ id: Date.now() + idx * 7 + 3, x: r.x + r.w - 1, y: r.y + r.h - 1, icon: Math.random() < 0.5 ? '💀' : '🦴', size: 0.7 });
+    }
+  });
+
+  mapSyncControls();
+  renderMap();
+  syncMapState();
+  showToast('⚒ Dungeon generated — ' + rooms.length + ' rooms. Reroll if it isn\'t right!', 'success');
+}
+
+function mapGenTavern() {
+  var m = mapState;
+  m.ground = 'wood';
+  m.seed = Math.floor(Math.random() * 100000);
+  m.props = [];
+  m.tokens = {};
+  m.fog = [];
+
+  // Outer walls with a door on the south side
+  var walls = [];
+  for (var x = 0; x < m.cols; x++) { walls.push(x + ',0'); walls.push(x + ',' + (m.rows - 1)); }
+  for (var y = 0; y < m.rows; y++) { walls.push('0,' + y); walls.push((m.cols - 1) + ',' + y); }
+  var doorX = Math.floor(m.cols / 2);
+  walls = walls.filter(function(k) { return k !== doorX + ',' + (m.rows - 1) && k !== (doorX + 1) + ',' + (m.rows - 1); });
+  m.walls = walls;
+  m.props.push({ id: Date.now(), x: doorX, y: m.rows - 1, icon: '🚪', size: 0.85 });
+
+  // Bar along the top: barrels + counter
+  for (var bx = 2; bx < Math.min(m.cols - 2, 9); bx++) {
+    m.props.push({ id: Date.now() + bx * 3 + 1, x: bx, y: 2, icon: '🛢', size: 0.75 });
+  }
+  // Fireplace on the east wall
+  m.props.push({ id: Date.now() + 500, x: m.cols - 2, y: Math.floor(m.rows / 2), icon: '🔥', size: 0.8 });
+  // Tables with chairs scattered in the common room
+  var tables = mapRandInt(4, 6);
+  for (var t = 0; t < tables; t++) {
+    var tx = mapRandInt(3, m.cols - 4), ty = mapRandInt(5, m.rows - 4);
+    m.props.push({ id: Date.now() + 600 + t * 5, x: tx, y: ty, icon: '🪑', size: 0.75 });
+    if (Math.random() < 0.7) m.props.push({ id: Date.now() + 601 + t * 5, x: tx + 1, y: ty, icon: '🪑', size: 0.75 });
+  }
+  // Candles for mood
+  m.props.push({ id: Date.now() + 900, x: 2, y: m.rows - 3, icon: '🕯', size: 0.6 });
+
+  mapSyncControls();
+  renderMap();
+  syncMapState();
+  showToast('🍺 Tavern generated — bar\'s at the top, door\'s at the bottom', 'success');
+}
+
+function mapGenForest() {
+  var m = mapState;
+  m.ground = 'grass';
+  m.seed = Math.floor(Math.random() * 100000);
+  m.props = [];
+  m.walls = [];
+  m.tokens = {};
+  m.fog = [];
+
+  // Tree clusters
+  var clusters = mapRandInt(4, 6);
+  for (var c = 0; c < clusters; c++) {
+    var cx = mapRandInt(2, m.cols - 3), cy = mapRandInt(2, m.rows - 3);
+    var size = mapRandInt(3, 7);
+    for (var i = 0; i < size; i++) {
+      var tx = Math.max(0, Math.min(m.cols - 1, cx + mapRandInt(-2, 2)));
+      var ty = Math.max(0, Math.min(m.rows - 1, cy + mapRandInt(-2, 2)));
+      m.props.push({ id: Date.now() + c * 100 + i, x: tx, y: ty, icon: Math.random() < 0.5 ? '🌳' : '🌲', size: 0.85 });
+    }
+  }
+  // Rocks and undergrowth
+  var scatter = mapRandInt(4, 8);
+  for (var s = 0; s < scatter; s++) {
+    m.props.push({ id: Date.now() + 1000 + s, x: mapRandInt(0, m.cols - 1), y: mapRandInt(0, m.rows - 1), icon: Math.random() < 0.5 ? '🪨' : '🌿', size: 0.7 });
+  }
+  // A campfire clearing near the middle
+  if (Math.random() < 0.7) {
+    m.props.push({ id: Date.now() + 2000, x: Math.floor(m.cols / 2), y: Math.floor(m.rows / 2), icon: '🔥', size: 0.8 });
+    m.props.push({ id: Date.now() + 2001, x: Math.floor(m.cols / 2) + 1, y: Math.floor(m.rows / 2), icon: '🪵', size: 0.7 });
+  }
+
+  mapSyncControls();
+  renderMap();
+  syncMapState();
+  showToast('🌲 Forest generated — reroll for a new layout', 'success');
+}
+
+// ============================================================
+// SAVED MAPS — prep maps ahead of the session
+// ============================================================
+function saveCurrentMap() {
+  var name = prompt('Name this map:', '');
+  if (name === null) return;
+  name = name.trim() || 'Untitled Map';
+  var snapshot = {
+    id: Date.now(),
+    name: name,
+    savedAt: new Date().toISOString(),
+    cols: mapState.cols, rows: mapState.rows, cell: mapState.cell,
+    ground: mapState.ground, seed: mapState.seed,
+    props: JSON.parse(JSON.stringify(mapState.props || [])),
+    walls: (mapState.walls || []).slice(),
+    fog: (mapState.fog || []).slice()
+    // tokens intentionally not saved — they belong to whatever combat is live
+  };
+  var existing = savedMaps.findIndex(function(sm) { return sm.name === name; });
+  if (existing >= 0) {
+    if (!confirm('A map named "' + name + '" exists. Overwrite it?')) return;
+    savedMaps[existing] = snapshot;
+  } else {
+    savedMaps.push(snapshot);
+  }
+  renderSavedMaps();
+  syncMapState();
+  showToast('💾 Map "' + name + '" saved', 'success');
+}
+
+function loadSavedMap(idx) {
+  var sm = savedMaps[idx];
+  if (!sm) return;
+  mapState.cols = sm.cols; mapState.rows = sm.rows; mapState.cell = sm.cell || 40;
+  mapState.ground = sm.ground; mapState.seed = sm.seed;
+  mapState.props = JSON.parse(JSON.stringify(sm.props || []));
+  mapState.walls = (sm.walls || []).slice();
+  mapState.fog = (sm.fog || []).slice();
+  mapState.tokens = {}; // fresh token placement for current combatants
+  var gsel = document.getElementById('map-ground'); if (gsel) gsel.value = mapState.ground;
+  var mc = document.getElementById('map-cols'); if (mc) mc.value = mapState.cols;
+  var mr = document.getElementById('map-rows'); if (mr) mr.value = mapState.rows;
+  renderMap();
+  syncMapState();
+  showToast('Map "' + sm.name + '" loaded', 'success');
+}
+
+function deleteSavedMap(idx) {
+  var sm = savedMaps[idx];
+  if (!sm) return;
+  if (!confirm('Delete saved map "' + sm.name + '"?')) return;
+  savedMaps.splice(idx, 1);
+  renderSavedMaps();
+  syncMapState();
+}
+
+function renderSavedMaps() {
+  var grid = document.getElementById('saved-maps-grid');
+  if (!grid) return;
+  if (!savedMaps || !savedMaps.length) {
+    grid.innerHTML = '<div style="color:var(--text-dim);font-size:13px;padding:8px;">No saved maps yet. Build a map, then click "Save Map" to keep it for later.</div>';
+    return;
+  }
+  grid.innerHTML = savedMaps.map(function(sm, i) {
+    var groundLabel = (MAP_GROUNDS[sm.ground] || {}).label || sm.ground;
+    return '<div class="preset-card" onclick="loadSavedMap(' + i + ')">' +
+      '<div class="preset-card-name">🗺 ' + sm.name + '</div>' +
+      '<div class="preset-card-meta" style="margin-top:4px;">' + groundLabel + ' · ' + sm.cols + '×' + sm.rows + ' · ' + (sm.props || []).length + ' props' + ((sm.walls || []).length ? ' · walls' : '') + '</div>' +
+      '<div style="margin-top:6px;display:flex;gap:6px;">' +
+        '<button onclick="event.stopPropagation();loadSavedMap(' + i + ')" style="font-size:10px;color:var(--gold);background:rgba(212,175,55,0.1);border:1px solid rgba(212,175,55,0.3);border-radius:3px;padding:3px 8px;cursor:pointer;">Load</button>' +
+        '<button onclick="event.stopPropagation();deleteSavedMap(' + i + ')" style="font-size:10px;color:var(--blood-light);background:none;border:none;cursor:pointer;padding:0;">✕ Delete</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
 }

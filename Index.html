@@ -288,15 +288,39 @@
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
       <button class="map-tool-btn active" data-tool="move" onclick="setMapTool('move')" title="Drag tokens and props">✋ Move</button>
       <button class="map-tool-btn" data-tool="prop" onclick="setMapTool('prop')" title="Click to place the selected prop">🪨 Props</button>
+      <button class="map-tool-btn" data-tool="wall" onclick="setMapTool('wall')" title="Paint walls (drag to draw)">🧱 Wall</button>
       <button class="map-tool-btn" data-tool="fog" onclick="setMapTool('fog')" title="Paint fog of war (players can't see)">🌫 Fog</button>
       <button class="map-tool-btn" data-tool="reveal" onclick="setMapTool('reveal')" title="Reveal fogged areas">🔦 Reveal</button>
-      <button class="map-tool-btn" data-tool="erase" onclick="setMapTool('erase')" title="Click props to delete (or right-click anytime)">🗑 Erase</button>
+      <button class="map-tool-btn" data-tool="measure" onclick="setMapTool('measure')" title="Drag to measure distance (5 ft per square)">📏 Measure</button>
+      <button class="map-tool-btn" data-tool="aoe" onclick="setMapTool('aoe')" title="Drop a spell area template — players see it too">💥 AoE</button>
+      <button class="map-tool-btn" data-tool="erase" onclick="setMapTool('erase')" title="Click props/walls to delete (or right-click anytime)">🗑 Erase</button>
       <span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>
       <button class="btn btn-ghost btn-sm" onclick="mapFogAll()">Fog All</button>
       <button class="btn btn-ghost btn-sm" onclick="mapClearFog()">Clear Fog</button>
       <button class="btn btn-ghost btn-sm" onclick="mapResetTokens()">↺ Reset Tokens</button>
       <button class="btn btn-ghost btn-sm" onclick="mapClearProps()">Clear Props</button>
       <button class="btn btn-blood btn-sm" onclick="mapNewMap()">✦ New Map</button>
+    </div>
+
+    <!-- Toolbar row: generators + save -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+      <span style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);">GENERATE:</span>
+      <button class="btn btn-ghost btn-sm" onclick="mapGenDungeon()">⚒ Dungeon</button>
+      <button class="btn btn-ghost btn-sm" onclick="mapGenTavern()">🍺 Tavern</button>
+      <button class="btn btn-ghost btn-sm" onclick="mapGenForest()">🌲 Forest</button>
+      <span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>
+      <button class="btn btn-gold btn-sm" onclick="saveCurrentMap()">💾 Save Map</button>
+    </div>
+
+    <!-- AoE palette (shown when AoE tool active) -->
+    <div id="map-aoe-palette" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:8px;padding:8px;background:rgba(0,0,0,0.25);border:1px solid var(--border);border-radius:6px;align-items:center;">
+      <span style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);">TEMPLATE:</span>
+      <button class="map-aoe-btn map-tool-btn" onclick="setMapAoE(5, '120,180,255', this)" title="5 ft radius — e.g. Thunderclap">○ 5ft</button>
+      <button class="map-aoe-btn map-tool-btn" onclick="setMapAoE(10, '160,120,255', this)" title="10 ft radius — e.g. Shatter, Web">○ 10ft</button>
+      <button class="map-aoe-btn map-tool-btn" onclick="setMapAoE(15, '120,220,140', this)" title="15 ft radius — e.g. Stinking Cloud">○ 15ft</button>
+      <button class="map-aoe-btn map-tool-btn active" onclick="setMapAoE(20, '255,120,30', this)" title="20 ft radius — e.g. Fireball">○ 20ft</button>
+      <button class="map-aoe-btn map-tool-btn" onclick="setMapAoE(30, '255,80,80', this)" title="30 ft radius — e.g. Circle of Death">○ 30ft</button>
+      <span style="font-size:11px;color:var(--text-dim);font-style:italic;">Click the map to place · Erase or right-click to remove</span>
     </div>
 
     <!-- Toolbar row 2: ground + size -->
@@ -324,6 +348,14 @@
     </div>
     <div style="margin-top:6px;font-size:11px;color:var(--text-dim);font-style:italic;">
       Tokens come from the Initiative tracker automatically — allies start at the bottom, enemies at the top. Right-click a prop to delete it. Each square = 5 ft.
+    </div>
+  </div>
+
+  <!-- Saved Maps -->
+  <div class="panel">
+    <div class="panel-title"><span class="ornament">💾</span> Saved Maps</div>
+    <div id="saved-maps-grid" class="preset-grid">
+      <div style="color:var(--text-dim);font-size:13px;padding:8px;">No saved maps yet. Build a map, then click "Save Map" to keep it for later.</div>
     </div>
   </div>
 </div>

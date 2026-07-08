@@ -24,6 +24,7 @@ let xpLog = [], totalXP = 0;
 let lastGeneratedNPC = null;
 let lastEncounterData = null;
 let savedEncounters = [];
+let savedMaps = [];
 let diceOverlayExpanded = true;
 let worldTotalHours = 6;
 let worldSeason = 0;

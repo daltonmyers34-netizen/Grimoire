@@ -23,6 +23,7 @@ function collectState() {
     combatActive: combatActive,
     savedEncounters: savedEncounters || [],
     mapState: (typeof mapState !== 'undefined' && mapState) ? mapState : null,
+    savedMaps: (typeof savedMaps !== 'undefined' && savedMaps) ? savedMaps : [],
     pvMessages: window.pvMessages || {},
     pvPartyMessage: window.pvPartyMessage || '',
     notes: {
@@ -49,6 +50,7 @@ function applyState(s) {
   if (s.combatActive !== undefined) { combatActive = s.combatActive; }
   if (s.savedEncounters) { savedEncounters = s.savedEncounters; if(typeof renderSavedEncounters==='function') renderSavedEncounters(); }
   if (s.mapState && typeof mapState !== 'undefined') { mapState = s.mapState; if(typeof renderMap==='function') renderMap(); }
+  if (s.savedMaps && typeof savedMaps !== 'undefined') { savedMaps = s.savedMaps; if(typeof renderSavedMaps==='function') renderSavedMaps(); }
   if (s.pvMessages) { window.pvMessages = s.pvMessages; }
   if (s.pvPartyMessage) { window.pvPartyMessage = s.pvPartyMessage; }
   if (s.notes) {
