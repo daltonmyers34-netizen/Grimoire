@@ -121,6 +121,7 @@ window.cloudSave = () => {
         partyInventory: state.partyInventory || [],
         pvMessages: state.pvMessages || {},
         pvPartyMessage: state.pvPartyMessage || '',
+        mapState: state.mapState || null,
         updatedAt: new Date().toISOString()
       };
       await setDoc(doc(db, 'playerView', currentUid), pvSnap);

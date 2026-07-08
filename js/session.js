@@ -22,6 +22,7 @@ function collectState() {
     currentTurn: currentTurn,
     combatActive: combatActive,
     savedEncounters: savedEncounters || [],
+    mapState: (typeof mapState !== 'undefined' && mapState) ? mapState : null,
     pvMessages: window.pvMessages || {},
     pvPartyMessage: window.pvPartyMessage || '',
     notes: {
@@ -47,6 +48,7 @@ function applyState(s) {
   if (s.currentTurn !== undefined) { currentTurn = s.currentTurn; }
   if (s.combatActive !== undefined) { combatActive = s.combatActive; }
   if (s.savedEncounters) { savedEncounters = s.savedEncounters; if(typeof renderSavedEncounters==='function') renderSavedEncounters(); }
+  if (s.mapState && typeof mapState !== 'undefined') { mapState = s.mapState; if(typeof renderMap==='function') renderMap(); }
   if (s.pvMessages) { window.pvMessages = s.pvMessages; }
   if (s.pvPartyMessage) { window.pvPartyMessage = s.pvPartyMessage; }
   if (s.notes) {

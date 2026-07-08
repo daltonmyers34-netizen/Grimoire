@@ -62,6 +62,7 @@ function switchTab(name) {
   // Find and activate the matching nav tab
   const tab = document.querySelector('.nav-tab[onclick*="' + name + '"]');
   if (tab) tab.classList.add('active');
+  if (name === 'map' && typeof initMapTab === 'function') initMapTab();
 }
 
 // ============================================================

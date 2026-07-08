@@ -68,6 +68,7 @@
 <nav class="nav-tabs">
   <div class="nav-tab" onclick="switchTab('party')"><span class="tab-icon">🧝</span>Party</div>
   <div class="nav-tab active" onclick="switchTab('initiative')"><span class="tab-icon">⚔</span>Initiative</div>
+  <div class="nav-tab" onclick="switchTab('map')"><span class="tab-icon">🗺</span>Map</div>
   <div class="nav-tab" onclick="switchTab('npcs')"><span class="tab-icon">🧙</span>NPCs</div>
   <div class="nav-tab" onclick="switchTab('locations')"><span class="tab-icon">🏰</span>Locations</div>
   <div class="nav-tab" onclick="switchTab('sounds')"><span class="tab-icon">🎵</span>Sound</div>
@@ -271,6 +272,60 @@
   <ul class="combatant-list" id="combatant-list">
     <li class="empty-state"><div class="icon">⚔</div>No combatants yet. Add some above!</li>
   </ul>
+</div>
+
+<!-- ============================================================ -->
+<!--  BATTLE MAP                                                  -->
+<!-- ============================================================ -->
+<div id="tab-map" class="section">
+  <div class="panel" style="margin-bottom:12px;">
+    <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <span><span class="ornament">🗺</span> Battle Map</span>
+      <span style="font-size:11px;color:var(--text-dim);font-family:'Crimson Text',serif;font-style:italic;letter-spacing:0;text-transform:none;">Players see this live on the Player View — fog hides areas, hidden combatants don't appear</span>
+    </div>
+
+    <!-- Toolbar row 1: tools -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+      <button class="map-tool-btn active" data-tool="move" onclick="setMapTool('move')" title="Drag tokens and props">✋ Move</button>
+      <button class="map-tool-btn" data-tool="prop" onclick="setMapTool('prop')" title="Click to place the selected prop">🪨 Props</button>
+      <button class="map-tool-btn" data-tool="fog" onclick="setMapTool('fog')" title="Paint fog of war (players can't see)">🌫 Fog</button>
+      <button class="map-tool-btn" data-tool="reveal" onclick="setMapTool('reveal')" title="Reveal fogged areas">🔦 Reveal</button>
+      <button class="map-tool-btn" data-tool="erase" onclick="setMapTool('erase')" title="Click props to delete (or right-click anytime)">🗑 Erase</button>
+      <span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>
+      <button class="btn btn-ghost btn-sm" onclick="mapFogAll()">Fog All</button>
+      <button class="btn btn-ghost btn-sm" onclick="mapClearFog()">Clear Fog</button>
+      <button class="btn btn-ghost btn-sm" onclick="mapResetTokens()">↺ Reset Tokens</button>
+      <button class="btn btn-ghost btn-sm" onclick="mapClearProps()">Clear Props</button>
+      <button class="btn btn-blood btn-sm" onclick="mapNewMap()">✦ New Map</button>
+    </div>
+
+    <!-- Toolbar row 2: ground + size -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;">
+      <div class="field-group" style="margin:0;">
+        <label>Ground</label>
+        <select id="map-ground" onchange="setMapGround(this.value)" style="min-width:140px;"></select>
+      </div>
+      <div class="field-group" style="margin:0;">
+        <label>Width (squares)</label>
+        <input id="map-cols" type="number" min="6" max="40" value="22" onchange="setMapSize()" style="width:80px;">
+      </div>
+      <div class="field-group" style="margin:0;">
+        <label>Height (squares)</label>
+        <input id="map-rows" type="number" min="6" max="30" value="14" onchange="setMapSize()" style="width:80px;">
+      </div>
+    </div>
+
+    <!-- Prop palette (shown when Props tool active) -->
+    <div id="map-prop-palette" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:8px;padding:8px;background:rgba(0,0,0,0.25);border:1px solid var(--border);border-radius:6px;"></div>
+
+    <!-- Canvas -->
+    <div style="overflow-x:auto;border:2px solid var(--border);border-radius:8px;background:#0a0603;">
+      <canvas id="battle-map-canvas" style="display:block;max-width:none;"></canvas>
+    </div>
+    <div style="margin-top:6px;font-size:11px;color:var(--text-dim);font-style:italic;">
+      Tokens come from the Initiative tracker automatically — allies start at the bottom, enemies at the top. Right-click a prop to delete it. Each square = 5 ft.
+    </div>
+  </div>
 </div>
 
 <!-- HP Modal -->
@@ -1305,6 +1360,7 @@ Use this space freely during your session. Notes auto-save in your browser."></t
 <script src="js/ai.js"></script>
 <script src="js/session.js"></script>
 <script src="js/sidebar.js"></script>
+<script src="js/map.js"></script>
 
 <!-- Firebase (module - loads after regular scripts) -->
 <script type="module" src="js/firebase.js"></script>
