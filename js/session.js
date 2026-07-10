@@ -10,7 +10,7 @@ function collectState() {
     savedAt: new Date().toISOString(),
     combatants: combatants,
     npcs: npcs,
-    locations: window.locations || [],
+    locations: (typeof locations !== 'undefined' && locations) ? locations : [],
     party: party,
     presets: JSON.parse(localStorage.getItem('dm_presets') || '[]'),
     worldTotalHours: worldTotalHours,
@@ -36,7 +36,7 @@ function collectState() {
 function applyState(s) {
   if (s.combatants)  { combatants = s.combatants; renderCombatants(); }
   if (s.npcs)        { npcs = s.npcs; renderNPCs(); }
-  if (s.locations)   { window.locations = s.locations; if(typeof renderLocations==='function') renderLocations(); }
+  if (s.locations && s.locations.length) { locations = s.locations; if(typeof renderLocations==='function') renderLocations(); }
   if (s.party)       { party = s.party; renderParty(); }
   if (s.presets)     { localStorage.setItem('dm_presets', JSON.stringify(s.presets)); }
   if (s.worldTotalHours !== undefined) { worldTotalHours = s.worldTotalHours; worldSeason = s.worldSeason||0; updateWorldDisplay(); syncTopBar(); }
@@ -198,6 +198,52 @@ function clearSession() {
   if (!confirm('Clear all session data? This cannot be undone.')) return;
   localStorage.removeItem(SESSION_KEY);
   showToast('Session cleared', 'info');
+}
+
+// ============================================================
+// NEW CAMPAIGN — wipe the slate, keep library assets
+// ============================================================
+function newCampaign() {
+  if (!confirm('Start a NEW campaign?\n\nThis clears: party, initiative, NPCs, locations, XP, notes, DM messages, world time, party inventory, saved encounters, and the battle map.\n\nKept: saved sessions, battle presets, and saved maps.\n\nTip: use "Save Current Session As" first if you want to come back to this campaign.')) return;
+
+  // Combat
+  combatants = []; currentTurn = -1; round = 0; combatActive = false;
+  if (typeof stopTurnTimer === 'function') try { stopTurnTimer(); } catch(e) {}
+  var rn = document.getElementById('round-num'); if (rn) rn.textContent = '0';
+  var rd = document.querySelector('.round-display span'); if (rd) rd.textContent = 'Combat Not Started';
+  var ti = document.getElementById('turn-indicator'); if (ti) ti.textContent = '';
+
+  // Party + inventory
+  party = []; localStorage.setItem('dm_party', '[]');
+  partyInventory = []; localStorage.setItem('dm-party-inventory', '[]');
+
+  // NPCs + locations back to the preloaded defaults
+  if (typeof PRELOADED_NPCS !== 'undefined') npcs = [].concat(PRELOADED_NPCS);
+  if (typeof PRELOADED_LOCATIONS !== 'undefined') locations = [].concat(PRELOADED_LOCATIONS);
+
+  // XP, world clock, encounters, messages, map
+  totalXP = 0; xpLog = [];
+  worldTotalHours = 6; worldSeason = 0;
+  savedEncounters = [];
+  window.pvMessages = {}; window.pvPartyMessage = '';
+  if (typeof mapState !== 'undefined' && typeof defaultMapState === 'function') mapState = defaultMapState();
+
+  // Notes
+  var sn = document.getElementById('session-notes'); if (sn) sn.value = '';
+  var pn = document.getElementById('plot-notes'); if (pn) pn.value = '';
+  localStorage.removeItem('dm-session-notes');
+  localStorage.removeItem('dm-plot-notes');
+
+  // Re-render everything
+  ['renderCombatants','renderParty','renderNPCs','renderLocations','renderXP','updateWorldDisplay','syncTopBar','renderSavedEncounters','renderPartyInventory','renderMap','renderSavedMaps'].forEach(function(fn) {
+    try { if (typeof window[fn] === 'function') window[fn](); } catch(e) {}
+  });
+
+  // Persist the fresh slate locally and to the cloud
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(collectState())); } catch(e) {}
+  if (window.cloudSave) window.cloudSave();
+  closeSessionsModal();
+  showToast('✦ New campaign started — fresh slate!', 'success');
 }
 
 // Auto-save every 60 seconds (silent — no toast)

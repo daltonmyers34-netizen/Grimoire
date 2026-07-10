@@ -1325,13 +1325,14 @@ Use this space freely during your session. Notes auto-save in your browser."></t
       </div>
     </div>
 
-    <!-- Import/Export -->
+    <!-- Import/Export + New Campaign -->
     <div style="display:flex;gap:8px;margin-bottom:16px;">
       <button onclick="exportSession()" style="flex:1;padding:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:var(--text-dim);font-family:Cinzel,serif;font-size:10px;cursor:pointer;letter-spacing:0.08em;">📤 EXPORT FILE</button>
       <label style="flex:1;padding:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:var(--text-dim);font-family:Cinzel,serif;font-size:10px;cursor:pointer;letter-spacing:0.08em;text-align:center;">
         📥 IMPORT FILE
         <input type="file" accept=".json" style="display:none;" onchange="if(this.files[0])importSession(this.files[0])">
       </label>
+      <button onclick="newCampaign()" style="flex:1;padding:8px;background:rgba(139,26,26,0.2);border:1px solid rgba(139,26,26,0.45);border-radius:4px;color:#e08080;font-family:Cinzel,serif;font-size:10px;cursor:pointer;letter-spacing:0.08em;">✦ NEW CAMPAIGN</button>
     </div>
 
     <!-- Saved sessions list -->
