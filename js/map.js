@@ -18,6 +18,8 @@ function defaultMapState() {
     seed: 7,
     props: [],
     walls: [],
+    roads: [],
+    buildings: [],
     fog: [],
     tokens: {}
   };
@@ -64,13 +66,81 @@ function renderMap() {
   var ctx = canvas.getContext('2d');
 
   drawMapGround(ctx, m, false);
+  drawMapRoads(ctx, m);
   drawMapWalls(ctx, m);
+  drawMapBuildings(ctx, m);
   drawMapAoE(ctx, m);
   drawMapProps(ctx, m);
   drawMapTokens(ctx, m, false);
   drawMapFog(ctx, m, false);
   drawMapGrid(ctx, m);
   drawMapMeasure(ctx, m);
+}
+
+function drawMapRoads(ctx, m) {
+  (m.roads || []).forEach(function(key) {
+    var p = key.split(',');
+    var x = parseInt(p[0]), y = parseInt(p[1]);
+    var v = mapCellHash(x, y, m.seed + 31);
+    var d = Math.floor((v - 0.5) * 14);
+    ctx.fillStyle = 'rgb(' + (122 + d) + ',' + (108 + d) + ',' + (88 + d) + ')';
+    ctx.fillRect(x * m.cell, y * m.cell, m.cell, m.cell);
+  });
+}
+
+var BUILDING_STYLES = {
+  inn:        { roof: '#7a4520', wall: '#5a3818', label: 'Inn' },
+  smithy:     { roof: '#4e4e52', wall: '#3a3a3e', label: 'Smithy' },
+  temple:     { roof: '#7a7a9c', wall: '#5c5c78', label: 'Temple' },
+  shop:       { roof: '#6e5a28', wall: '#544418', label: 'Shop' },
+  house:      { roof: '#5e4a32', wall: '#463624', label: 'House' },
+  guardhouse: { roof: '#46525e', wall: '#343e48', label: 'Guardhouse' },
+  stable:     { roof: '#6a5030', wall: '#503c20', label: 'Stable' }
+};
+
+function drawMapBuildings(ctx, m) {
+  (m.buildings || []).forEach(function(b) {
+    var st = BUILDING_STYLES[b.type] || BUILDING_STYLES.house;
+    var px = b.x * m.cell, py = b.y * m.cell;
+    var pw = b.w * m.cell, ph = b.h * m.cell;
+    // walls (slightly inset), then roof with a ridge line
+    ctx.fillStyle = st.wall;
+    ctx.fillRect(px + 2, py + 2, pw - 4, ph - 4);
+    ctx.fillStyle = st.roof;
+    ctx.fillRect(px + 5, py + 5, pw - 10, ph - 10);
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(px + 2, py + 2, pw - 4, ph - 4);
+    // roof ridge
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    if (pw >= ph) { ctx.moveTo(px + 8, py + ph / 2); ctx.lineTo(px + pw - 8, py + ph / 2); }
+    else { ctx.moveTo(px + pw / 2, py + 8); ctx.lineTo(px + pw / 2, py + ph - 8); }
+    ctx.stroke();
+    // door notch on the south face
+    ctx.fillStyle = 'rgba(20,12,6,0.85)';
+    ctx.fillRect(px + pw / 2 - 4, py + ph - 7, 8, 5);
+    // label — crisp canvas text with outline
+    if (b.name) {
+      ctx.font = 'bold ' + Math.max(11, Math.floor(m.cell * 0.30)) + 'px Cinzel, serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      ctx.strokeText(b.name, px + pw / 2, py + ph / 2);
+      ctx.fillStyle = '#f0e0b8';
+      ctx.fillText(b.name, px + pw / 2, py + ph / 2);
+    }
+  });
+}
+
+function mapHitBuilding(pt) {
+  var bs = mapState.buildings || [];
+  for (var i = bs.length - 1; i >= 0; i--) {
+    var b = bs[i];
+    if (pt.x >= b.x && pt.x < b.x + b.w && pt.y >= b.y && pt.y < b.y + b.h) return b;
+  }
+  return null;
 }
 
 function drawMapWalls(ctx, m) {
@@ -426,6 +496,8 @@ function mapMouseDown(e) {
     if (t) { mapDrag = { kind: 'token', id: t.id }; return; }
     var p = mapHitProp(pt);
     if (p) { mapDrag = { kind: 'prop', id: p.id }; return; }
+    var b = mapHitBuilding(pt);
+    if (b) { mapDrag = { kind: 'building', id: b.id, offX: pt.x - b.x, offY: pt.y - b.y }; return; }
   }
   else if (mapTool === 'prop') {
     if (pt.x < 0 || pt.y < 0 || pt.x >= mapState.cols || pt.y >= mapState.rows) return;
@@ -486,6 +558,12 @@ function mapMouseMove(e) {
     if (pt.x < 0 || pt.y < 0 || pt.x >= mapState.cols || pt.y >= mapState.rows) return;
     if (mapDrag.kind === 'token') {
       mapState.tokens[mapDrag.id] = { x: pt.x, y: pt.y };
+    } else if (mapDrag.kind === 'building') {
+      var b = (mapState.buildings || []).find(function(bb) { return bb.id === mapDrag.id; });
+      if (b) {
+        b.x = Math.max(0, Math.min(mapState.cols - b.w, pt.x - mapDrag.offX));
+        b.y = Math.max(0, Math.min(mapState.rows - b.h, pt.y - mapDrag.offY));
+      }
     } else {
       var p = mapState.props.find(function(pp) { return pp.id === mapDrag.id; });
       if (p) { p.x = pt.x; p.y = pt.y; }
@@ -533,6 +611,13 @@ function initMapTab() {
         mapState.props = mapState.props.filter(function(p) { return p.id !== hit.id; });
         renderMap();
         syncMapState();
+        return;
+      }
+      var bhit = mapHitBuilding(pt);
+      if (bhit && confirm('Remove "' + (bhit.name || 'building') + '"?')) {
+        mapState.buildings = mapState.buildings.filter(function(b) { return b.id !== bhit.id; });
+        renderMap();
+        syncMapState();
       }
     });
     // Scroll wheel over a prop resizes it (1×1 up to 4×4)
@@ -543,16 +628,26 @@ function initMapTab() {
       e.preventDefault();
       mapResizeProp(hit, e.deltaY < 0 ? 1 : -1);
     }, { passive: false });
-    // Double-click cycles prop size (touch-friendly fallback)
+    // Double-click: cycle prop size, or rename a building
     canvas.addEventListener('dblclick', function(e) {
       var pt = mapEventCell(e);
       var hit = mapHitProp(pt);
-      if (!hit || hit.kind === 'aoe') return;
-      var next = (hit.cells || 1) >= 4 ? 1 : (hit.cells || 1) + 1;
-      hit.cells = next;
-      renderMap();
-      syncMapState();
-      showToast(hit.icon + ' now ' + next + '×' + next + ' (' + (next * 5) + ' ft)', 'info');
+      if (hit && hit.kind !== 'aoe') {
+        var next = (hit.cells || 1) >= 4 ? 1 : (hit.cells || 1) + 1;
+        hit.cells = next;
+        renderMap();
+        syncMapState();
+        showToast(hit.icon + ' now ' + next + '×' + next + ' (' + (next * 5) + ' ft)', 'info');
+        return;
+      }
+      var bhit = mapHitBuilding(pt);
+      if (bhit) {
+        var name = prompt('Building name:', bhit.name || '');
+        if (name === null) return;
+        bhit.name = name.trim();
+        renderMap();
+        syncMapState();
+      }
     });
     // Build prop palette
     var palette = document.getElementById('map-prop-palette');
@@ -597,6 +692,8 @@ function mapGenDungeon() {
   m.props = [];
   m.tokens = {};
   m.fog = [];
+  m.roads = [];
+  m.buildings = [];
 
   // Start with everything as wall, carve rooms + corridors
   var floor = {};
@@ -662,6 +759,8 @@ function mapGenTavern() {
   m.props = [];
   m.tokens = {};
   m.fog = [];
+  m.roads = [];
+  m.buildings = [];
 
   // Outer walls with a door on the south side
   var walls = [];
@@ -702,6 +801,8 @@ function mapGenForest() {
   m.walls = [];
   m.tokens = {};
   m.fog = [];
+  m.roads = [];
+  m.buildings = [];
 
   // Tree clusters
   var clusters = mapRandInt(4, 6);
@@ -746,6 +847,8 @@ function saveCurrentMap() {
     ground: mapState.ground, seed: mapState.seed,
     props: JSON.parse(JSON.stringify(mapState.props || [])),
     walls: (mapState.walls || []).slice(),
+    roads: (mapState.roads || []).slice(),
+    buildings: JSON.parse(JSON.stringify(mapState.buildings || [])),
     fog: (mapState.fog || []).slice()
     // tokens intentionally not saved — they belong to whatever combat is live
   };
@@ -768,6 +871,8 @@ function loadSavedMap(idx) {
   mapState.ground = sm.ground; mapState.seed = sm.seed;
   mapState.props = JSON.parse(JSON.stringify(sm.props || []));
   mapState.walls = (sm.walls || []).slice();
+  mapState.roads = (sm.roads || []).slice();
+  mapState.buildings = JSON.parse(JSON.stringify(sm.buildings || []));
   mapState.fog = (sm.fog || []).slice();
   mapState.tokens = {}; // fresh token placement for current combatants
   var gsel = document.getElementById('map-ground'); if (gsel) gsel.value = mapState.ground;
@@ -805,4 +910,117 @@ function renderSavedMaps() {
       '</div>' +
     '</div>';
   }).join('');
+}
+
+// ============================================================
+// TOWN GENERATOR — roads, labeled buildings, crisp canvas text
+// ============================================================
+var TOWN_NAME_PARTS = {
+  innFirst:  ['The Gilded', 'The Prancing', 'The Rusty', 'The Drunken', 'The Silver', 'The Laughing', 'The Sleeping', 'The Golden', 'The Broken', 'The Wandering'],
+  innSecond: ['Flagon', 'Pony', 'Anchor', 'Griffin', 'Stag', 'Barrel', 'Dragon', 'Goose', 'Lantern', 'Boar'],
+  smith:     ['Ironhand Forge', 'The Anvil', 'Hammerfall Smithy', 'Emberworks', 'Steelsong Forge', 'The Bellows'],
+  temple:    ['Temple of Dawn', 'Silver Flame Shrine', 'Moonwell Chapel', 'Sanctum of the Oak', 'The High Seat'],
+  shop:      ['Threadneedle & Sons', 'The Curio Cabinet', 'Salt & Sundries', 'The Gilded Scale', 'Wyrmwood Goods', 'The Copper Kettle', 'Hearthside Provisions'],
+  guard:     ['The Watchhouse', 'North Gatehouse', 'Garrison Hall'],
+  stable:    ['The Hitching Post', 'Swifthoof Stables', 'The Old Paddock']
+};
+
+function townPickName(type) {
+  var P = TOWN_NAME_PARTS;
+  function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+  if (type === 'inn') return pick(P.innFirst) + ' ' + pick(P.innSecond);
+  if (type === 'smithy') return pick(P.smith);
+  if (type === 'temple') return pick(P.temple);
+  if (type === 'guardhouse') return pick(P.guard);
+  if (type === 'stable') return pick(P.stable);
+  if (type === 'shop') return pick(P.shop);
+  return ''; // plain houses stay unlabeled
+}
+
+function mapGenTown() {
+  var m = mapState;
+  m.ground = 'grass';
+  m.seed = Math.floor(Math.random() * 100000);
+  m.props = [];
+  m.walls = [];
+  m.tokens = {};
+  m.fog = [];
+  m.roads = [];
+  m.buildings = [];
+
+  // Main road (horizontal, 2 cells wide) + cross road (vertical)
+  var mainY = Math.floor(m.rows / 2);
+  var crossX = Math.floor(m.cols / 2) + mapRandInt(-3, 3);
+  for (var x = 0; x < m.cols; x++) { m.roads.push(x + ',' + mainY); m.roads.push(x + ',' + (mainY + 1)); }
+  for (var y = 0; y < m.rows; y++) { m.roads.push(crossX + ',' + y); m.roads.push((crossX + 1) + ',' + y); }
+
+  // Buildings hug the roads — one of each specialty, rest are houses
+  var types = ['inn', 'smithy', 'temple', 'shop', 'guardhouse', 'stable', 'house', 'house', 'shop', 'house'];
+  var placed = [];
+  function overlapsAny(bx, by, bw, bh) {
+    // keep off roads and other buildings (with 1-cell gap)
+    for (var yy = by; yy < by + bh; yy++)
+      for (var xx = bx; xx < bx + bw; xx++)
+        if (m.roads.indexOf(xx + ',' + yy) >= 0) return true;
+    return placed.some(function(b) {
+      return bx < b.x + b.w + 1 && bx + bw + 1 > b.x && by < b.y + b.h + 1 && by + bh + 1 > b.y;
+    });
+  }
+  var idCounter = Date.now();
+  types.forEach(function(type) {
+    var bw = type === 'house' ? mapRandInt(2, 3) : mapRandInt(3, 5);
+    var bh = type === 'house' ? 2 : mapRandInt(2, 3);
+    // try positions adjacent to a road
+    for (var attempt = 0; attempt < 60; attempt++) {
+      var nearMain = Math.random() < 0.6;
+      var bx, by;
+      if (nearMain) {
+        bx = mapRandInt(0, m.cols - bw);
+        by = Math.random() < 0.5 ? mainY - bh - 1 : mainY + 3;
+      } else {
+        bx = Math.random() < 0.5 ? crossX - bw - 1 : crossX + 3;
+        by = mapRandInt(0, m.rows - bh);
+      }
+      if (bx < 0 || by < 0 || bx + bw > m.cols || by + bh > m.rows) continue;
+      if (overlapsAny(bx, by, bw, bh)) continue;
+      var b = { id: ++idCounter, x: bx, y: by, w: bw, h: bh, type: type, name: townPickName(type) };
+      placed.push(b);
+      break;
+    }
+  });
+  m.buildings = placed;
+
+  // Street dressing: well at the crossroads, a few barrels/trees
+  m.props.push({ id: ++idCounter, x: crossX - 1, y: mainY - 1, icon: '⚱', size: 0.7 });
+  for (var s = 0; s < 4; s++) {
+    var px2 = mapRandInt(0, m.cols - 1), py2 = mapRandInt(0, m.rows - 1);
+    if (m.roads.indexOf(px2 + ',' + py2) >= 0) continue;
+    if (placed.some(function(b) { return px2 >= b.x && px2 < b.x + b.w && py2 >= b.y && py2 < b.y + b.h; })) continue;
+    m.props.push({ id: ++idCounter, x: px2, y: py2, icon: Math.random() < 0.6 ? '🌳' : '🛢', size: 0.8 });
+  }
+
+  mapSyncControls();
+  renderMap();
+  syncMapState();
+  showToast('🏘 Town generated — ' + placed.length + ' buildings. Double-click any building to rename it.', 'success');
+}
+
+// Optional: let the AI re-flavor all building names (needs API key)
+async function mapAIRenameBuildings() {
+  var m = mapState;
+  var named = (m.buildings || []).filter(function(b) { return b.type !== 'house'; });
+  if (!named.length) { showToast('No labeled buildings on the map — generate a town first', 'info'); return; }
+  try {
+    showToast('✨ Asking the AI for fresh names...', 'info');
+    var list = named.map(function(b, i) { return (i + 1) + '. ' + b.type; }).join('\n');
+    var raw = await callClaudeAPI(
+      'Invent evocative D&D fantasy establishment names for these buildings in a small town. Reply with ONLY a JSON array of strings in the same order, no other text. Keep each under 26 characters.\n' + list, 400);
+    var names = JSON.parse(raw);
+    named.forEach(function(b, i) { if (names[i]) b.name = String(names[i]).slice(0, 30); });
+    renderMap();
+    syncMapState();
+    showToast('✨ Buildings renamed!', 'success');
+  } catch(e) {
+    showToast('AI rename failed: ' + e.message, 'danger');
+  }
 }

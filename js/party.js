@@ -404,7 +404,52 @@ function openAddPlayerModal() {
   document.getElementById('pc-init-bonus').value = 0;
   ['str','dex','con','int','wis','cha'].forEach(function(s) { document.getElementById('pc-' + s).value = 10; });
   populateSkillsGrid({});
+  populateActionRows([]);
   document.getElementById('player-modal').classList.add('show');
+}
+
+// ─── Structured combat actions ───────────────────────────────
+function addActionRow(a) {
+  a = a || {};
+  var list = document.getElementById('pc-actions-list');
+  if (!list) return;
+  var row = document.createElement('div');
+  row.className = 'pc-action-row';
+  row.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 62px 62px 1fr 26px;gap:5px;margin-bottom:5px;align-items:center;';
+  row.innerHTML =
+    '<input class="pa-name" placeholder="Longsword" value="' + (a.name || '').replace(/"/g, '&quot;') + '" style="font-size:13px;padding:5px;">' +
+    '<select class="pa-kind" style="font-size:12px;padding:5px;">' +
+      '<option value="attack"' + (a.kind !== 'heal' ? ' selected' : '') + '>⚔ Attack</option>' +
+      '<option value="heal"' + (a.kind === 'heal' ? ' selected' : '') + '>❤ Heal</option>' +
+    '</select>' +
+    '<input class="pa-range" type="number" placeholder="5" title="Range in feet" value="' + (a.range || '') + '" style="font-size:13px;padding:5px;text-align:center;">' +
+    '<input class="pa-bonus" type="number" placeholder="+0" title="To-hit bonus (attacks only)" value="' + (a.bonus !== undefined && a.bonus !== null && a.bonus !== '' ? a.bonus : '') + '" style="font-size:13px;padding:5px;text-align:center;">' +
+    '<input class="pa-dice" placeholder="1d8+4" title="Damage or healing dice" value="' + (a.dice || '').replace(/"/g, '&quot;') + '" style="font-size:13px;padding:5px;">' +
+    '<button type="button" onclick="this.parentElement.remove()" style="background:none;border:1px solid var(--border);color:var(--blood-light);border-radius:3px;cursor:pointer;height:26px;font-size:12px;">✕</button>';
+  list.appendChild(row);
+}
+
+function populateActionRows(actions) {
+  var list = document.getElementById('pc-actions-list');
+  if (!list) return;
+  list.innerHTML = '';
+  (actions || []).forEach(function(a) { addActionRow(a); });
+}
+
+function collectActions() {
+  var out = [];
+  document.querySelectorAll('#pc-actions-list .pc-action-row').forEach(function(row) {
+    var name = row.querySelector('.pa-name').value.trim();
+    if (!name) return;
+    out.push({
+      name: name,
+      kind: row.querySelector('.pa-kind').value,
+      range: parseInt(row.querySelector('.pa-range').value) || 5,
+      bonus: parseInt(row.querySelector('.pa-bonus').value) || 0,
+      dice: row.querySelector('.pa-dice').value.trim() || '1d6'
+    });
+  });
+  return out;
 }
 
 function levelUp(id) {
@@ -489,6 +534,7 @@ function editPlayer(id) {
   document.getElementById('pc-wis').value = pc.wis || 10;
   document.getElementById('pc-cha').value = pc.cha || 10;
   document.getElementById('pc-moves').value = pc.moves || '';
+  populateActionRows(pc.actions || []);
   var existingSlots = pc.spellSlots || getDefaultSlots(pc.cls, pc.level) || [];
   for (var i = 1; i <= 9; i++) {
     var el = document.getElementById('pc-ss-' + i);
@@ -523,6 +569,7 @@ function savePlayer() {
     wis: parseInt(document.getElementById('pc-wis').value) || 10,
     cha: parseInt(document.getElementById('pc-cha').value) || 10,
     moves: document.getElementById('pc-moves').value,
+    actions: collectActions(),
     skills: collectSkillsFromGrid(),
     spellSlots: (function() {
       var cls = document.getElementById('pc-class').value;

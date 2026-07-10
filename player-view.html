@@ -432,6 +432,119 @@
     color: #8fd050;
   }
 
+  /* ===== YOUR TURN + PLAYABLE ACTIONS ===== */
+  .your-turn-banner {
+    background: linear-gradient(90deg, rgba(212,175,55,0.25), rgba(212,175,55,0.08), rgba(212,175,55,0.25));
+    border: 1px solid var(--gold);
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-bottom: 12px;
+    text-align: center;
+    font-family: 'Cinzel', serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--gold-light);
+    letter-spacing: 0.12em;
+    animation: turnPulse 1.6s ease-in-out infinite;
+  }
+  @keyframes turnPulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(212,175,55,0.25); }
+    50% { box-shadow: 0 0 22px rgba(212,175,55,0.55); }
+  }
+  .pv-action-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 5px;
+  }
+  .pv-action-use {
+    padding: 5px 14px;
+    border-radius: 5px;
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid var(--gold);
+    background: rgba(212,175,55,0.18);
+    color: var(--gold-light);
+  }
+  .pv-action-use:disabled {
+    border-color: rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.03);
+    color: #555;
+    cursor: not-allowed;
+  }
+  .pv-overlay {
+    position: fixed; inset: 0; z-index: 9000;
+    background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .pv-overlay-card {
+    background: linear-gradient(135deg, rgba(38,24,10,0.99), rgba(28,16,6,1));
+    border: 2px solid rgba(212,175,55,0.4);
+    border-radius: 12px;
+    padding: 22px;
+    max-width: 380px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .pv-target-btn {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(0,0,0,0.3);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-family: 'Crimson Text', serif;
+    font-size: 15px;
+    text-align: left;
+  }
+  .pv-target-btn:hover:not(:disabled) { border-color: var(--gold); background: rgba(212,175,55,0.08); }
+  .pv-target-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  /* Roll result animation */
+  .pv-result-overlay {
+    position: fixed; inset: 0; z-index: 9500;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .pv-result-card {
+    background: rgba(15,9,4,0.96);
+    border-radius: 14px;
+    padding: 26px 34px;
+    text-align: center;
+    animation: pvPop 0.35s cubic-bezier(0.2, 1.4, 0.4, 1);
+  }
+  .pv-result-card.hit { border: 3px solid #4caf50; box-shadow: 0 0 40px rgba(76,175,80,0.5); }
+  .pv-result-card.miss { border: 3px solid #e05050; box-shadow: 0 0 40px rgba(224,80,80,0.5); }
+  .pv-result-card.heal { border: 3px solid #64b4ff; box-shadow: 0 0 40px rgba(100,180,255,0.5); }
+  @keyframes pvPop { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .pv-roll-num {
+    font-family: 'Cinzel', serif; font-size: 44px; font-weight: 700; color: var(--parchment);
+    display: inline-block; animation: pvPop 0.3s ease-out;
+  }
+  .pv-roll-bonus {
+    font-family: 'Cinzel', serif; font-size: 26px; color: var(--gold);
+    display: inline-block; opacity: 0; animation: pvSlideIn 0.4s ease-out 0.5s forwards;
+  }
+  .pv-roll-total {
+    font-family: 'Cinzel', serif; font-size: 34px; font-weight: 700;
+    display: inline-block; opacity: 0; animation: pvSlideIn 0.4s ease-out 1.0s forwards;
+  }
+  @keyframes pvSlideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .pv-verdict {
+    font-family: 'Cinzel', serif; font-size: 24px; font-weight: 700; letter-spacing: 0.15em;
+    margin-top: 10px; opacity: 0; animation: pvSlideIn 0.4s ease-out 1.5s forwards;
+  }
+
   /* ===== RESPONSIVE ===== */
   @media (max-width: 720px) {
     .pv-layout {
@@ -471,7 +584,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, onSnapshot, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const app = initializeApp({
   apiKey: "AIzaSyAHeoD6eKkxm7ezwvBcEt5W6S7nVqZYknY",
@@ -551,7 +664,214 @@ const SKILL_LIST = [
 // ── State ────────────────────────────────────────────────────
 let selectedPcId = sessionStorage.getItem('pv_selected_pc') || null;
 let latestData = null;
-let activeTab = 'character'; // 'character' or 'initiative'
+let activeTab = 'character'; // 'character' | 'initiative' | 'map'
+let moveSelecting = false;   // tap-to-move: own token selected
+let lastFeedId = sessionStorage.getItem('pv_last_feed') || null;
+const MOVE_SPEED_FT = 30;
+
+// ── Playable-turn helpers ────────────────────────────────────
+function myPC(d) {
+  return (d.party || []).find(p => String(p.id) === selectedPcId) || null;
+}
+function myCombatant(d) {
+  const pc = myPC(d);
+  if (!pc) return null;
+  return (d.combatants || []).find(c => c.type === 'ally' && c.name === pc.name) || null;
+}
+function isMyTurn(d) {
+  const me = myCombatant(d);
+  if (!me || !d.combatActive) return false;
+  const cur = (d.combatants || [])[d.currentTurn >= 0 ? d.currentTurn : 0];
+  return !!cur && cur.id === me.id;
+}
+function distFt(a, b) {
+  // 5-10-5 rule, same math as the DM's measure tool
+  const dx = Math.abs(a.x - b.x), dy = Math.abs(a.y - b.y);
+  const diag = Math.min(dx, dy), straight = Math.max(dx, dy) - diag;
+  return straight * 5 + diag * 5 + Math.floor(diag / 2) * 5;
+}
+
+async function sendPlayerRequest(payload) {
+  try {
+    await addDoc(collection(db, 'playerActions', dmUid, 'requests'), payload);
+    return true;
+  } catch(e) {
+    alert('Could not send to your DM: ' + e.message + '\n\nAsk your DM to update the Firestore security rules (playerActions).');
+    return false;
+  }
+}
+
+// ── Use an action: pick target → (attack: enter d20) → send ──
+function useAction(actionIdx) {
+  const d = latestData;
+  if (!d || !isMyTurn(d)) return;
+  const pc = myPC(d), me = myCombatant(d);
+  const a = (pc.actions || [])[actionIdx];
+  if (!a) return;
+  const m = d.mapState || null;
+  const myPos = m && m.tokens ? m.tokens[me.id] : null;
+
+  const candidates = (d.combatants || []).filter(c => {
+    if (c.hidden) return false;
+    if (a.kind === 'heal') return c.type === 'ally'; // can heal yourself and downed allies
+    return c.id !== me.id && c.hp > 0;
+  });
+
+  let html = '<div style="font-family:Cinzel,serif;font-size:17px;color:var(--gold);margin-bottom:4px;">' + esc(a.name) + '</div>' +
+    '<div style="font-size:13px;color:var(--text-dim);margin-bottom:14px;">' +
+      (a.kind === 'heal' ? '❤ Heal' : '⚔ Attack') + ' · range ' + a.range + ' ft · ' + esc(a.dice) +
+      (a.kind !== 'heal' ? ' · +' + a.bonus + ' to hit' : '') +
+    '</div>' +
+    '<div style="font-size:11px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:8px;">CHOOSE TARGET</div>';
+
+  candidates.forEach(c => {
+    const tPos = m && m.tokens ? m.tokens[c.id] : null;
+    let distLabel = '', outOfRange = false;
+    if (myPos && tPos) {
+      const ft = distFt(myPos, tPos);
+      outOfRange = ft > (a.range || 5);
+      distLabel = '<span style="margin-left:auto;font-size:12px;color:' + (outOfRange ? '#e05050' : '#8fd050') + ';">' + ft + ' ft' + (outOfRange ? ' — too far' : '') + '</span>';
+    }
+    const hpPctV = Math.max(0, Math.min(100, (c.hp / (c.maxHp || 1)) * 100));
+    html += '<button class="pv-target-btn" ' + (outOfRange ? 'disabled' : '') + ' data-target="' + c.id + '">' +
+      '<span style="color:' + (c.type === 'ally' ? '#90c8ff' : '#ff9090') + ';">' + esc(c.name) + '</span>' +
+      '<span style="font-size:12px;color:var(--text-dim);">' + c.hp + '/' + c.maxHp + ' HP</span>' +
+      distLabel +
+    '</button>';
+  });
+  html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:8px;" onclick="_pvCloseOverlay()">Cancel</button>';
+
+  showOverlay(html);
+  document.querySelectorAll('.pv-target-btn[data-target]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetId = parseFloat(btn.dataset.target);
+      closeOverlay();
+      if (a.kind === 'heal') {
+        sendPlayerRequest({ type: 'action', combatantId: me.id, targetId, action: a, ts: Date.now() });
+        showWaiting('❤ Casting ' + a.name + '...');
+      } else {
+        askForRoll(a, me.id, targetId);
+      }
+    });
+  });
+}
+window._pvUseAction = useAction;
+
+function askForRoll(a, myId, targetId) {
+  const html =
+    '<div style="font-family:Cinzel,serif;font-size:17px;color:var(--gold);margin-bottom:10px;text-align:center;">🎲 Roll your d20!</div>' +
+    '<div style="font-size:13px;color:var(--text-dim);text-align:center;margin-bottom:14px;">Roll a real d20 and enter the <strong style="color:var(--parchment);">raw number</strong> — no modifiers, we\'ll add your +' + a.bonus + ' for you.</div>' +
+    '<input id="pv-roll-input" type="number" min="1" max="20" placeholder="1–20" style="width:100%;font-size:28px;text-align:center;padding:10px;background:rgba(0,0,0,0.4);border:2px solid rgba(212,175,55,0.4);border-radius:8px;color:var(--parchment);font-family:Cinzel,serif;margin-bottom:12px;">' +
+    '<div style="display:flex;gap:8px;">' +
+      '<button class="btn-pv" style="flex:1;justify-content:center;" id="pv-roll-submit">⚔ Attack!</button>' +
+      '<button class="btn-pv" style="justify-content:center;" onclick="_pvCloseOverlay()">Cancel</button>' +
+    '</div>';
+  showOverlay(html);
+  const inp = document.getElementById('pv-roll-input');
+  inp.focus();
+  const submit = () => {
+    const roll = parseInt(inp.value);
+    if (!roll || roll < 1 || roll > 20) { inp.style.borderColor = '#e05050'; return; }
+    closeOverlay();
+    sendPlayerRequest({ type: 'action', combatantId: myId, targetId, action: a, roll, ts: Date.now() });
+    showWaiting('⚔ ' + a.name + ' — you rolled ' + roll + '...');
+  };
+  document.getElementById('pv-roll-submit').addEventListener('click', submit);
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+}
+
+// ── Overlay plumbing ─────────────────────────────────────────
+function showOverlay(innerHtml) {
+  closeOverlay();
+  const ov = document.createElement('div');
+  ov.className = 'pv-overlay';
+  ov.id = 'pv-overlay';
+  ov.innerHTML = '<div class="pv-overlay-card">' + innerHtml + '</div>';
+  ov.addEventListener('click', e => { if (e.target === ov) closeOverlay(); });
+  document.body.appendChild(ov);
+}
+function closeOverlay() {
+  const ov = document.getElementById('pv-overlay');
+  if (ov) ov.remove();
+}
+window._pvCloseOverlay = closeOverlay;
+
+let waitingTimeout = null;
+function showWaiting(msg) {
+  showOverlay('<div style="text-align:center;font-size:15px;color:var(--text-dim);padding:10px;">' + esc(msg) + '<br><span style="font-size:12px;">waiting for the result...</span></div>');
+  clearTimeout(waitingTimeout);
+  waitingTimeout = setTimeout(closeOverlay, 8000); // failsafe
+}
+
+// ── Action result animation (fires from the Firebase feed) ──
+function showActionResult(r) {
+  closeOverlay();
+  const wrap = document.createElement('div');
+  wrap.className = 'pv-result-overlay';
+  let inner = '';
+  const cls = r.kind === 'heal' ? 'heal' : (r.hit ? 'hit' : 'miss');
+  inner += '<div class="pv-result-card ' + cls + '">';
+  inner += '<div style="font-size:13px;color:var(--text-dim);margin-bottom:8px;">' + esc(r.attacker) + ' → ' + esc(r.target) + ' · ' + esc(r.actionName || '') + '</div>';
+  if (r.kind === 'attack') {
+    inner += '<div>' +
+      '<span class="pv-roll-num">' + r.roll + '</span>' +
+      '<span class="pv-roll-bonus"> + ' + r.bonus + ' </span>' +
+      '<span class="pv-roll-total" style="color:' + (r.hit ? '#4caf50' : '#e05050') + ';"> = ' + r.total + '</span>' +
+    '</div>';
+    inner += '<div style="font-size:12px;color:var(--text-dim);opacity:0;animation:pvSlideIn 0.4s ease-out 1.0s forwards;">vs AC ' + r.targetAC + '</div>';
+    inner += '<div class="pv-verdict" style="color:' + (r.hit ? '#4caf50' : '#e05050') + ';">' +
+      (r.crit ? '💥 CRITICAL HIT!' : r.hit ? '⚔ HIT!' : '🛡 MISS') +
+      (r.hit && r.amount ? '<div style="font-size:17px;margin-top:4px;">' + r.amount + ' damage</div>' : '') +
+    '</div>';
+  } else {
+    inner += '<div class="pv-roll-num" style="color:#64b4ff;">+' + r.amount + '</div>';
+    inner += '<div class="pv-verdict" style="color:#64b4ff;">❤ HEALED</div>';
+  }
+  inner += '</div>';
+  wrap.innerHTML = inner;
+  document.body.appendChild(wrap);
+  setTimeout(() => wrap.remove(), 4000);
+}
+
+// ── Tap-to-move on the map (your turn only) ──────────────────
+function bindMapInteraction() {
+  const canvas = document.getElementById('pv-map-canvas');
+  if (!canvas || canvas._bound) return;
+  canvas._bound = true;
+  canvas.addEventListener('click', e => {
+    const d = latestData;
+    if (!d || !isMyTurn(d) || !d.mapState) return;
+    const me = myCombatant(d);
+    const m = d.mapState;
+    const myPos = (m.tokens || {})[me.id];
+    if (!myPos) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / m.cell);
+    const y = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / m.cell);
+
+    if (!moveSelecting) {
+      // First tap must land on your own token
+      if (x === myPos.x && y === myPos.y) {
+        moveSelecting = true;
+        drawPlayerMap(d);
+      }
+      return;
+    }
+    // Second tap: destination
+    moveSelecting = false;
+    if (x === myPos.x && y === myPos.y) { drawPlayerMap(d); return; }
+    const ft = distFt(myPos, { x, y });
+    if (ft > MOVE_SPEED_FT) {
+      drawPlayerMap(d);
+      showOverlay('<div style="text-align:center;font-size:15px;color:#e05050;">That\'s ' + ft + ' ft — your speed is ' + MOVE_SPEED_FT + ' ft.</div>' +
+        '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCloseOverlay()">OK</button>');
+      return;
+    }
+    sendPlayerRequest({ type: 'move', combatantId: me.id, x, y, ts: Date.now() });
+    showWaiting('🥾 Moving ' + ft + ' ft...');
+    drawPlayerMap(d);
+  });
+}
 
 // ── Copy link ────────────────────────────────────────────────
 function copyLink() {
@@ -611,7 +931,7 @@ function renderRoot(d) {
     root.innerHTML = renderSelectionScreen(party);
   } else {
     root.innerHTML = renderTwoColumnView(d);
-    if (activeTab === 'map') drawPlayerMap(d);
+    if (activeTab === 'map') { drawPlayerMap(d); bindMapInteraction(); }
   }
 }
 
@@ -672,6 +992,11 @@ function renderTwoColumnView(d) {
     const personalMsg = msgs[pc.id] || msgs[String(pc.id)] || '';
     if (partyMsg) html += '<div class="msg-banner party-msg">📢 <strong>DM to Party:</strong> ' + esc(partyMsg) + '</div>';
     if (personalMsg) html += '<div class="msg-banner personal-msg">📨 <strong>DM to You:</strong> ' + esc(personalMsg) + '</div>';
+  }
+
+  // YOUR TURN banner
+  if (isMyTurn(d)) {
+    html += '<div class="your-turn-banner">⚔ YOUR TURN — move on the Map tab or use an action below</div>';
   }
 
   // Tab toggle \u2014 Initiative shows when combat exists, Map shows when the DM has a map
@@ -749,6 +1074,27 @@ function renderCharacterCard(d) {
   // Conditions
   if (conditions.length) {
     html += '<div style="margin:8px 0;">' + conditions.map(c => '<span class="cond-tag">' + esc(c) + '</span>').join('') + '</div>';
+  }
+
+  // Combat actions (playable on your turn)
+  const pcActions = pc.actions || [];
+  if (pcActions.length) {
+    const myTurn = isMyTurn(d);
+    html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);">';
+    html += '<div class="card-section-label" style="border:none;padding:0;margin-bottom:8px;">Actions' +
+      (myTurn ? ' <span style="color:var(--gold-light);font-size:9px;text-transform:none;letter-spacing:0;">— it\'s your turn!</span>'
+              : ' <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(usable on your turn during combat)</span>') + '</div>';
+    pcActions.forEach((a, i) => {
+      html += '<div class="pv-action-row">' +
+        '<span style="font-size:16px;">' + (a.kind === 'heal' ? '❤' : '⚔') + '</span>' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div style="font-size:14px;font-weight:600;color:var(--parchment);">' + esc(a.name) + '</div>' +
+          '<div style="font-size:11px;color:var(--text-dim);">' + (a.range || 5) + ' ft · ' + esc(a.dice || '') + (a.kind !== 'heal' ? ' · +' + (a.bonus || 0) + ' to hit' : '') + '</div>' +
+        '</div>' +
+        '<button class="pv-action-use" ' + (myTurn ? '' : 'disabled') + ' onclick="_pvUseAction(' + i + ')">USE</button>' +
+      '</div>';
+    });
+    html += '</div>';
   }
 
   // Ability scores
@@ -905,8 +1251,10 @@ function renderInitiativePanel(d) {
 // RENDER: Battle Map Panel (left panel, when tab active)
 // ══════════════════════════════════════════════════════════════
 function renderMapPanel(d) {
+  const myTurn = isMyTurn(d);
   return '<div class="card">' +
     '<div class="card-section-label">Battle Map <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(live from your DM — each square is 5 ft)</span></div>' +
+    (myTurn ? '<div style="font-size:13px;color:var(--gold-light);margin-bottom:8px;">⚔ Your turn: tap your token, then tap where you want to move (up to ' + MOVE_SPEED_FT + ' ft).</div>' : '') +
     '<div style="border:1px solid rgba(212,175,55,0.25);border-radius:8px;background:#0a0603;">' +
       '<canvas id="pv-map-canvas" style="display:block;width:100%;height:auto;"></canvas>' +
     '</div>' +
@@ -954,6 +1302,16 @@ function drawPlayerMap(d) {
     }
   }
 
+  // Roads
+  (m.roads || []).forEach(key => {
+    const parts = key.split(',');
+    const rx = parseInt(parts[0]), ry = parseInt(parts[1]);
+    const v = pvCellHash(rx, ry, m.seed + 31);
+    const dv = Math.floor((v - 0.5) * 14);
+    ctx.fillStyle = 'rgb(' + (122 + dv) + ',' + (108 + dv) + ',' + (88 + dv) + ')';
+    ctx.fillRect(rx * m.cell, ry * m.cell, m.cell, m.cell);
+  });
+
   // Walls
   (m.walls || []).forEach(key => {
     const parts = key.split(',');
@@ -964,6 +1322,37 @@ function drawPlayerMap(d) {
     ctx.fillRect(wx * m.cell, wy * m.cell, m.cell, 3);
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.fillRect(wx * m.cell, (wy + 1) * m.cell - 3, m.cell, 3);
+  });
+
+  // Buildings with labels
+  const PV_BUILDING_STYLES = {
+    inn: { roof: '#7a4520', wall: '#5a3818' }, smithy: { roof: '#4e4e52', wall: '#3a3a3e' },
+    temple: { roof: '#7a7a9c', wall: '#5c5c78' }, shop: { roof: '#6e5a28', wall: '#544418' },
+    house: { roof: '#5e4a32', wall: '#463624' }, guardhouse: { roof: '#46525e', wall: '#343e48' },
+    stable: { roof: '#6a5030', wall: '#503c20' }
+  };
+  (m.buildings || []).forEach(b => {
+    const st = PV_BUILDING_STYLES[b.type] || PV_BUILDING_STYLES.house;
+    const bx = b.x * m.cell, by = b.y * m.cell, bw = b.w * m.cell, bh = b.h * m.cell;
+    ctx.fillStyle = st.wall;
+    ctx.fillRect(bx + 2, by + 2, bw - 4, bh - 4);
+    ctx.fillStyle = st.roof;
+    ctx.fillRect(bx + 5, by + 5, bw - 10, bh - 10);
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(bx + 2, by + 2, bw - 4, bh - 4);
+    ctx.fillStyle = 'rgba(20,12,6,0.85)';
+    ctx.fillRect(bx + bw / 2 - 4, by + bh - 7, 8, 5);
+    if (b.name) {
+      ctx.font = 'bold ' + Math.max(11, Math.floor(m.cell * 0.30)) + 'px Cinzel, serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      ctx.strokeText(b.name, bx + bw / 2, by + bh / 2);
+      ctx.fillStyle = '#f0e0b8';
+      ctx.fillText(b.name, bx + bw / 2, by + bh / 2);
+    }
   });
 
   // AoE templates (spell areas the DM dropped)
@@ -1042,6 +1431,29 @@ function drawPlayerMap(d) {
     ctx.strokeText(label, cx, cy + r + 9);
     ctx.fillText(label, cx, cy + r + 9);
   });
+
+  // Movement mode: highlight reachable squares + ring your token
+  if (moveSelecting && isMyTurn(d)) {
+    const me = myCombatant(d);
+    const myPos = me ? (m.tokens || {})[me.id] : null;
+    if (myPos) {
+      for (let yy = 0; yy < m.rows; yy++) {
+        for (let xx = 0; xx < m.cols; xx++) {
+          if (distFt(myPos, { x: xx, y: yy }) <= MOVE_SPEED_FT) {
+            ctx.fillStyle = 'rgba(212,175,55,0.12)';
+            ctx.fillRect(xx * m.cell, yy * m.cell, m.cell, m.cell);
+          }
+        }
+      }
+      ctx.beginPath();
+      ctx.arc((myPos.x + 0.5) * m.cell, (myPos.y + 0.5) * m.cell, m.cell * 0.5, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffe066';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([5, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
 
   // Fog — fully opaque for players
   ctx.fillStyle = '#0d0804';
@@ -1148,6 +1560,14 @@ if (dmUid) {
 
     const d = snap.data();
     renderRoot(d);
+
+    // Action result feed → hit/miss/heal animation for everyone watching
+    if (d.actionFeed && String(d.actionFeed.id) !== String(lastFeedId)) {
+      const fresh = Date.now() - new Date(d.actionFeed.ts || 0).getTime() < 30000;
+      lastFeedId = d.actionFeed.id;
+      sessionStorage.setItem('pv_last_feed', String(lastFeedId));
+      if (fresh) showActionResult(d.actionFeed);
+    }
 
     const now = new Date();
     statusEl.textContent = (firstLoad ? 'Live ' : '') +
