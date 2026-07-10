@@ -108,6 +108,7 @@ function resetWorldTime() {
   document.getElementById('world-season').value = 0;
   worldSeason = 0;
   updateWorldDisplay();
+  if (window.cloudSave) window.cloudSave();
 }
 
 // WEATHER_TABLES declared in data/weather.js
@@ -174,7 +175,8 @@ function syncTopBar() {
 // BUG FIX: Guard worldTotalHours from going negative
 function advanceTime(hours) {
   worldTotalHours = Math.max(0, (worldTotalHours || 0) + hours);
-  updateWorldDisplay(); // syncTopBar called inside updateWorldDisplay
+  updateWorldDisplay();
+  if (window.cloudSave) window.cloudSave();
 }
 
 function syncWeatherTop(desc, icon) {

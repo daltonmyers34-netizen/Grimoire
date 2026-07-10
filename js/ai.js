@@ -324,6 +324,8 @@ Rules:
     html += '</div>';
     resultEl.innerHTML = html;
     loadBtn.style.display = 'inline-block';
+    var saveEncBtn = document.getElementById('enc-save-btn');
+    if (saveEncBtn) saveEncBtn.style.display = 'inline-block';
   } catch(err) {
     resultEl.innerHTML = `<span style="color:var(--blood-light);">⚠ Error generating encounter: ${err.message}</span>`;
   }
@@ -352,12 +354,80 @@ function loadEncounterToInitiative() {
   });
   combatants.sort((a, b) => b.init - a.init);
   renderCombatants();
+  if (window.cloudSave) window.cloudSave();
   closeEncounterModal();
   // Switch to initiative tab
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-initiative').classList.add('active');
   document.querySelector('.nav-tab[onclick*="initiative"]').classList.add('active');
+}
+
+// ============================================================
+// SAVED ENCOUNTERS
+// ============================================================
+function saveEncounter() {
+  if (!lastEncounterData) return;
+  var enc = Object.assign({}, lastEncounterData, { id: Date.now(), savedAt: new Date().toISOString() });
+  savedEncounters.push(enc);
+  renderSavedEncounters();
+  if (window.cloudSave) window.cloudSave();
+  var btn = document.getElementById('enc-save-btn');
+  if (btn) { btn.textContent = '✅ Saved!'; setTimeout(() => btn.textContent = '💾 Save Encounter', 2000); }
+}
+
+function renderSavedEncounters() {
+  var grid = document.getElementById('saved-encounters-grid');
+  if (!grid) return;
+  if (!savedEncounters || !savedEncounters.length) {
+    grid.innerHTML = '<div style="color:var(--text-dim);font-size:13px;padding:8px;">No saved encounters yet. Generate an encounter and click "Save Encounter".</div>';
+    return;
+  }
+  grid.innerHTML = savedEncounters.map(function(enc, i) {
+    var enemyList = (enc.enemies || []).map(function(e) {
+      return (e.count > 1 ? e.count + '× ' : '') + e.name;
+    }).join(', ');
+    return '<div class="preset-card" onclick="loadSavedEncounter(' + i + ')">' +
+      '<div class="preset-card-name">' + (enc.title || 'Unnamed Encounter') + '</div>' +
+      '<div class="preset-card-meta" style="margin-top:4px;">' + enemyList + '</div>' +
+      '<div style="margin-top:6px;display:flex;gap:6px;">' +
+        '<button onclick="event.stopPropagation();loadSavedEncounter(' + i + ')" style="font-size:10px;color:var(--gold);background:rgba(212,175,55,0.1);border:1px solid rgba(212,175,55,0.3);border-radius:3px;padding:3px 8px;cursor:pointer;">⚔ Load</button>' +
+        '<button onclick="event.stopPropagation();deleteSavedEncounter(' + i + ')" style="font-size:10px;color:var(--blood-light);background:none;border:none;cursor:pointer;padding:0;">✕ Delete</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function loadSavedEncounter(idx) {
+  var enc = savedEncounters[idx];
+  if (!enc) return;
+  enc.enemies.forEach(function(e) {
+    for (var i = 0; i < e.count; i++) {
+      var name = e.count > 1 ? e.name + ' ' + (i + 1) : e.name;
+      var init = Math.floor(Math.random() * 20) + 1 + (e.initiative_bonus || 0);
+      combatants.push({
+        id: Date.now() + i,
+        name: name,
+        init: Math.max(1, init),
+        hp: e.hp,
+        maxHp: e.hp,
+        ac: e.ac,
+        type: 'enemy',
+        conditions: []
+      });
+    }
+  });
+  combatants.sort(function(a, b) { return b.init - a.init; });
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+  showToast('Encounter "' + enc.title + '" loaded into initiative!', 'success');
+}
+
+function deleteSavedEncounter(idx) {
+  if (!confirm('Delete this saved encounter?')) return;
+  savedEncounters.splice(idx, 1);
+  renderSavedEncounters();
+  if (window.cloudSave) window.cloudSave();
 }
 
 // ============================================================
@@ -442,6 +512,7 @@ function saveGeneratedLocation() {
   if (!window.locations) window.locations = [];
   window.locations.push(newLoc);
   if (typeof renderLocations === 'function') renderLocations();
+  if (window.cloudSave) window.cloudSave();
   const btn = document.querySelector('[onclick="saveGeneratedLocation()"]');
   if (btn) { btn.textContent = '✅ Saved!'; setTimeout(()=>btn.textContent='💾 Save to Locations',2000); }
 }

@@ -21,6 +21,9 @@ function collectState() {
     currentRound: round,
     currentTurn: currentTurn,
     combatActive: combatActive,
+    savedEncounters: savedEncounters || [],
+    mapState: (typeof mapState !== 'undefined' && mapState) ? mapState : null,
+    savedMaps: (typeof savedMaps !== 'undefined' && savedMaps) ? savedMaps : [],
     pvMessages: window.pvMessages || {},
     pvPartyMessage: window.pvPartyMessage || '',
     notes: {
@@ -45,6 +48,9 @@ function applyState(s) {
   }
   if (s.currentTurn !== undefined) { currentTurn = s.currentTurn; }
   if (s.combatActive !== undefined) { combatActive = s.combatActive; }
+  if (s.savedEncounters) { savedEncounters = s.savedEncounters; if(typeof renderSavedEncounters==='function') renderSavedEncounters(); }
+  if (s.mapState && typeof mapState !== 'undefined') { mapState = s.mapState; if(typeof renderMap==='function') renderMap(); }
+  if (s.savedMaps && typeof savedMaps !== 'undefined') { savedMaps = s.savedMaps; if(typeof renderSavedMaps==='function') renderSavedMaps(); }
   if (s.pvMessages) { window.pvMessages = s.pvMessages; }
   if (s.pvPartyMessage) { window.pvPartyMessage = s.pvPartyMessage; }
   if (s.notes) {
@@ -194,7 +200,11 @@ function clearSession() {
   showToast('Session cleared', 'info');
 }
 
-// Auto-save every 60 seconds
+// Auto-save every 60 seconds (silent — no toast)
 setInterval(function() {
-  try { saveSession(); } catch(e) {}
+  try {
+    var state = collectState();
+    localStorage.setItem(SESSION_KEY, JSON.stringify(state));
+    if (window.cloudSave) window.cloudSave();
+  } catch(e) {}
 }, 60000);

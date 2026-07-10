@@ -68,6 +68,7 @@
 <nav class="nav-tabs">
   <div class="nav-tab" onclick="switchTab('party')"><span class="tab-icon">🧝</span>Party</div>
   <div class="nav-tab active" onclick="switchTab('initiative')"><span class="tab-icon">⚔</span>Initiative</div>
+  <div class="nav-tab" onclick="switchTab('map')"><span class="tab-icon">🗺</span>Map</div>
   <div class="nav-tab" onclick="switchTab('npcs')"><span class="tab-icon">🧙</span>NPCs</div>
   <div class="nav-tab" onclick="switchTab('locations')"><span class="tab-icon">🏰</span>Locations</div>
   <div class="nav-tab" onclick="switchTab('sounds')"><span class="tab-icon">🎵</span>Sound</div>
@@ -260,9 +261,103 @@
     </div>
   </div>
 
+  <!-- Saved Encounters -->
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-title"><span class="ornament">📋</span> Saved Encounters</div>
+    <div id="saved-encounters-grid" class="preset-grid">
+      <div style="color:var(--text-dim);font-size:13px;padding:8px;">No saved encounters yet. Generate an encounter and click "Save Encounter".</div>
+    </div>
+  </div>
+
   <ul class="combatant-list" id="combatant-list">
     <li class="empty-state"><div class="icon">⚔</div>No combatants yet. Add some above!</li>
   </ul>
+</div>
+
+<!-- ============================================================ -->
+<!--  BATTLE MAP                                                  -->
+<!-- ============================================================ -->
+<div id="tab-map" class="section">
+  <div class="panel" style="margin-bottom:12px;">
+    <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <span><span class="ornament">🗺</span> Battle Map</span>
+      <span style="font-size:11px;color:var(--text-dim);font-family:'Crimson Text',serif;font-style:italic;letter-spacing:0;text-transform:none;">Players see this live on the Player View — fog hides areas, hidden combatants don't appear</span>
+    </div>
+
+    <!-- Toolbar row 1: tools -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+      <button class="map-tool-btn active" data-tool="move" onclick="setMapTool('move')" title="Drag tokens and props">✋ Move</button>
+      <button class="map-tool-btn" data-tool="prop" onclick="setMapTool('prop')" title="Click to place the selected prop">🪨 Props</button>
+      <button class="map-tool-btn" data-tool="wall" onclick="setMapTool('wall')" title="Paint walls (drag to draw)">🧱 Wall</button>
+      <button class="map-tool-btn" data-tool="fog" onclick="setMapTool('fog')" title="Paint fog of war (players can't see)">🌫 Fog</button>
+      <button class="map-tool-btn" data-tool="reveal" onclick="setMapTool('reveal')" title="Reveal fogged areas">🔦 Reveal</button>
+      <button class="map-tool-btn" data-tool="measure" onclick="setMapTool('measure')" title="Drag to measure distance (5 ft per square)">📏 Measure</button>
+      <button class="map-tool-btn" data-tool="aoe" onclick="setMapTool('aoe')" title="Drop a spell area template — players see it too">💥 AoE</button>
+      <button class="map-tool-btn" data-tool="erase" onclick="setMapTool('erase')" title="Click props/walls to delete (or right-click anytime)">🗑 Erase</button>
+      <span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>
+      <button class="btn btn-ghost btn-sm" onclick="mapFogAll()">Fog All</button>
+      <button class="btn btn-ghost btn-sm" onclick="mapClearFog()">Clear Fog</button>
+      <button class="btn btn-ghost btn-sm" onclick="mapResetTokens()">↺ Reset Tokens</button>
+      <button class="btn btn-ghost btn-sm" onclick="mapClearProps()">Clear Props</button>
+      <button class="btn btn-blood btn-sm" onclick="mapNewMap()">✦ New Map</button>
+    </div>
+
+    <!-- Toolbar row: generators + save -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+      <span style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);">GENERATE:</span>
+      <button class="btn btn-ghost btn-sm" onclick="mapGenDungeon()">⚒ Dungeon</button>
+      <button class="btn btn-ghost btn-sm" onclick="mapGenTavern()">🍺 Tavern</button>
+      <button class="btn btn-ghost btn-sm" onclick="mapGenForest()">🌲 Forest</button>
+      <span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>
+      <button class="btn btn-gold btn-sm" onclick="saveCurrentMap()">💾 Save Map</button>
+    </div>
+
+    <!-- AoE palette (shown when AoE tool active) -->
+    <div id="map-aoe-palette" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:8px;padding:8px;background:rgba(0,0,0,0.25);border:1px solid var(--border);border-radius:6px;align-items:center;">
+      <span style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);">TEMPLATE:</span>
+      <button class="map-aoe-btn map-tool-btn" onclick="setMapAoE(5, '120,180,255', this)" title="5 ft radius — e.g. Thunderclap">○ 5ft</button>
+      <button class="map-aoe-btn map-tool-btn" onclick="setMapAoE(10, '160,120,255', this)" title="10 ft radius — e.g. Shatter, Web">○ 10ft</button>
+      <button class="map-aoe-btn map-tool-btn" onclick="setMapAoE(15, '120,220,140', this)" title="15 ft radius — e.g. Stinking Cloud">○ 15ft</button>
+      <button class="map-aoe-btn map-tool-btn active" onclick="setMapAoE(20, '255,120,30', this)" title="20 ft radius — e.g. Fireball">○ 20ft</button>
+      <button class="map-aoe-btn map-tool-btn" onclick="setMapAoE(30, '255,80,80', this)" title="30 ft radius — e.g. Circle of Death">○ 30ft</button>
+      <span style="font-size:11px;color:var(--text-dim);font-style:italic;">Click the map to place · Erase or right-click to remove</span>
+    </div>
+
+    <!-- Toolbar row 2: ground + size -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;">
+      <div class="field-group" style="margin:0;">
+        <label>Ground</label>
+        <select id="map-ground" onchange="setMapGround(this.value)" style="min-width:140px;"></select>
+      </div>
+      <div class="field-group" style="margin:0;">
+        <label>Width (squares)</label>
+        <input id="map-cols" type="number" min="6" max="40" value="22" onchange="setMapSize()" style="width:80px;">
+      </div>
+      <div class="field-group" style="margin:0;">
+        <label>Height (squares)</label>
+        <input id="map-rows" type="number" min="6" max="30" value="14" onchange="setMapSize()" style="width:80px;">
+      </div>
+    </div>
+
+    <!-- Prop palette (shown when Props tool active) -->
+    <div id="map-prop-palette" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:8px;padding:8px;background:rgba(0,0,0,0.25);border:1px solid var(--border);border-radius:6px;"></div>
+
+    <!-- Canvas -->
+    <div style="overflow-x:auto;border:2px solid var(--border);border-radius:8px;background:#0a0603;">
+      <canvas id="battle-map-canvas" style="display:block;max-width:none;"></canvas>
+    </div>
+    <div style="margin-top:6px;font-size:11px;color:var(--text-dim);font-style:italic;">
+      Tokens come from the Initiative tracker automatically — allies start at the bottom, enemies at the top. Right-click a prop to delete it. Each square = 5 ft.
+    </div>
+  </div>
+
+  <!-- Saved Maps -->
+  <div class="panel">
+    <div class="panel-title"><span class="ornament">💾</span> Saved Maps</div>
+    <div id="saved-maps-grid" class="preset-grid">
+      <div style="color:var(--text-dim);font-size:13px;padding:8px;">No saved maps yet. Build a map, then click "Save Map" to keep it for later.</div>
+    </div>
+  </div>
 </div>
 
 <!-- HP Modal -->
@@ -372,6 +467,7 @@
     <div class="modal-btns">
       <button class="btn btn-blood" id="enc-generate-btn" onclick="generateEncounter()">⚡ Generate Encounter</button>
       <button class="btn btn-gold" id="enc-load-btn" onclick="loadEncounterToInitiative()" style="display:none;">⚔ Load into Initiative</button>
+      <button class="btn btn-ghost" id="enc-save-btn" onclick="saveEncounter()" style="display:none;">💾 Save Encounter</button>
       <button class="btn btn-ghost" onclick="closeEncounterModal()">Close</button>
     </div>
   </div>
@@ -1296,6 +1392,7 @@ Use this space freely during your session. Notes auto-save in your browser."></t
 <script src="js/ai.js"></script>
 <script src="js/session.js"></script>
 <script src="js/sidebar.js"></script>
+<script src="js/map.js"></script>
 
 <!-- Firebase (module - loads after regular scripts) -->
 <script type="module" src="js/firebase.js"></script>

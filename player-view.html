@@ -611,6 +611,7 @@ function renderRoot(d) {
     root.innerHTML = renderSelectionScreen(party);
   } else {
     root.innerHTML = renderTwoColumnView(d);
+    if (activeTab === 'map') drawPlayerMap(d);
   }
 }
 
@@ -673,17 +674,21 @@ function renderTwoColumnView(d) {
     if (personalMsg) html += '<div class="msg-banner personal-msg">📨 <strong>DM to You:</strong> ' + esc(personalMsg) + '</div>';
   }
 
-  // Tab toggle (only show if there are combatants)
-  if (hasCombat) {
+  // Tab toggle \u2014 Initiative shows when combat exists, Map shows when the DM has a map
+  const hasMap = !!(d.mapState && d.mapState.cols);
+  if (hasCombat || hasMap) {
     html += '<div class="pv-tabs">' +
       '<button class="pv-tab' + (activeTab === 'character' ? ' active' : '') + '" onclick="_pvSwitchTab(\'character\')">My Character</button>' +
-      '<button class="pv-tab' + (activeTab === 'initiative' ? ' active' : '') + '" onclick="_pvSwitchTab(\'initiative\')">\u2694 Initiative</button>' +
+      (hasCombat ? '<button class="pv-tab' + (activeTab === 'initiative' ? ' active' : '') + '" onclick="_pvSwitchTab(\'initiative\')">\u2694 Initiative</button>' : '') +
+      (hasMap ? '<button class="pv-tab' + (activeTab === 'map' ? ' active' : '') + '" onclick="_pvSwitchTab(\'map\')">\ud83d\uddfa Map</button>' : '') +
     '</div>';
   }
 
   // Tab content
   if (activeTab === 'initiative' && hasCombat) {
     html += renderInitiativePanel(d);
+  } else if (activeTab === 'map' && hasMap) {
+    html += renderMapPanel(d);
   } else {
     html += renderCharacterCard(d);
   }
@@ -861,6 +866,7 @@ function renderInitiativePanel(d) {
 
   // Initiative rows
   combatants.forEach((c, i) => {
+    if (c.hidden) return; // DM marked this combatant hidden from players
     const isAlly = c.type === 'ally';
     const cHpPct = hpPct(c.hp, c.maxHp);
     const cHc = hpColor(cHpPct);
@@ -893,6 +899,152 @@ function renderInitiativePanel(d) {
 
   html += '</div>'; // close card
   return html;
+}
+
+// ══════════════════════════════════════════════════════════════
+// RENDER: Battle Map Panel (left panel, when tab active)
+// ══════════════════════════════════════════════════════════════
+function renderMapPanel(d) {
+  return '<div class="card">' +
+    '<div class="card-section-label">Battle Map <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(live from your DM — each square is 5 ft)</span></div>' +
+    '<div style="overflow-x:auto;border:1px solid rgba(212,175,55,0.25);border-radius:8px;background:#0a0603;">' +
+      '<canvas id="pv-map-canvas" style="display:block;"></canvas>' +
+    '</div>' +
+  '</div>';
+}
+
+const PV_GROUNDS = {
+  stone:  { base: [74, 70, 66],   jitter: 10 },
+  grass:  { base: [58, 92, 48],   jitter: 14 },
+  wood:   { base: [96, 66, 40],   jitter: 8 },
+  cave:   { base: [38, 34, 32],   jitter: 8 },
+  sand:   { base: [148, 126, 84], jitter: 12 },
+  water:  { base: [40, 70, 100],  jitter: 10 },
+  snow:   { base: [168, 172, 180],jitter: 8 }
+};
+
+function pvCellHash(x, y, seed) {
+  let h = (x * 73856093) ^ (y * 19349663) ^ (seed * 83492791);
+  h = h ^ (h >> 13); h = (h * 1274126177) & 0x7fffffff;
+  return (h % 1000) / 1000;
+}
+
+function drawPlayerMap(d) {
+  const m = d.mapState;
+  const canvas = document.getElementById('pv-map-canvas');
+  if (!m || !canvas) return;
+  canvas.width = m.cols * m.cell;
+  canvas.height = m.rows * m.cell;
+  const ctx = canvas.getContext('2d');
+
+  // Ground
+  const g = PV_GROUNDS[m.ground] || PV_GROUNDS.stone;
+  for (let y = 0; y < m.rows; y++) {
+    for (let x = 0; x < m.cols; x++) {
+      const v = pvCellHash(x, y, m.seed);
+      const dv = Math.floor((v - 0.5) * 2 * g.jitter);
+      ctx.fillStyle = 'rgb(' + (g.base[0]+dv) + ',' + (g.base[1]+dv) + ',' + (g.base[2]+dv) + ')';
+      ctx.fillRect(x * m.cell, y * m.cell, m.cell, m.cell);
+      if (v > 0.92) {
+        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        ctx.beginPath();
+        ctx.arc(x*m.cell + m.cell*v, y*m.cell + m.cell*(1-v), 2, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Walls
+  (m.walls || []).forEach(key => {
+    const parts = key.split(',');
+    const wx = parseInt(parts[0]), wy = parseInt(parts[1]);
+    ctx.fillStyle = '#1c1815';
+    ctx.fillRect(wx * m.cell, wy * m.cell, m.cell, m.cell);
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(wx * m.cell, wy * m.cell, m.cell, 3);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(wx * m.cell, (wy + 1) * m.cell - 3, m.cell, 3);
+  });
+
+  // AoE templates (spell areas the DM dropped)
+  (m.props || []).forEach(p => {
+    if (p.kind !== 'aoe') return;
+    const acx = (p.x + 0.5) * m.cell, acy = (p.y + 0.5) * m.cell;
+    ctx.beginPath();
+    ctx.arc(acx, acy, p.r * m.cell, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(' + (p.color || '255,120,30') + ',0.22)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(' + (p.color || '255,120,30') + ',0.75)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(' + (p.color || '255,120,30') + ',0.9)';
+    ctx.font = 'bold ' + Math.floor(m.cell * 0.28) + 'px Cinzel, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText((p.r * 5) + 'ft', acx, acy);
+  });
+
+  // Props
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  (m.props || []).forEach(p => {
+    if (p.kind === 'aoe') return;
+    ctx.font = Math.floor(m.cell * (p.size || 0.8)) + 'px serif';
+    ctx.fillText(p.icon, (p.x + 0.5) * m.cell, (p.y + 0.55) * m.cell);
+  });
+
+  // Tokens — hidden combatants never render for players
+  (d.combatants || []).forEach(c => {
+    if (c.hidden) return;
+    const pos = (m.tokens || {})[c.id];
+    if (!pos) return;
+    const cx = (pos.x + 0.5) * m.cell, cy = (pos.y + 0.5) * m.cell, r = m.cell * 0.38;
+    const dead = c.hp <= 0;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.fillStyle = dead ? '#3a3a3a' : (c.type === 'ally' ? '#2d6a4f' : c.type === 'enemy' ? '#8b1a1a' : '#5a5a7a');
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = dead ? '#666' : (c.type === 'ally' ? '#7ee0a8' : c.type === 'enemy' ? '#ff8080' : '#b0b0d0');
+    ctx.stroke();
+    if (!dead && c.maxHp > 0) {
+      const pct = Math.max(0, Math.min(1, c.hp / c.maxHp));
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + 3, -Math.PI/2, -Math.PI/2 + pct * Math.PI * 2);
+      ctx.strokeStyle = pct > 0.5 ? '#4caf50' : pct > 0.25 ? '#ff9800' : '#f44336';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.floor(m.cell * 0.3) + 'px Cinzel, serif';
+    ctx.fillText(dead ? '💀' : initials(c.name), cx, cy);
+    ctx.font = Math.floor(m.cell * 0.22) + 'px Cinzel, serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.lineWidth = 2.5;
+    const label = c.name.length > 10 ? c.name.slice(0, 10) + '…' : c.name;
+    ctx.strokeText(label, cx, cy + r + 9);
+    ctx.fillText(label, cx, cy + r + 9);
+  });
+
+  // Fog — fully opaque for players
+  ctx.fillStyle = '#0d0804';
+  (m.fog || []).forEach(key => {
+    const parts = key.split(',');
+    ctx.fillRect(parseInt(parts[0]) * m.cell, parseInt(parts[1]) * m.cell, m.cell, m.cell);
+  });
+
+  // Grid
+  ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= m.cols; x++) {
+    ctx.beginPath(); ctx.moveTo(x*m.cell + 0.5, 0); ctx.lineTo(x*m.cell + 0.5, m.rows*m.cell); ctx.stroke();
+  }
+  for (let y = 0; y <= m.rows; y++) {
+    ctx.beginPath(); ctx.moveTo(0, y*m.cell + 0.5); ctx.lineTo(m.cols*m.cell, y*m.cell + 0.5); ctx.stroke();
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -942,9 +1094,8 @@ function renderPartySidebar(d) {
 
     // Death saves (if HP is 0)
     if (curHp <= 0 && maxHp > 0) {
-      const ds = pc.deathSaves || { successes: 0, failures: 0 };
-      const successes = ds.successes || 0;
-      const failures = ds.failures || 0;
+      const successes = cmb ? (cmb.deathSuccess || 0) : 0;
+      const failures = cmb ? (cmb.deathFail || 0) : 0;
       html += '<div class="sidebar-death-saves">' +
         '<span style="color:#8fd050;">';
       for (let s = 0; s < 3; s++) {

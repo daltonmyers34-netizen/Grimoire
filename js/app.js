@@ -23,6 +23,8 @@ let timerInterval = null, timerSeconds = 0, timerRunning = false;
 let xpLog = [], totalXP = 0;
 let lastGeneratedNPC = null;
 let lastEncounterData = null;
+let savedEncounters = [];
+let savedMaps = [];
 let diceOverlayExpanded = true;
 let worldTotalHours = 6;
 let worldSeason = 0;
@@ -61,6 +63,7 @@ function switchTab(name) {
   // Find and activate the matching nav tab
   const tab = document.querySelector('.nav-tab[onclick*="' + name + '"]');
   if (tab) tab.classList.add('active');
+  if (name === 'map' && typeof initMapTab === 'function') initMapTab();
 }
 
 // ============================================================
@@ -181,6 +184,7 @@ document.addEventListener('DOMContentLoaded', function() {
   try { renderParty(); } catch(e) { console.warn('renderParty:', e); }
   try { renderPresets(); } catch(e) { console.warn('renderPresets:', e); }
   try { renderPartyInventory(); } catch(e) { console.warn('renderPartyInventory:', e); }
+  try { renderSavedEncounters(); } catch(e) { console.warn('renderSavedEncounters:', e); }
   try { refreshNamePanel(); } catch(e) { console.warn('refreshNamePanel:', e); }
   try { rollOneName(); } catch(e) { console.warn('rollOneName:', e); }
   try { initSidebarDrag(); } catch(e) { console.warn('initSidebarDrag:', e); }

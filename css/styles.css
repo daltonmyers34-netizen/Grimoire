@@ -1418,3 +1418,44 @@
 
   /* Spell slot pip hover */
   .spell-pip:hover { transform: scale(1.2); }
+
+/* ===== BATTLE MAP ===== */
+.map-tool-btn {
+  padding: 7px 14px;
+  border-radius: 5px;
+  font-family: 'Cinzel', serif;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.3);
+  color: var(--text-dim);
+  transition: all 0.15s;
+}
+.map-tool-btn:hover {
+  border-color: rgba(212,175,55,0.5);
+  color: var(--gold);
+}
+.map-tool-btn.active {
+  background: rgba(212,175,55,0.15);
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.map-prop-btn {
+  width: 38px;
+  height: 38px;
+  font-size: 20px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.3);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.map-prop-btn:hover { border-color: rgba(212,175,55,0.5); transform: scale(1.1); }
+.map-prop-btn.active {
+  border-color: var(--gold);
+  background: rgba(212,175,55,0.2);
+  box-shadow: 0 0 8px rgba(212,175,55,0.3);
+}

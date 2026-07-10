@@ -314,7 +314,7 @@ function sendPlayerMessage(pcId) {
   var msg = prompt('Message to ' + pc.name + ':', window.pvMessages[pcId] || '');
   if (msg === null) return;
   window.pvMessages[pcId] = msg;
-  if (typeof saveSession === 'function') saveSession();
+  if (window.cloudSave) window.cloudSave();
   showToast('Message sent to ' + pc.name, 'success');
 }
 
@@ -322,7 +322,7 @@ function sendPartyMessage() {
   var msg = prompt('Message to entire party:', window.pvPartyMessage || '');
   if (msg === null) return;
   window.pvPartyMessage = msg;
-  if (typeof saveSession === 'function') saveSession();
+  if (window.cloudSave) window.cloudSave();
   showToast('Party message sent', 'success');
 }
 

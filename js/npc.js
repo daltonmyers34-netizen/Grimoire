@@ -176,8 +176,9 @@ function showNPCDetail(id) {
     <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
       ${(n.tags||[]).map(t => `<span class="tag">${t}</span>`).join('')}
     </div>
-    <div style="margin-top:16px;display:flex;gap:8px;">
+    <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
       <button class="btn btn-gold btn-sm" onclick="addToInitiativeFromNPC(${n.id})">+ Add to Initiative</button>
+      <button class="btn btn-ghost btn-sm" onclick="editNPC(${n.id})">Edit</button>
       <button class="btn btn-blood btn-sm" onclick="deleteNPC(${n.id})">Delete NPC</button>
     </div>
   `;
@@ -213,14 +214,49 @@ function closeNPCDetail(e) {
   if (e.target === document.getElementById('npc-detail-overlay')) closeNPCDetailBtn();
 }
 
-function showAddNPC() { document.getElementById('npc-add-panel').style.display = 'block'; }
-function hideAddNPC() { document.getElementById('npc-add-panel').style.display = 'none'; }
+function showAddNPC() {
+  // Clear form for new NPC
+  document.getElementById('anpc-name').value = '';
+  document.getElementById('anpc-role').value = '';
+  document.getElementById('anpc-race').value = '';
+  document.getElementById('anpc-align').value = 'True Neutral';
+  document.getElementById('anpc-desc').value = '';
+  document.getElementById('anpc-personality').value = '';
+  document.getElementById('anpc-hp').value = '';
+  document.getElementById('anpc-ac').value = '';
+  document.getElementById('anpc-cr').value = '';
+  document.getElementById('anpc-tags').value = '';
+  window._editingNpcId = null;
+  var saveBtn = document.querySelector('#npc-add-panel .btn-gold');
+  if (saveBtn) saveBtn.textContent = 'Save NPC';
+  document.getElementById('npc-add-panel').style.display = 'block';
+}
+function hideAddNPC() { document.getElementById('npc-add-panel').style.display = 'none'; window._editingNpcId = null; }
+
+function editNPC(id) {
+  var n = npcs.find(x => x.id === id);
+  if (!n) return;
+  closeNPCDetailBtn();
+  window._editingNpcId = id;
+  document.getElementById('anpc-name').value = n.name || '';
+  document.getElementById('anpc-role').value = n.role || '';
+  document.getElementById('anpc-race').value = n.race || '';
+  document.getElementById('anpc-align').value = n.alignment || 'True Neutral';
+  document.getElementById('anpc-desc').value = n.desc || '';
+  document.getElementById('anpc-personality').value = n.personality || '';
+  document.getElementById('anpc-hp').value = n.hp || '';
+  document.getElementById('anpc-ac').value = n.ac || '';
+  document.getElementById('anpc-cr').value = n.cr || '';
+  document.getElementById('anpc-tags').value = (n.tags || []).join(', ');
+  var saveBtn = document.querySelector('#npc-add-panel .btn-gold');
+  if (saveBtn) saveBtn.textContent = 'Update NPC';
+  document.getElementById('npc-add-panel').style.display = 'block';
+}
 
 function saveNPC() {
   const name = document.getElementById('anpc-name').value.trim();
   if (!name) return alert('Name required');
-  npcs.push({
-    id: Date.now(),
+  const data = {
     name,
     role: document.getElementById('anpc-role').value,
     race: document.getElementById('anpc-race').value,
@@ -231,12 +267,22 @@ function saveNPC() {
     ac: parseInt(document.getElementById('anpc-ac').value) || 10,
     cr: document.getElementById('anpc-cr').value || '—',
     tags: document.getElementById('anpc-tags').value.split(',').map(t => t.trim()).filter(Boolean),
-    traits: [],
-    stats: { str:10,dex:10,con:10,int:10,wis:10,cha:10 }
-  });
+  };
+  if (window._editingNpcId) {
+    var existing = npcs.find(x => x.id === window._editingNpcId);
+    if (existing) {
+      Object.assign(existing, data);
+      showToast('NPC updated: ' + name, 'success');
+    }
+  } else {
+    data.id = Date.now();
+    data.traits = [];
+    data.stats = { str:10,dex:10,con:10,int:10,wis:10,cha:10 };
+    npcs.push(data);
+  }
+  window._editingNpcId = null;
   hideAddNPC();
   renderNPCs();
-
   if (window.cloudSave) window.cloudSave();
 }
 
