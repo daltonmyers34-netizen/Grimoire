@@ -431,7 +431,7 @@ function addActionRow(a) {
   }).join('');
   row.innerHTML =
     '<div style="display:grid;grid-template-columns:2fr 1fr 58px 58px 1fr 26px;gap:5px;align-items:center;margin-bottom:4px;">' +
-      '<input class="pa-name" placeholder="Longsword" value="' + (a.name || '').replace(/"/g, '&quot;') + '" style="font-size:13px;padding:5px;">' +
+      '<input class="pa-name" placeholder="Longsword" value="' + (a.name || '').replace(/"/g, '&quot;') + '" style="font-size:13px;padding:5px;" oninput="autoInferActionType(this)">' +
       '<select class="pa-kind" style="font-size:12px;padding:5px;">' +
         '<option value="attack"' + (a.kind !== 'heal' ? ' selected' : '') + '>⚔ Attack</option>' +
         '<option value="heal"' + (a.kind === 'heal' ? ' selected' : '') + '>❤ Heal</option>' +
@@ -460,6 +460,17 @@ function populateActionRows(actions) {
   (actions || []).forEach(function(a) { addActionRow(a); });
 }
 
+
+function autoInferActionType(nameInput) {
+  var row = nameInput.closest('.pc-action-row');
+  if (!row) return;
+  var sel = row.querySelector('.pa-dmgtype');
+  if (!sel || sel.value) return; // don't override an explicit choice
+  if (typeof inferDamageType !== 'function') return;
+  var t = inferDamageType(nameInput.value);
+  if (t) { sel.value = t; sel.style.color = '#8fd050'; setTimeout(function() { sel.style.color = ''; }, 800); }
+}
+
 function collectActions() {
   var out = [];
   document.querySelectorAll('#pc-actions-list .pc-action-row').forEach(function(row) {
@@ -472,7 +483,12 @@ function collectActions() {
       bonus: parseInt(row.querySelector('.pa-bonus').value) || 0,
       dice: row.querySelector('.pa-dice').value.trim() || '1d6'
     };
-    var dt = row.querySelector('.pa-dmgtype'); if (dt && dt.value) a.damageType = dt.value;
+    var dt = row.querySelector('.pa-dmgtype');
+    if (dt && dt.value) a.damageType = dt.value;
+    else if (a.kind === 'attack' && typeof inferDamageType === 'function') {
+      var inferred = inferDamageType(name);
+      if (inferred) a.damageType = inferred;
+    }
     var cond = row.querySelector('.pa-condition'); if (cond && cond.value) a.applyCondition = cond.value;
     var sa = row.querySelector('.pa-saveability'); if (sa && sa.value) a.saveAbility = sa.value;
     var dc = row.querySelector('.pa-savedc'); if (dc && dc.value) a.saveDC = parseInt(dc.value) || 0;

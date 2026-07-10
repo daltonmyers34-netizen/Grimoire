@@ -190,4 +190,21 @@ document.addEventListener('DOMContentLoaded', function() {
   try { initSidebarDrag(); } catch(e) { console.warn('initSidebarDrag:', e); }
   var mini = document.getElementById('dice-overlay-mini');
   if (mini) mini.classList.add('dice-hidden');
+
+  // Paste a character-sheet screenshot anywhere while the Add Character modal is open
+  document.addEventListener('paste', function(e) {
+    var modal = document.getElementById('player-modal');
+    if (!modal || !modal.classList.contains('show')) return;
+    var items = (e.clipboardData || {}).items || [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type && items[i].type.indexOf('image/') === 0) {
+        var file = items[i].getAsFile();
+        if (file && typeof importSheetImage === 'function') {
+          e.preventDefault();
+          importSheetImage(file);
+        }
+        return;
+      }
+    }
+  });
 });

@@ -216,10 +216,11 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
       var dmg = rollDiceExpr(a.dice);
       var amount = dmg.total;
       if (result.crit) amount += rollDiceExpr(String(a.dice).replace(/[+-]\s*\d+$/, '')).total;
-      var def = applyDamageWithDefenses(target, amount, a.damageType);
+      var dmgType = a.damageType || inferDamageType(a.name);
+      var def = applyDamageWithDefenses(target, amount, dmgType);
       result.rawAmount = amount;
       result.amount = def.taken;
-      result.damageType = a.damageType || '';
+      result.damageType = dmgType || '';
       result.notes = result.notes.concat(def.notes);
       var prevHp = target.hp;
       target.hp = Math.max(0, target.hp - def.taken);
@@ -284,6 +285,7 @@ function processPlayerAction(req) {
     if (req.type === 'move') processPlayerMove(req);
     else if (req.type === 'action') processPlayerCombatAction(req);
     else if (req.type === 'endTurn') processPlayerEndTurn(req);
+    else if (req.type === 'addCharacter') processPlayerAddCharacter(req);
   } catch(e) {
     console.error('processPlayerAction', e);
   }
@@ -397,4 +399,67 @@ function dmExecuteAction(attackerId, targetId, actionIdx) {
   if (!a) return;
   // DM rolls digitally — the engine applies advantage/disadvantage automatically
   resolveCombatAction(attackerId, targetId, a, { roll: null, source: 'dm' });
+}
+
+// ─── Damage type inference from action names ─────────────────
+// "Fireball" → fire, "Longsword" → slashing, etc. Used when no
+// explicit type is set, so attacks Just Work.
+var DMG_TYPE_HINTS = [
+  [/fire|flame|burn|scorch|ember|inferno|meteor/i, 'fire'],
+  [/frost|ice|cold|freez|blizzard|chill/i, 'cold'],
+  [/lightning|shock|storm|bolt(?!.*cross)/i, 'lightning'],
+  [/thunder|boom|sonic/i, 'thunder'],
+  [/poison|venom|toxi/i, 'poison'],
+  [/acid|corro|melt/i, 'acid'],
+  [/necro|drain|wither|blight|shadow/i, 'necrotic'],
+  [/radiant|holy|smite|sacred|divine|sunbeam/i, 'radiant'],
+  [/psychic|mind|psi/i, 'psychic'],
+  [/force|magic missile|eldritch/i, 'force'],
+  [/sword|blade|scimitar|axe|slash|claw|scythe|glaive|halberd/i, 'slashing'],
+  [/bow|arrow|dagger|spear|pierc|rapier|bite|sting|javelin|lance|pike|trident|dart|crossbow|shortsword|stab|fang/i, 'piercing'],
+  [/club|mace|hammer|maul|slam|staff|fist|punch|flail|bludgeon|smash/i, 'bludgeoning']
+];
+
+function inferDamageType(name) {
+  var n = String(name || '');
+  for (var i = 0; i < DMG_TYPE_HINTS.length; i++) {
+    if (DMG_TYPE_HINTS[i][0].test(n)) return DMG_TYPE_HINTS[i][1];
+  }
+  return '';
+}
+
+// ─── Player self-registration from the Player View ───────────
+function processPlayerAddCharacter(req) {
+  var ch = req.character || {};
+  var name = String(ch.name || '').trim().slice(0, 40);
+  if (!name) return;
+  if (party.some(function(p) { return p.name.toLowerCase() === name.toLowerCase(); })) {
+    showToast('🧝 "' + name + '" already exists — player asked to join with a duplicate name', 'warn');
+    return;
+  }
+  var clamp = function(v, lo, hi, dflt) { v = parseInt(v); return isNaN(v) ? dflt : Math.max(lo, Math.min(hi, v)); };
+  var pc = {
+    id: typeof uniqueId === 'function' ? uniqueId() : Date.now(),
+    name: name,
+    player: String(ch.player || '').trim().slice(0, 40),
+    cls: ['Barbarian','Bard','Cleric','Druid','Fighter','Monk','Paladin','Ranger','Rogue','Sorcerer','Warlock','Wizard','Other'].indexOf(ch.cls) >= 0 ? ch.cls : 'Other',
+    race: String(ch.race || '').trim().slice(0, 30),
+    level: clamp(ch.level, 1, 20, 1),
+    maxhp: clamp(ch.maxhp, 1, 999, 10),
+    ac: clamp(ch.ac, 1, 30, 10),
+    initBonus: clamp(ch.initBonus, -5, 15, 0),
+    speed: clamp(ch.speed, 0, 120, 30),
+    str: clamp(ch.str, 1, 30, 10), dex: clamp(ch.dex, 1, 30, 10), con: clamp(ch.con, 1, 30, 10),
+    int: clamp(ch.int, 1, 30, 10), wis: clamp(ch.wis, 1, 30, 10), cha: clamp(ch.cha, 1, 30, 10),
+    moves: '',
+    actions: [],
+    skills: {},
+    spellSlots: typeof getDefaultSlots === 'function' ? getDefaultSlots(ch.cls, clamp(ch.level, 1, 20, 1)) : []
+  };
+  party.push(pc);
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+  if (typeof renderParty === 'function') renderParty();
+  showToast('🧝 New character joined the party: ' + name + (pc.player ? ' (' + pc.player + ')' : ''), 'success');
+  logCombat('🧝 ' + name + ' joined the party (added from Player View)', 'info');
+  if (window.cloudSaveNow) window.cloudSaveNow();
 }

@@ -37,7 +37,7 @@ function applyState(s) {
   if (s.combatants)  { combatants = s.combatants; renderCombatants(); }
   if (s.npcs)        { npcs = s.npcs; renderNPCs(); }
   if (s.locations && s.locations.length) { locations = s.locations; if(typeof renderLocations==='function') renderLocations(); }
-  if (s.party)       { party = s.party; renderParty(); }
+  if (s.party)       { party = s.party; try { localStorage.setItem('dm_party', JSON.stringify(party)); } catch(e){}; renderParty(); }
   if (s.presets)     { localStorage.setItem('dm_presets', JSON.stringify(s.presets)); }
   if (s.worldTotalHours !== undefined) { worldTotalHours = s.worldTotalHours; worldSeason = s.worldSeason||0; updateWorldDisplay(); syncTopBar(); }
   if (s.totalXP !== undefined) { totalXP = s.totalXP; xpLog = s.xpLog||[]; renderXP(); }
@@ -53,6 +53,7 @@ function applyState(s) {
   if (s.savedMaps && typeof savedMaps !== 'undefined') { savedMaps = s.savedMaps; if(typeof renderSavedMaps==='function') renderSavedMaps(); }
   if (s.pvMessages) { window.pvMessages = s.pvMessages; }
   if (s.pvPartyMessage) { window.pvPartyMessage = s.pvPartyMessage; }
+  if (s.partyInventory) { partyInventory = s.partyInventory; window.partyInventory = s.partyInventory; try { localStorage.setItem('dm-party-inventory', JSON.stringify(s.partyInventory)); } catch(e){}; if (typeof renderPartyInventory==='function') try { renderPartyInventory(); } catch(e){} }
   if (s.notes) {
     var sn = document.getElementById('session-notes'); if(sn) sn.value = s.notes.session||'';
     var pn = document.getElementById('plot-notes');   if(pn) pn.value = s.notes.plot||'';
@@ -104,6 +105,7 @@ function loadNamedSession(name) {
   if (!s) { showToast('Session not found', 'danger'); return; }
   applyState(s);
   localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+  if (window.cloudSaveNow) window.cloudSaveNow();
   showToast('Loaded "' + name + '"', 'success');
   closeSessionsModal();
 }
@@ -143,6 +145,7 @@ function importSession(file) {
         localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
       }
       localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+      if (window.cloudSaveNow) window.cloudSaveNow();
       showToast('Session imported: "' + (s.name||'unnamed') + '"', 'success');
       closeSessionsModal();
     } catch(err) { showToast('Import failed: ' + err.message, 'danger'); }
@@ -239,9 +242,11 @@ function newCampaign() {
     try { if (typeof window[fn] === 'function') window[fn](); } catch(e) {}
   });
 
-  // Persist the fresh slate locally and to the cloud
+  // Persist the fresh slate locally and to the cloud IMMEDIATELY —
+  // the debounced save can be lost if the page is refreshed right away
   try { localStorage.setItem(SESSION_KEY, JSON.stringify(collectState())); } catch(e) {}
-  if (window.cloudSave) window.cloudSave();
+  if (window.cloudSaveNow) window.cloudSaveNow();
+  else if (window.cloudSave) window.cloudSave();
   closeSessionsModal();
   showToast('✦ New campaign started — fresh slate!', 'success');
 }
