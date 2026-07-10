@@ -822,6 +822,47 @@ function useAction(actionIdx) {
 }
 window._pvUseAction = useAction;
 
+// Tap an enemy on the map → pick which action to hit them with
+function openMapAttack(target) {
+  const d = latestData;
+  const pc = myPC(d), me = myCombatant(d);
+  const can = pvCanAct(me);
+  if (!can.ok) {
+    showOverlay('<div style="text-align:center;font-size:15px;color:#e05050;">You can\'t act — you are ' + esc(can.reason) + '.</div>' +
+      '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCloseOverlay()">OK</button>');
+    return;
+  }
+  const acts = (pc.actions || []).filter(a => a.kind !== 'heal');
+  if (!acts.length) {
+    showOverlay('<div style="text-align:center;font-size:14px;color:var(--text-dim);">No attacks on your sheet yet — ask your DM to add Combat Actions to your character.</div>' +
+      '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCloseOverlay()">OK</button>');
+    return;
+  }
+  const m = d.mapState;
+  const myPos = (m.tokens || {})[me.id];
+  const tPos = (m.tokens || {})[target.id];
+  const ft = (myPos && tPos) ? distFt(myPos, tPos) : null;
+  let html = '<div style="font-family:Cinzel,serif;font-size:17px;color:var(--gold);margin-bottom:4px;">⚔ Attack ' + esc(target.name) + '</div>' +
+    '<div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">' + target.hp + '/' + target.maxHp + ' HP' + (ft !== null ? ' · ' + ft + ' ft away' : '') + '</div>';
+  acts.forEach((a, i) => {
+    const idx = (pc.actions || []).indexOf(a);
+    const outOfRange = ft !== null && ft > (a.range || 5);
+    html += '<button class="pv-target-btn" ' + (outOfRange ? 'disabled' : '') + ' data-mattack="' + idx + '">' +
+      '<span>⚔ ' + esc(a.name) + '</span>' +
+      '<span style="margin-left:auto;font-size:12px;color:' + (outOfRange ? '#e05050' : 'var(--text-dim)') + ';">' + (a.range || 5) + ' ft · ' + esc(a.dice || '') + (outOfRange ? ' — too far' : '') + '</span>' +
+    '</button>';
+  });
+  html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:8px;" onclick="_pvCloseOverlay()">Cancel</button>';
+  showOverlay(html);
+  document.querySelectorAll('[data-mattack]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const a = (pc.actions || [])[parseInt(btn.dataset.mattack)];
+      closeOverlay();
+      askForRoll(a, me.id, target.id, pvAttackContext(me, target, a));
+    });
+  });
+}
+
 function endMyTurn() {
   const d = latestData;
   if (!d || !isMyTurn(d)) return;
@@ -947,6 +988,19 @@ function bindMapInteraction() {
     const pc = myPC(d);
     const speed = pvSpeedFt(me, (pc && pc.speed) || 30);
 
+    // Tap an enemy token → attack it from the map
+    if (!moveSelecting) {
+      const tapped = (d.combatants || []).find(c => {
+        if (c.hidden || c.id === me.id) return false;
+        const pos = (m.tokens || {})[c.id];
+        return pos && pos.x === x && pos.y === y;
+      });
+      if (tapped && tapped.type !== 'ally' && tapped.hp > 0) {
+        openMapAttack(tapped);
+        return;
+      }
+    }
+
     if (!moveSelecting) {
       // First tap must land on your own token
       if (x === myPos.x && y === myPos.y) {
@@ -1030,6 +1084,18 @@ function renderRoot(d) {
     }
   }
 
+  // If we just created a character, auto-select it as soon as the DM's app adds it
+  const pendingAdd = sessionStorage.getItem('pv_pending_add');
+  if (!selectedPcId && pendingAdd) {
+    const mine = party.find(p => p.name.toLowerCase() === pendingAdd);
+    if (mine) {
+      sessionStorage.removeItem('pv_pending_add');
+      closeOverlay();
+      selectedPcId = String(mine.id);
+      sessionStorage.setItem('pv_selected_pc', selectedPcId);
+    }
+  }
+
   if (!selectedPcId) {
     root.innerHTML = renderSelectionScreen(party);
   } else {
@@ -1063,10 +1129,68 @@ function renderSelectionScreen(party) {
     }).join('') +
     '</div>' +
     '<div style="margin-top:28px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">' +
+      '<button class="btn-pv" style="border-color:var(--gold);color:var(--gold-light);" onclick="_pvOpenAddCharacter()">🧝 Add New Character</button>' +
       '<button class="btn-pv" id="copy-link-btn" onclick="_pvCopyLink()">📋 Copy Link</button>' +
     '</div>' +
   '</div>';
 }
+
+// ── Player self-registration ─────────────────────────────────
+function openAddCharacter() {
+  const inp = (id, label, ph, type, val) =>
+    '<div style="display:flex;flex-direction:column;gap:2px;">' +
+      '<label style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.08em;color:var(--text-dim);">' + label + '</label>' +
+      '<input id="' + id + '" type="' + (type || 'text') + '" placeholder="' + ph + '" value="' + (val || '') + '" style="font-size:14px;padding:7px;background:rgba(0,0,0,0.35);border:1px solid rgba(212,175,55,0.25);border-radius:5px;color:var(--parchment);">' +
+    '</div>';
+  const classes = ['Barbarian','Bard','Cleric','Druid','Fighter','Monk','Paladin','Ranger','Rogue','Sorcerer','Warlock','Wizard','Other'];
+  showOverlay(
+    '<div style="font-family:Cinzel,serif;font-size:17px;color:var(--gold);margin-bottom:4px;">🧝 Create Your Character</div>' +
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">This sends your character to the DM\'s campaign. Your DM can fill in skills and actions later.</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+      inp('ac-name', 'Character Name*', 'Aldric') +
+      inp('ac-player', 'Your Name', 'John') +
+      '<div style="display:flex;flex-direction:column;gap:2px;">' +
+        '<label style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.08em;color:var(--text-dim);">Class</label>' +
+        '<select id="ac-class" style="font-size:14px;padding:7px;background:rgba(0,0,0,0.35);border:1px solid rgba(212,175,55,0.25);border-radius:5px;color:var(--parchment);">' +
+          classes.map(c => '<option>' + c + '</option>').join('') + '</select>' +
+      '</div>' +
+      inp('ac-race', 'Race', 'Human') +
+      inp('ac-level', 'Level', '1', 'number', '1') +
+      inp('ac-maxhp', 'Max HP*', '10', 'number') +
+      inp('ac-ac', 'Armor Class*', '14', 'number') +
+      inp('ac-speed', 'Speed (ft)', '30', 'number', '30') +
+    '</div>' +
+    '<div style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.08em;color:var(--text-dim);margin-bottom:4px;">ABILITY SCORES</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-bottom:14px;">' +
+      ['str','dex','con','int','wis','cha'].map(s =>
+        '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);">' + s.toUpperCase() + '</div>' +
+        '<input id="ac-' + s + '" type="number" value="10" style="width:100%;text-align:center;font-size:13px;padding:5px 2px;background:rgba(0,0,0,0.35);border:1px solid rgba(212,175,55,0.25);border-radius:4px;color:var(--parchment);"></div>'
+      ).join('') +
+    '</div>' +
+    '<div style="display:flex;gap:8px;">' +
+      '<button class="btn-pv" style="flex:1;justify-content:center;border-color:var(--gold);" id="ac-submit">🧝 Join the Party</button>' +
+      '<button class="btn-pv" style="justify-content:center;" onclick="_pvCloseOverlay()">Cancel</button>' +
+    '</div>'
+  );
+  document.getElementById('ac-submit').addEventListener('click', async () => {
+    const g = id => document.getElementById(id).value;
+    const name = g('ac-name').trim();
+    if (!name) { document.getElementById('ac-name').style.borderColor = '#e05050'; return; }
+    const character = {
+      name, player: g('ac-player').trim(), cls: g('ac-class'), race: g('ac-race').trim(),
+      level: parseInt(g('ac-level')) || 1, maxhp: parseInt(g('ac-maxhp')) || 10,
+      ac: parseInt(g('ac-ac')) || 10, speed: parseInt(g('ac-speed')) || 30,
+      str: parseInt(g('ac-str')) || 10, dex: parseInt(g('ac-dex')) || 10, con: parseInt(g('ac-con')) || 10,
+      int: parseInt(g('ac-int')) || 10, wis: parseInt(g('ac-wis')) || 10, cha: parseInt(g('ac-cha')) || 10
+    };
+    const ok = await sendPlayerRequest({ type: 'addCharacter', character, ts: Date.now() });
+    if (ok) {
+      sessionStorage.setItem('pv_pending_add', name.toLowerCase());
+      showWaiting('🧝 Sending ' + name + ' to your DM...');
+    }
+  });
+}
+window._pvOpenAddCharacter = openAddCharacter;
 
 // ══════════════════════════════════════════════════════════════
 // RENDER: Two-Column Layout (main + sidebar)
@@ -1359,7 +1483,7 @@ function renderMapPanel(d) {
   const myTurn = isMyTurn(d);
   return '<div class="card">' +
     '<div class="card-section-label">Battle Map <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(live from your DM — each square is 5 ft)</span></div>' +
-    (myTurn ? '<div style="font-size:13px;color:var(--gold-light);margin-bottom:8px;">⚔ Your turn: tap your token, then tap where you want to move (up to ' + pvSpeedFt(myCombatant(d) || {}, (myPC(d) || {}).speed || 30) + ' ft).</div>' : '') +
+    (myTurn ? '<div style="font-size:13px;color:var(--gold-light);margin-bottom:8px;">⚔ Your turn: tap an <strong style=\"color:#ff9090;\">enemy</strong> to attack, or tap your token then a square to move (up to ' + pvSpeedFt(myCombatant(d) || {}, (myPC(d) || {}).speed || 30) + ' ft).</div>' : '') +
     '<div style="border:1px solid rgba(212,175,55,0.25);border-radius:8px;background:#0a0603;">' +
       '<canvas id="pv-map-canvas" style="display:block;width:100%;height:auto;"></canvas>' +
     '</div>' +

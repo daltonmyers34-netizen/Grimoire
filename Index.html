@@ -103,7 +103,7 @@
     <input type="hidden" id="edit-player-id">
     <!-- AI Sheet Import -->
     <div style="background:rgba(100,180,255,0.05);border:1px solid rgba(100,180,255,0.2);border-radius:6px;padding:12px;margin-bottom:14px;">
-      <div style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:#90c8ff;margin-bottom:8px;">📸 AI SHEET IMPORT <span style="text-transform:none;letter-spacing:0;color:var(--text-dim);">— snap a photo or paste text, the AI fills the form</span></div>
+      <div style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:#90c8ff;margin-bottom:8px;">📸 AI SHEET IMPORT <span style="text-transform:none;letter-spacing:0;color:var(--text-dim);">— photo, pasted screenshot (Ctrl+V right now!), or text — the AI fills the form</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
         <label style="padding:6px 14px;background:rgba(100,180,255,0.12);border:1px solid rgba(100,180,255,0.35);border-radius:4px;color:#90c8ff;font-size:12px;cursor:pointer;font-family:Cinzel,serif;">
           📷 Photo of Sheet
@@ -277,6 +277,10 @@
     </div>
   </div>
 
+  <ul class="combatant-list" id="combatant-list">
+    <li class="empty-state"><div class="icon">⚔</div>No combatants yet. Add some above!</li>
+  </ul>
+
   <!-- Battle Presets -->
   <div class="panel">
     <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
@@ -296,9 +300,6 @@
     </div>
   </div>
 
-  <ul class="combatant-list" id="combatant-list">
-    <li class="empty-state"><div class="icon">⚔</div>No combatants yet. Add some above!</li>
-  </ul>
 </div>
 
 <!-- ============================================================ -->

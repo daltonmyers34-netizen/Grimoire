@@ -110,6 +110,49 @@ async function loadCloudState(uid) {
   }
 }
 
+// -- Immediate save (no debounce) — for campaign resets/loads ----------
+async function doCloudWrite() {
+  if (!currentUid) return;
+  try {
+    const state = typeof collectState === 'function' ? collectState() : {};
+    state.partyInventory = window.partyInventory || [];
+    lastWriteTime = Date.now();
+    await setDoc(doc(db, 'users', currentUid, 'data', 'state'), {
+      state,
+      updatedAt: new Date().toISOString()
+    });
+    const pvSnap = {
+      party: state.party || [],
+      combatants: state.combatants || [],
+      currentRound: state.currentRound || 0,
+      currentTurn: state.currentTurn >= 0 ? state.currentTurn : -1,
+      combatActive: state.combatActive || false,
+      partyInventory: state.partyInventory || [],
+      pvMessages: state.pvMessages || {},
+      pvPartyMessage: state.pvPartyMessage || '',
+      mapState: state.mapState || null,
+      actionFeed: window.lastActionResult || null,
+      updatedAt: new Date().toISOString()
+    };
+    await setDoc(doc(db, 'playerView', currentUid), pvSnap);
+    showSyncIndicator();
+  } catch(e) {
+    console.error('Save error', e);
+    showToast('⚠ Cloud save failed', 'warn');
+  }
+}
+
+window.cloudSaveNow = () => {
+  // localStorage immediately too
+  try {
+    const state = typeof collectState === 'function' ? collectState() : {};
+    state.partyInventory = window.partyInventory || [];
+    localStorage.setItem('dm_grimoire_session', JSON.stringify(state));
+  } catch(e) {}
+  clearTimeout(syncTimeout);
+  return doCloudWrite();
+};
+
 // -- Save to Firestore (debounced 2s) ----------------------------------
 window.cloudSave = () => {
   // Always save to localStorage immediately as a backup
@@ -120,36 +163,7 @@ window.cloudSave = () => {
   } catch(e) { console.warn('localStorage backup:', e); }
   if (!currentUid) return;
   clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(async () => {
-    try {
-      const state = typeof collectState === 'function' ? collectState() : {};
-      state.partyInventory = window.partyInventory || [];
-      lastWriteTime = Date.now();
-      await setDoc(doc(db, 'users', currentUid, 'data', 'state'), {
-        state,
-        updatedAt: new Date().toISOString()
-      });
-      // Also write slim player-view snapshot
-      const pvSnap = {
-        party: state.party || [],
-        combatants: state.combatants || [],
-        currentRound: state.currentRound || 0,
-        currentTurn: state.currentTurn >= 0 ? state.currentTurn : -1,
-        combatActive: state.combatActive || false,
-        partyInventory: state.partyInventory || [],
-        pvMessages: state.pvMessages || {},
-        pvPartyMessage: state.pvPartyMessage || '',
-        mapState: state.mapState || null,
-        actionFeed: window.lastActionResult || null,
-        updatedAt: new Date().toISOString()
-      };
-      await setDoc(doc(db, 'playerView', currentUid), pvSnap);
-      showSyncIndicator();
-    } catch(e) {
-      console.error('Save error', e);
-      showToast('\u26a0 Cloud save failed', 'warn');
-    }
-  }, 2000);
+  syncTimeout = setTimeout(doCloudWrite, 2000);
 };
 
 // -- UI helpers --------------------------------------------------------
