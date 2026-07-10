@@ -246,6 +246,142 @@ function saveGeneratedNPC() {
 }
 
 // ============================================================
+// CHARACTER SHEET IMPORT (photo or pasted text → filled form)
+// ============================================================
+async function callClaudeVisionAPI(prompt, imageDataUrl, maxTokens) {
+  if (maxTokens === undefined) maxTokens = 1500;
+  if (!window.ANTHROPIC_KEY) throw new Error('No API key. Tap the key icon in the top bar.');
+  var key = window.ANTHROPIC_KEY;
+  var isOpenRouter = key.indexOf('sk-or-') === 0;
+  var resp, data, text;
+
+  if (isOpenRouter) {
+    resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      body: JSON.stringify({
+        model: 'anthropic/claude-haiku-4-5',
+        max_tokens: maxTokens,
+        messages: [{ role: 'user', content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: imageDataUrl } }
+        ]}]
+      }),
+      mode: 'cors', credentials: 'omit'
+    });
+    if (!resp.ok) throw new Error('API error ' + resp.status + ': ' + (await resp.text().catch(function(){return '';})).slice(0, 200));
+    data = await resp.json();
+    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+    text = (data.choices && data.choices[0] && data.choices[0].message) ? data.choices[0].message.content : '';
+  } else {
+    var b64 = imageDataUrl.split(',')[1];
+    var mediaType = (imageDataUrl.match(/^data:([^;]+);/) || [])[1] || 'image/jpeg';
+    resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json', 'x-api-key': key,
+        'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-ipc': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: maxTokens,
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: b64 } },
+          { type: 'text', text: prompt }
+        ]}]
+      }),
+      mode: 'cors', credentials: 'omit'
+    });
+    if (!resp.ok) throw new Error('API error ' + resp.status + ': ' + (await resp.text().catch(function(){return '';})).slice(0, 200));
+    data = await resp.json();
+    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+    text = (data.content || []).map(function(b) { return b.text || ''; }).join('');
+  }
+  if (!text) throw new Error('Empty API response. Check your key has credits.');
+  return text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+}
+
+var SHEET_PARSE_PROMPT =
+  'Extract this D&D 5e character sheet into JSON. Reply with ONLY valid JSON, no other text:\n' +
+  '{"name":"", "player":"", "cls":"one of Barbarian/Bard/Cleric/Druid/Fighter/Monk/Paladin/Ranger/Rogue/Sorcerer/Warlock/Wizard/Other",' +
+  ' "race":"", "level":1, "maxhp":10, "ac":10, "initBonus":0,' +
+  ' "str":10,"dex":10,"con":10,"int":10,"wis":10,"cha":10,' +
+  ' "skills":{"acrobatics":0,"animal_handling":0,"arcana":0,"athletics":0,"deception":0,"history":0,"insight":0,"intimidation":0,"investigation":0,"medicine":0,"nature":0,"perception":0,"performance":0,"persuasion":0,"religion":0,"sleight_of_hand":0,"stealth":0,"survival":0},' +
+  ' "moves":"notable class features, one per line, format: Name — short description",' +
+  ' "actions":[{"name":"Longsword","kind":"attack or heal","range":5,"bonus":6,"dice":"1d8+4"}],' +
+  ' "spellSlots":[4,3,0,0,0,0,0,0,0]}\n' +
+  'Rules: skills values are 0=untrained, 1=proficient, 2=expertise. spellSlots is max slots per level 1-9 (empty array if not a caster). ' +
+  'For actions, extract weapon attacks and healing/damage spells with their to-hit bonus, range in feet, and damage dice. Omit fields you cannot find rather than guessing wildly.';
+
+function importSheetImage(file) {
+  var status = document.getElementById('sheet-import-status');
+  if (status) { status.textContent = '⏳ Reading image...'; status.style.color = 'var(--text-dim)'; }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    // Downscale big photos so the request stays fast and cheap
+    var img = new Image();
+    img.onload = async function() {
+      var maxDim = 1600;
+      var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      try {
+        if (status) status.textContent = '🤖 AI is reading the sheet...';
+        var raw = await callClaudeVisionAPI(SHEET_PARSE_PROMPT, dataUrl, 1500);
+        var parsed = JSON.parse(raw);
+        prefillCharacterForm(parsed);
+        if (status) { status.textContent = '✅ Sheet imported! Review the fields below, then Save.'; status.style.color = '#8fd050'; }
+      } catch(err) {
+        if (status) { status.textContent = '⚠ ' + err.message; status.style.color = 'var(--blood-light)'; }
+      }
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function importSheetText() {
+  var ta = document.getElementById('sheet-import-text');
+  var status = document.getElementById('sheet-import-status');
+  var text = ta ? ta.value.trim() : '';
+  if (!text) { if (status) status.textContent = 'Paste your character sheet text first'; return; }
+  try {
+    if (status) { status.textContent = '🤖 AI is parsing...'; status.style.color = 'var(--text-dim)'; }
+    var raw = await callClaudeAPI(SHEET_PARSE_PROMPT + '\n\nSHEET TEXT:\n' + text.slice(0, 8000), 1500);
+    var parsed = JSON.parse(raw);
+    prefillCharacterForm(parsed);
+    if (status) { status.textContent = '✅ Sheet imported! Review the fields below, then Save.'; status.style.color = '#8fd050'; }
+  } catch(err) {
+    if (status) { status.textContent = '⚠ ' + err.message; status.style.color = 'var(--blood-light)'; }
+  }
+}
+
+function prefillCharacterForm(d) {
+  function setVal(id, v) { var el = document.getElementById(id); if (el && v !== undefined && v !== null && v !== '') el.value = v; }
+  setVal('pc-name', d.name);
+  setVal('pc-player', d.player);
+  if (d.cls) setVal('pc-class', d.cls);
+  setVal('pc-race', d.race);
+  setVal('pc-level', d.level);
+  setVal('pc-maxhp', d.maxhp);
+  setVal('pc-ac', d.ac);
+  setVal('pc-init-bonus', d.initBonus);
+  ['str','dex','con','int','wis','cha'].forEach(function(s) { setVal('pc-' + s, d[s]); });
+  setVal('pc-moves', d.moves);
+  if (d.skills && typeof populateSkillsGrid === 'function') populateSkillsGrid(d.skills);
+  if (Array.isArray(d.actions) && typeof populateActionRows === 'function') populateActionRows(d.actions);
+  if (Array.isArray(d.spellSlots)) {
+    for (var i = 1; i <= 9; i++) {
+      var el = document.getElementById('pc-ss-' + i);
+      if (el) el.value = d.spellSlots[i - 1] > 0 ? d.spellSlots[i - 1] : '';
+    }
+  }
+}
+
+// ============================================================
 // RANDOM ENCOUNTER GENERATOR
 // ============================================================
 function openEncounterModal() {

@@ -1,7 +1,7 @@
 import { initializeApp }        from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
                                 from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, onSnapshot }
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, deleteDoc }
                                 from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -22,7 +22,23 @@ window.__db = db; window.__doc = doc; window.__onSnapshot = onSnapshot;
 let currentUid   = null;
 let syncTimeout  = null;
 let unsubSnapshot = null;
+let unsubActions = null;
 let lastWriteTime = 0;  // guard against onSnapshot echoing our own writes
+
+// Listen for action requests sent by players from the Player View
+function listenForPlayerActions(uid) {
+  if (unsubActions) unsubActions();
+  unsubActions = onSnapshot(collection(db, 'playerActions', uid, 'requests'), snap => {
+    snap.docChanges().forEach(change => {
+      if (change.type !== 'added') return;
+      const req = change.doc.data();
+      try {
+        if (typeof processPlayerAction === 'function') processPlayerAction(req);
+      } catch(e) { console.error('player action', e); }
+      deleteDoc(change.doc.ref).catch(() => {});
+    });
+  }, err => console.warn('playerActions listener:', err.message));
+}
 
 // -- Auth state --------------------------------------------------------
 onAuthStateChanged(auth, user => {
@@ -31,6 +47,7 @@ onAuthStateChanged(auth, user => {
     window.__fbUid = user.uid;
     showUserBadge(user);
     loadCloudState(user.uid);
+    listenForPlayerActions(user.uid);
   } else {
     currentUid = null;
     window.__fbUid = null;
@@ -52,6 +69,7 @@ window.signInWithGoogle = async () => {
 window.signOutUser = async () => {
   if (!confirm('Sign out?')) return;
   if (unsubSnapshot) { unsubSnapshot(); unsubSnapshot = null; }
+  if (unsubActions) { unsubActions(); unsubActions = null; }
   await signOut(auth);
 };
 
@@ -122,6 +140,7 @@ window.cloudSave = () => {
         pvMessages: state.pvMessages || {},
         pvPartyMessage: state.pvPartyMessage || '',
         mapState: state.mapState || null,
+        actionFeed: window.lastActionResult || null,
         updatedAt: new Date().toISOString()
       };
       await setDoc(doc(db, 'playerView', currentUid), pvSnap);

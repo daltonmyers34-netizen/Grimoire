@@ -101,6 +101,22 @@
   <div class="modal" style="max-width:540px;width:95%;max-height:90vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">
     <h3 style="font-family:'Cinzel',serif;color:var(--gold);margin-bottom:16px;" id="player-modal-title">🧝 Add Character</h3>
     <input type="hidden" id="edit-player-id">
+    <!-- AI Sheet Import -->
+    <div style="background:rgba(100,180,255,0.05);border:1px solid rgba(100,180,255,0.2);border-radius:6px;padding:12px;margin-bottom:14px;">
+      <div style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:#90c8ff;margin-bottom:8px;">📸 AI SHEET IMPORT <span style="text-transform:none;letter-spacing:0;color:var(--text-dim);">— snap a photo or paste text, the AI fills the form</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
+        <label style="padding:6px 14px;background:rgba(100,180,255,0.12);border:1px solid rgba(100,180,255,0.35);border-radius:4px;color:#90c8ff;font-size:12px;cursor:pointer;font-family:Cinzel,serif;">
+          📷 Photo of Sheet
+          <input type="file" accept="image/*" style="display:none;" onchange="if(this.files[0])importSheetImage(this.files[0]);this.value='';">
+        </label>
+        <button type="button" onclick="var t=document.getElementById('sheet-import-textwrap');t.style.display=t.style.display==='none'?'block':'none';" style="padding:6px 14px;background:rgba(100,180,255,0.12);border:1px solid rgba(100,180,255,0.35);border-radius:4px;color:#90c8ff;font-size:12px;cursor:pointer;font-family:Cinzel,serif;">📋 Paste Text</button>
+        <span id="sheet-import-status" style="font-size:12px;color:var(--text-dim);"></span>
+      </div>
+      <div id="sheet-import-textwrap" style="display:none;">
+        <textarea id="sheet-import-text" placeholder="Paste your character sheet text here (from D&D Beyond, a PDF, anywhere)..." style="height:70px;width:100%;font-size:12px;"></textarea>
+        <button type="button" onclick="importSheetText()" style="margin-top:4px;padding:5px 14px;background:rgba(100,180,255,0.12);border:1px solid rgba(100,180,255,0.35);border-radius:4px;color:#90c8ff;font-size:11px;cursor:pointer;font-family:Cinzel,serif;">🤖 Parse Text</button>
+      </div>
+    </div>
     <div class="grid-2" style="gap:10px;margin-bottom:10px;">
       <div class="field-group"><label>Character Name</label><input id="pc-name" placeholder="Aldric Brightblade"></div>
       <div class="field-group"><label>Player Name</label><input id="pc-player" placeholder="John"></div>
@@ -134,6 +150,15 @@
     <div class="field-group" style="margin-bottom:10px;">
       <label>Key Abilities / Spells <span style="color:var(--text-dim);font-weight:normal;">(one per line)</span></label>
       <textarea id="pc-moves" placeholder="Action Surge — take an extra action&#10;Second Wind — bonus action, heal 1d10+level&#10;Sneak Attack — 3d6 extra damage" style="height:80px;"></textarea>
+    </div>
+    <!-- Structured Actions (powers playable combat on the Player View) -->
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <label style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:var(--text-dim);">COMBAT ACTIONS <span style="text-transform:none;letter-spacing:0;color:#666;">(lets players attack/heal from their view)</span></label>
+        <button type="button" onclick="addActionRow()" style="font-size:10px;padding:3px 10px;background:rgba(212,175,55,0.1);border:1px solid rgba(212,175,55,0.3);border-radius:3px;color:var(--gold);cursor:pointer;font-family:Cinzel,serif;">+ Add Action</button>
+      </div>
+      <div id="pc-actions-list"></div>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:4px;">e.g. Longsword · Attack · 5 ft · +6 to hit · 1d8+4 — or — Cure Wounds · Heal · 5 ft · 1d8+3</div>
     </div>
     <div style="margin-bottom:12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -308,6 +333,8 @@
       <button class="btn btn-ghost btn-sm" onclick="mapGenDungeon()">⚒ Dungeon</button>
       <button class="btn btn-ghost btn-sm" onclick="mapGenTavern()">🍺 Tavern</button>
       <button class="btn btn-ghost btn-sm" onclick="mapGenForest()">🌲 Forest</button>
+      <button class="btn btn-ghost btn-sm" onclick="mapGenTown()">🏘 Town</button>
+      <button class="btn btn-ghost btn-sm" onclick="mapAIRenameBuildings()" title="AI re-flavors all building names (needs API key)">✨ AI Names</button>
       <span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>
       <button class="btn btn-gold btn-sm" onclick="saveCurrentMap()">💾 Save Map</button>
     </div>
@@ -1394,6 +1421,7 @@ Use this space freely during your session. Notes auto-save in your browser."></t
 <script src="js/session.js"></script>
 <script src="js/sidebar.js"></script>
 <script src="js/map.js"></script>
+<script src="js/player-actions.js"></script>
 
 <!-- Firebase (module - loads after regular scripts) -->
 <script type="module" src="js/firebase.js"></script>
