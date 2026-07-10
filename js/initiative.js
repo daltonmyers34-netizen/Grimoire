@@ -371,6 +371,7 @@ function renderCombatants() {
       '</div>' +
       '<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">' +
         '<div style="display:flex;gap:3px;">' +
+          '<button onclick="dmOpenActMenu(' + c.id + ')" title="Act as this combatant (attacks/heals through the rules engine)" style="background:none;border:1px solid rgba(212,175,55,0.35);color:var(--gold);width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">⚔</button>' +
           '<button onclick="openHPModal(' + c.id + ')" title="Modify HP" style="background:none;border:1px solid var(--border);color:var(--text-dim);width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">❤</button>' +
           '<button onclick="openCondModal(' + c.id + ')" title="Add Condition" style="background:none;border:1px solid var(--border);color:var(--text-dim);width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">⚡</button>' +
           '<button onclick="toggleCombatantInspiration(' + c.id + ')" title="Toggle Inspiration" style="background:none;border:1px solid var(--border);color:' + (c.inspiration ? '#ffe066' : 'var(--text-dim)') + ';width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">★</button>' +
@@ -429,14 +430,27 @@ function applyHP(type) {
   if (!type) type = 'damage'; // default to damage if type is undefined
   var isDamage = type === 'damage';
   var prevHp = c.hp;
-  if (isDamage) c.hp = Math.max(0, c.hp - amount);
-  else          c.hp = Math.min(c.maxHp, c.hp + amount);
+  var defNote = '';
+  if (isDamage) {
+    // Typed damage runs through the defenses pipeline (resist/immune/vuln)
+    var dmgTypeEl = document.getElementById('hp-dmg-type');
+    var dmgType = dmgTypeEl ? dmgTypeEl.value : '';
+    if (typeof applyDamageWithDefenses === 'function') {
+      var def = applyDamageWithDefenses(c, amount, dmgType);
+      if (def.taken !== amount) defNote = ' (' + def.notes.join(', ') + ')';
+      amount = def.taken;
+    }
+    c.hp = Math.max(0, c.hp - amount);
+  } else {
+    c.hp = Math.min(c.maxHp, c.hp + amount);
+  }
   if (isDamage && amount > 0) checkConcentration(c, amount);
-  if (amount > 0) {
+  if (amount > 0 || defNote) {
     var r = window.currentRound || 0;
-    combatLog.unshift({ round: r || '—', text: isDamage ? c.name + ' took ' + amount + ' damage (' + prevHp + '→' + c.hp + ' HP)' : c.name + ' healed ' + amount + ' HP (' + prevHp + '→' + c.hp + ' HP)', type: isDamage ? 'damage' : 'heal', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) });
+    combatLog.unshift({ round: r || '—', text: isDamage ? c.name + ' took ' + amount + ' damage' + defNote + ' (' + prevHp + '→' + c.hp + ' HP)' : c.name + ' healed ' + amount + ' HP (' + prevHp + '→' + c.hp + ' HP)', type: isDamage ? 'damage' : 'heal', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) });
     if (combatLog.length > 200) combatLog.pop();
     renderCombatLog();
+    if (defNote) showToast('🛡 ' + c.name + ':' + defNote, 'info');
   }
   closeHPModal();
   renderCombatants();
@@ -478,7 +492,43 @@ function closeHPModal() {
 
 function openCondModal(id) {
   condTargetId = id;
+  renderDefenseChips();
   document.getElementById('cond-modal').classList.add('show');
+}
+
+// Defenses editor: resist / immune / vulnerable per damage type
+function renderDefenseChips() {
+  var wrap = document.getElementById('defense-chips');
+  var c = combatants.find(function(x) { return x.id === condTargetId; });
+  if (!wrap || !c) return;
+  var types = (typeof DAMAGE_TYPES !== 'undefined') ? DAMAGE_TYPES : [];
+  var rows = [
+    { key: 'resist', label: 'RESIST', color: '#90c8ff' },
+    { key: 'immune', label: 'IMMUNE', color: '#8fd050' },
+    { key: 'vuln',   label: 'VULN',   color: '#ff9090' }
+  ];
+  wrap.innerHTML = rows.map(function(row) {
+    var list = c[row.key] || [];
+    return '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:5px;">' +
+      '<span style="font-size:9px;font-family:Cinzel,serif;letter-spacing:0.08em;color:' + row.color + ';width:52px;flex-shrink:0;">' + row.label + '</span>' +
+      types.map(function(t) {
+        var on = list.indexOf(t) >= 0;
+        return '<button onclick="toggleDefense(\'' + row.key + '\',\'' + t + '\')" style="font-size:10px;padding:2px 7px;border-radius:3px;cursor:pointer;border:1px solid ' + (on ? row.color : 'rgba(255,255,255,0.12)') + ';background:' + (on ? row.color + '22' : 'rgba(0,0,0,0.25)') + ';color:' + (on ? row.color : '#666') + ';">' + t.slice(0, 5) + '</button>';
+      }).join('') +
+    '</div>';
+  }).join('');
+}
+
+function toggleDefense(key, type) {
+  var c = combatants.find(function(x) { return x.id === condTargetId; });
+  if (!c) return;
+  c[key] = c[key] || [];
+  var idx = c[key].indexOf(type);
+  if (idx >= 0) c[key].splice(idx, 1);
+  else c[key].push(type);
+  renderDefenseChips();
+  renderCombatants();
+  syncCombatState();
 }
 
 // Alias for openCondModal (spec compatibility)
@@ -753,21 +803,36 @@ function aoeSelectAll(type) {
 function applyAoE() {
   var amt  = parseInt(document.getElementById('aoe-amount').value) || 0;
   var type = document.querySelector('input[name="aoe-type"]:checked').value;
+  var dmgTypeEl = document.getElementById('aoe-dmg-type');
+  var dmgType = dmgTypeEl ? dmgTypeEl.value : '';
   if (!amt || !aoeSelected.size) { closeModal('modal-aoe'); return; }
+  var defNotes = [];
   aoeSelected.forEach(function(id) {
     var c = combatants.find(function(x) { return x.id === id; });
     if (!c) return;
     if (type === 'damage') {
-      c.hp = Math.max(0, c.hp - amt);
+      var taken = amt;
+      if (typeof applyDamageWithDefenses === 'function') {
+        var def = applyDamageWithDefenses(c, amt, dmgType);
+        taken = def.taken;
+        if (def.notes.length) defNotes.push(c.name + ': ' + def.notes.join(', '));
+      }
+      c.hp = Math.max(0, c.hp - taken);
       if (c.hp === 0) c.isDead = true;
+      if (taken > 0) checkConcentration(c, taken);
     } else {
       c.hp = Math.min(c.maxHp, c.hp + amt);
       if (c.hp > 0) { c.isDead = false; c.deathSuccess = 0; c.deathFail = 0; }
     }
   });
+  if (defNotes.length) {
+    combatLog.unshift({ round: currentRound || 0, text: '💥 AoE ' + (dmgType || '') + ' damage — ' + defNotes.join(' · '), type: 'damage', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) });
+    renderCombatLog();
+    showToast('🛡 Defenses applied: ' + defNotes.join(' · '), 'info');
+  }
   renderCombatants();
   syncCombatState();
-  showToast('💥 ' + (type === 'damage' ? 'Dealt' : 'Healed') + ' ' + amt + ' to ' + aoeSelected.size + ' target' + (aoeSelected.size > 1 ? 's' : ''), type === 'damage' ? 'danger' : 'success');
+  showToast('💥 ' + (type === 'damage' ? 'Dealt' : 'Healed') + ' ' + amt + (dmgType ? ' ' + dmgType : '') + ' to ' + aoeSelected.size + ' target' + (aoeSelected.size > 1 ? 's' : ''), type === 'damage' ? 'danger' : 'success');
   closeModal('modal-aoe');
 }
 

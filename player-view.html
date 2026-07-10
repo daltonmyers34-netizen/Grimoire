@@ -691,6 +691,64 @@ function distFt(a, b) {
   return straight * 5 + diag * 5 + Math.floor(diag / 2) * 5;
 }
 
+// Mirror of the DM engine's condition rules (kept in sync with player-actions.js)
+const PV_CONDITION_EFFECTS = {
+  'Prone':        { meleeAttackersAdv: true, rangedAttackersDis: true, selfDis: true, halfSpeed: true },
+  'Poisoned':     { selfDis: true },
+  'Blinded':      { attackersAdv: true, selfDis: true },
+  'Restrained':   { attackersAdv: true, selfDis: true, speedZero: true },
+  'Grappled':     { speedZero: true },
+  'Paralyzed':    { attackersAdv: true, autoCritMelee: true, cantAct: true, speedZero: true },
+  'Stunned':      { attackersAdv: true, cantAct: true, speedZero: true },
+  'Unconscious':  { attackersAdv: true, autoCritMelee: true, cantAct: true, speedZero: true },
+  'Incapacitated':{ cantAct: true },
+  'Invisible':    { attackersDis: true, selfAdv: true },
+  'Frightened':   { selfDis: true },
+  'Petrified':    { attackersAdv: true, cantAct: true, speedZero: true },
+  'Exhaustion':   { selfDis: true }
+};
+
+function pvCanAct(c) {
+  for (const cn of (c.conditions || [])) {
+    const eff = PV_CONDITION_EFFECTS[cn];
+    if (eff && eff.cantAct) return { ok: false, reason: cn };
+  }
+  if (c.hp <= 0) return { ok: false, reason: 'at 0 HP' };
+  return { ok: true };
+}
+
+function pvSpeedFt(c, baseFt) {
+  let speed = baseFt || 30;
+  for (const cn of (c.conditions || [])) {
+    const eff = PV_CONDITION_EFFECTS[cn];
+    if (!eff) continue;
+    if (eff.speedZero) return 0;
+    if (eff.halfSpeed) speed = Math.floor(speed / 2);
+  }
+  return speed;
+}
+
+// Advantage/disadvantage preview so the player knows HOW to roll
+function pvAttackContext(attacker, target, action) {
+  const isMelee = (parseInt(action.range) || 5) <= 5;
+  let adv = false, dis = false;
+  const notes = [];
+  (attacker.conditions || []).forEach(cn => {
+    const eff = PV_CONDITION_EFFECTS[cn]; if (!eff) return;
+    if (eff.selfDis) { dis = true; notes.push('you are ' + cn.toLowerCase()); }
+    if (eff.selfAdv) { adv = true; notes.push('you are ' + cn.toLowerCase()); }
+  });
+  (target.conditions || []).forEach(cn => {
+    const eff = PV_CONDITION_EFFECTS[cn]; if (!eff) return;
+    if (eff.attackersAdv) { adv = true; notes.push('target is ' + cn.toLowerCase()); }
+    if (eff.attackersDis) { dis = true; notes.push('target is ' + cn.toLowerCase()); }
+    if (eff.meleeAttackersAdv && isMelee) { adv = true; notes.push('target is ' + cn.toLowerCase() + ' (melee)'); }
+    if (eff.rangedAttackersDis && !isMelee) { dis = true; notes.push('target is ' + cn.toLowerCase() + ' (ranged)'); }
+  });
+  const net = (adv && dis) ? 0 : adv ? 1 : dis ? -1 : 0;
+  return { net, notes };
+}
+
 async function sendPlayerRequest(payload) {
   try {
     await addDoc(collection(db, 'playerActions', dmUid, 'requests'), payload);
@@ -708,6 +766,12 @@ function useAction(actionIdx) {
   const pc = myPC(d), me = myCombatant(d);
   const a = (pc.actions || [])[actionIdx];
   if (!a) return;
+  const can = pvCanAct(me);
+  if (!can.ok) {
+    showOverlay('<div style="text-align:center;font-size:15px;color:#e05050;">You can\'t act — you are ' + esc(can.reason) + '.</div>' +
+      '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCloseOverlay()">OK</button>');
+    return;
+  }
   const m = d.mapState || null;
   const myPos = m && m.tokens ? m.tokens[me.id] : null;
 
@@ -750,15 +814,38 @@ function useAction(actionIdx) {
         sendPlayerRequest({ type: 'action', combatantId: me.id, targetId, action: a, ts: Date.now() });
         showWaiting('❤ Casting ' + a.name + '...');
       } else {
-        askForRoll(a, me.id, targetId);
+        const target = (d.combatants || []).find(c => c.id === targetId);
+        askForRoll(a, me.id, targetId, target ? pvAttackContext(me, target, a) : { net: 0, notes: [] });
       }
     });
   });
 }
 window._pvUseAction = useAction;
 
-function askForRoll(a, myId, targetId) {
-  const html =
+function endMyTurn() {
+  const d = latestData;
+  if (!d || !isMyTurn(d)) return;
+  const me = myCombatant(d);
+  sendPlayerRequest({ type: 'endTurn', combatantId: me.id, ts: Date.now() });
+  moveSelecting = false;
+}
+window._pvEndTurn = endMyTurn;
+
+function askForRoll(a, myId, targetId, ctx) {
+  ctx = ctx || { net: 0, notes: [] };
+  let advBanner = '';
+  if (ctx.net > 0) {
+    advBanner = '<div style="background:rgba(76,175,80,0.12);border:1px solid rgba(76,175,80,0.45);border-radius:6px;padding:8px 12px;margin-bottom:12px;text-align:center;">' +
+      '<div style="font-family:Cinzel,serif;font-size:14px;color:#6fdc75;font-weight:700;">⬆ ADVANTAGE</div>' +
+      '<div style="font-size:12px;color:var(--text-dim);">' + esc(ctx.notes.join(', ')) + '<br>Roll <strong style="color:#6fdc75;">two d20s</strong> and enter the <strong>higher</strong>.</div></div>';
+  } else if (ctx.net < 0) {
+    advBanner = '<div style="background:rgba(224,80,80,0.12);border:1px solid rgba(224,80,80,0.45);border-radius:6px;padding:8px 12px;margin-bottom:12px;text-align:center;">' +
+      '<div style="font-family:Cinzel,serif;font-size:14px;color:#ff8080;font-weight:700;">⬇ DISADVANTAGE</div>' +
+      '<div style="font-size:12px;color:var(--text-dim);">' + esc(ctx.notes.join(', ')) + '<br>Roll <strong style="color:#ff8080;">two d20s</strong> and enter the <strong>lower</strong>.</div></div>';
+  } else if (ctx.notes.length) {
+    advBanner = '<div style="font-size:12px;color:var(--text-dim);text-align:center;margin-bottom:10px;">' + esc(ctx.notes.join(', ')) + ' — roll normally.</div>';
+  }
+  const html = advBanner +
     '<div style="font-family:Cinzel,serif;font-size:17px;color:var(--gold);margin-bottom:10px;text-align:center;">🎲 Roll your d20!</div>' +
     '<div style="font-size:13px;color:var(--text-dim);text-align:center;margin-bottom:14px;">Roll a real d20 and enter the <strong style="color:var(--parchment);">raw number</strong> — no modifiers, we\'ll add your +' + a.bonus + ' for you.</div>' +
     '<input id="pv-roll-input" type="number" min="1" max="20" placeholder="1–20" style="width:100%;font-size:28px;text-align:center;padding:10px;background:rgba(0,0,0,0.4);border:2px solid rgba(212,175,55,0.4);border-radius:8px;color:var(--parchment);font-family:Cinzel,serif;margin-bottom:12px;">' +
@@ -821,11 +908,19 @@ function showActionResult(r) {
     inner += '<div style="font-size:12px;color:var(--text-dim);opacity:0;animation:pvSlideIn 0.4s ease-out 1.0s forwards;">vs AC ' + r.targetAC + '</div>';
     inner += '<div class="pv-verdict" style="color:' + (r.hit ? '#4caf50' : '#e05050') + ';">' +
       (r.crit ? '💥 CRITICAL HIT!' : r.hit ? '⚔ HIT!' : '🛡 MISS') +
-      (r.hit && r.amount ? '<div style="font-size:17px;margin-top:4px;">' + r.amount + ' damage</div>' : '') +
+      (r.hit && r.amount !== undefined ? '<div style="font-size:17px;margin-top:4px;">' + r.amount + (r.damageType ? ' ' + esc(r.damageType) : '') + ' damage</div>' : '') +
     '</div>';
   } else {
     inner += '<div class="pv-roll-num" style="color:#64b4ff;">+' + r.amount + '</div>';
     inner += '<div class="pv-verdict" style="color:#64b4ff;">❤ HEALED</div>';
+  }
+  // Engine notes: resistances, saves, conditions applied
+  if (r.notes && r.notes.length) {
+    inner += '<div style="font-size:12px;color:var(--text-secondary);margin-top:10px;opacity:0;animation:pvSlideIn 0.4s ease-out 1.9s forwards;max-width:280px;">' +
+      r.notes.map(n => '• ' + esc(n)).join('<br>') + '</div>';
+  }
+  if (r.appliedCondition) {
+    inner += '<div style="font-family:Cinzel,serif;font-size:15px;color:#ffb450;margin-top:8px;opacity:0;animation:pvSlideIn 0.4s ease-out 2.2s forwards;">⚡ ' + esc(r.target) + ' is ' + esc(r.appliedCondition) + '!</div>';
   }
   inner += '</div>';
   wrap.innerHTML = inner;
@@ -849,9 +944,17 @@ function bindMapInteraction() {
     const x = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / m.cell);
     const y = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / m.cell);
 
+    const pc = myPC(d);
+    const speed = pvSpeedFt(me, (pc && pc.speed) || 30);
+
     if (!moveSelecting) {
       // First tap must land on your own token
       if (x === myPos.x && y === myPos.y) {
+        if (speed === 0) {
+          showOverlay('<div style="text-align:center;font-size:15px;color:#e05050;">You can\'t move — ' + esc((me.conditions || []).join(', ') || 'speed 0') + '.</div>' +
+            '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCloseOverlay()">OK</button>');
+          return;
+        }
         moveSelecting = true;
         drawPlayerMap(d);
       }
@@ -861,13 +964,13 @@ function bindMapInteraction() {
     moveSelecting = false;
     if (x === myPos.x && y === myPos.y) { drawPlayerMap(d); return; }
     const ft = distFt(myPos, { x, y });
-    if (ft > MOVE_SPEED_FT) {
+    if (ft > speed) {
       drawPlayerMap(d);
-      showOverlay('<div style="text-align:center;font-size:15px;color:#e05050;">That\'s ' + ft + ' ft — your speed is ' + MOVE_SPEED_FT + ' ft.</div>' +
+      showOverlay('<div style="text-align:center;font-size:15px;color:#e05050;">That\'s ' + ft + ' ft — your speed is ' + speed + ' ft' + (speed < ((pc && pc.speed) || 30) ? ' (' + esc((me.conditions || []).join(', ')) + ')' : '') + '.</div>' +
         '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCloseOverlay()">OK</button>');
       return;
     }
-    sendPlayerRequest({ type: 'move', combatantId: me.id, x, y, ts: Date.now() });
+    sendPlayerRequest({ type: 'move', combatantId: me.id, x, y, baseSpeed: (pc && pc.speed) || 30, ts: Date.now() });
     showWaiting('🥾 Moving ' + ft + ' ft...');
     drawPlayerMap(d);
   });
@@ -994,9 +1097,11 @@ function renderTwoColumnView(d) {
     if (personalMsg) html += '<div class="msg-banner personal-msg">📨 <strong>DM to You:</strong> ' + esc(personalMsg) + '</div>';
   }
 
-  // YOUR TURN banner
+  // YOUR TURN banner + End Turn
   if (isMyTurn(d)) {
-    html += '<div class="your-turn-banner">⚔ YOUR TURN — move on the Map tab or use an action below</div>';
+    html += '<div class="your-turn-banner">⚔ YOUR TURN — move on the Map tab or use an action below' +
+      '<div style="margin-top:8px;"><button class="btn-pv" style="font-size:12px;border-color:var(--gold);" onclick="_pvEndTurn()">⏭ End My Turn</button></div>' +
+    '</div>';
   }
 
   // Tab toggle \u2014 Initiative shows when combat exists, Map shows when the DM has a map
@@ -1254,7 +1359,7 @@ function renderMapPanel(d) {
   const myTurn = isMyTurn(d);
   return '<div class="card">' +
     '<div class="card-section-label">Battle Map <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(live from your DM — each square is 5 ft)</span></div>' +
-    (myTurn ? '<div style="font-size:13px;color:var(--gold-light);margin-bottom:8px;">⚔ Your turn: tap your token, then tap where you want to move (up to ' + MOVE_SPEED_FT + ' ft).</div>' : '') +
+    (myTurn ? '<div style="font-size:13px;color:var(--gold-light);margin-bottom:8px;">⚔ Your turn: tap your token, then tap where you want to move (up to ' + pvSpeedFt(myCombatant(d) || {}, (myPC(d) || {}).speed || 30) + ' ft).</div>' : '') +
     '<div style="border:1px solid rgba(212,175,55,0.25);border-radius:8px;background:#0a0603;">' +
       '<canvas id="pv-map-canvas" style="display:block;width:100%;height:auto;"></canvas>' +
     '</div>' +
@@ -1436,10 +1541,11 @@ function drawPlayerMap(d) {
   if (moveSelecting && isMyTurn(d)) {
     const me = myCombatant(d);
     const myPos = me ? (m.tokens || {})[me.id] : null;
+    const pcSpd = pvSpeedFt(me, (myPC(d) || {}).speed || 30);
     if (myPos) {
       for (let yy = 0; yy < m.rows; yy++) {
         for (let xx = 0; xx < m.cols; xx++) {
-          if (distFt(myPos, { x: xx, y: yy }) <= MOVE_SPEED_FT) {
+          if (distFt(myPos, { x: xx, y: yy }) <= pcSpd) {
             ctx.fillStyle = 'rgba(212,175,55,0.12)';
             ctx.fillRect(xx * m.cell, yy * m.cell, m.cell, m.cell);
           }

@@ -135,6 +135,7 @@
       <div class="field-group"><label>Max HP</label><input id="pc-maxhp" type="number" placeholder="10"></div>
       <div class="field-group"><label>AC</label><input id="pc-ac" type="number" placeholder="14"></div>
       <div class="field-group"><label>Initiative Bonus</label><input id="pc-init-bonus" type="number" placeholder="2" value="0"></div>
+      <div class="field-group"><label>Speed (ft)</label><input id="pc-speed" type="number" placeholder="30" value="30"></div>
     </div>
     <div style="margin-bottom:10px;">
       <label style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:var(--text-dim);">ABILITY SCORES</label>
@@ -223,6 +224,7 @@
   <div class="battle-controls">
     <button class="btn btn-gold" onclick="startCombat()">▶ Start Combat</button>
     <button class="btn btn-ghost" onclick="nextTurn()">Next Turn ▷</button>
+    <button class="btn btn-ghost" id="undo-action-btn" onclick="undoLastAction()" style="display:none;border-color:rgba(255,180,80,0.4);color:#ffb450;">↶ Undo Action</button>
     <button class="btn btn-ghost" onclick="resetCombat()">↺ Reset</button>
     <button class="btn btn-blood" onclick="openEncounterModal()" style="margin-left:auto;">⚡ Random Encounter</button>
     <span id="turn-indicator" style="font-family:'Cinzel',serif;font-size:13px;color:var(--gold-light);"></span>
@@ -391,9 +393,21 @@
 <div class="modal-overlay" id="hp-modal">
   <div class="modal">
     <h3 id="modal-title">Modify HP</h3>
-    <div class="field-group">
-      <label>Amount</label>
-      <input id="hp-amount" type="number" placeholder="0" value="" onkeypress="if(event.key==='Enter')applyHP()">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="field-group">
+        <label>Amount</label>
+        <input id="hp-amount" type="number" placeholder="0" value="" onkeypress="if(event.key==='Enter')applyHP()">
+      </div>
+      <div class="field-group">
+        <label>Damage Type <span style="color:var(--text-dim);font-weight:normal;">(auto-applies defenses)</span></label>
+        <select id="hp-dmg-type">
+          <option value="">Untyped</option>
+          <option value="slashing">Slashing</option><option value="piercing">Piercing</option><option value="bludgeoning">Bludgeoning</option>
+          <option value="fire">Fire</option><option value="cold">Cold</option><option value="lightning">Lightning</option>
+          <option value="thunder">Thunder</option><option value="poison">Poison</option><option value="acid">Acid</option>
+          <option value="necrotic">Necrotic</option><option value="radiant">Radiant</option><option value="force">Force</option><option value="psychic">Psychic</option>
+        </select>
+      </div>
     </div>
     <div class="modal-btns">
       <button class="btn btn-blood" onclick="applyHP('damage')">💔 Damage</button>
@@ -425,7 +439,12 @@
       <button class="btn btn-ghost btn-sm" onclick="addCondition('Unconscious')">Unconscious</button>
       <button class="btn btn-ghost btn-sm" onclick="addCondition('Concentration')">Concentration</button>
     </div>
-    <button class="btn btn-ghost" onclick="closeCondModal()">Close</button>
+    <!-- Defenses: resistances / immunities / vulnerabilities -->
+    <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px;">
+      <div style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:8px;">🛡 DEFENSES <span style="text-transform:none;letter-spacing:0;color:#666;">— click to toggle; attacks auto-adjust</span></div>
+      <div id="defense-chips"></div>
+    </div>
+    <button class="btn btn-ghost" onclick="closeCondModal()" style="margin-top:10px;">Close</button>
   </div>
 </div>
 
@@ -1300,9 +1319,21 @@ Use this space freely during your session. Notes auto-save in your browser."></t
   <div class="modal-box">
     <h3 class="modal-title">💥 AoE Damage</h3>
     <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">Select targets and apply damage or effects to all at once.</p>
-    <div class="field-group">
-      <label>Damage Amount</label>
-      <input id="aoe-amount" type="number" placeholder="0" value="">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="field-group">
+        <label>Damage Amount</label>
+        <input id="aoe-amount" type="number" placeholder="0" value="">
+      </div>
+      <div class="field-group">
+        <label>Damage Type</label>
+        <select id="aoe-dmg-type">
+          <option value="">Untyped</option>
+          <option value="fire">Fire</option><option value="cold">Cold</option><option value="lightning">Lightning</option>
+          <option value="thunder">Thunder</option><option value="poison">Poison</option><option value="acid">Acid</option>
+          <option value="necrotic">Necrotic</option><option value="radiant">Radiant</option><option value="force">Force</option>
+          <option value="psychic">Psychic</option><option value="slashing">Slashing</option><option value="piercing">Piercing</option><option value="bludgeoning">Bludgeoning</option>
+        </select>
+      </div>
     </div>
     <div class="field-group" style="margin-top:8px;">
       <label>Targets</label>
