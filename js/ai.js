@@ -509,8 +509,7 @@ function saveGeneratedLocation() {
     secret: loc.secret || '',
     hook: loc.encounter_hook || ''
   };
-  if (!window.locations) window.locations = [];
-  window.locations.push(newLoc);
+  locations.push(newLoc);
   if (typeof renderLocations === 'function') renderLocations();
   if (window.cloudSave) window.cloudSave();
   const btn = document.querySelector('[onclick="saveGeneratedLocation()"]');
