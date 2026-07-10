@@ -907,8 +907,8 @@ function renderInitiativePanel(d) {
 function renderMapPanel(d) {
   return '<div class="card">' +
     '<div class="card-section-label">Battle Map <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(live from your DM — each square is 5 ft)</span></div>' +
-    '<div style="overflow-x:auto;border:1px solid rgba(212,175,55,0.25);border-radius:8px;background:#0a0603;">' +
-      '<canvas id="pv-map-canvas" style="display:block;"></canvas>' +
+    '<div style="border:1px solid rgba(212,175,55,0.25);border-radius:8px;background:#0a0603;">' +
+      '<canvas id="pv-map-canvas" style="display:block;width:100%;height:auto;"></canvas>' +
     '</div>' +
   '</div>';
 }
@@ -986,13 +986,27 @@ function drawPlayerMap(d) {
     ctx.fillText((p.r * 5) + 'ft', acx, acy);
   });
 
-  // Props
+  // Props (with parchment base plates so dark icons stay visible)
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   (m.props || []).forEach(p => {
     if (p.kind === 'aoe') return;
-    ctx.font = Math.floor(m.cell * (p.size || 0.8)) + 'px serif';
-    ctx.fillText(p.icon, (p.x + 0.5) * m.cell, (p.y + 0.55) * m.cell);
+    const span = p.cells || 1;
+    const pcx = (p.x + span / 2) * m.cell;
+    const pcy = (p.y + span / 2) * m.cell;
+    const br = m.cell * span * 0.44;
+    const grad = ctx.createRadialGradient(pcx, pcy, br * 0.2, pcx, pcy, br);
+    grad.addColorStop(0, 'rgba(232,218,184,0.34)');
+    grad.addColorStop(1, 'rgba(232,218,184,0.06)');
+    ctx.beginPath();
+    ctx.arc(pcx, pcy, br, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.font = Math.floor(m.cell * span * (p.size || 0.8)) + 'px serif';
+    ctx.fillText(p.icon, pcx, pcy + m.cell * span * 0.05);
   });
 
   // Tokens — hidden combatants never render for players

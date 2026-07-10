@@ -120,9 +120,13 @@ function drawMapMeasure(ctx, m) {
   ctx.setLineDash([8, 5]);
   ctx.stroke();
   ctx.setLineDash([]);
-  // 5e standard: diagonals count 5 ft (Chebyshev distance)
-  var sq = Math.max(Math.abs(mapMeasure.x1 - mapMeasure.x0), Math.abs(mapMeasure.y1 - mapMeasure.y0));
-  var label = (sq * 5) + ' ft';
+  // 5-10-5 variant rule: diagonals alternate 5 ft, 10 ft, 5 ft...
+  var dx = Math.abs(mapMeasure.x1 - mapMeasure.x0);
+  var dy = Math.abs(mapMeasure.y1 - mapMeasure.y0);
+  var diag = Math.min(dx, dy);
+  var straight = Math.max(dx, dy) - diag;
+  var ft = straight * 5 + diag * 5 + Math.floor(diag / 2) * 5;
+  var label = ft + ' ft';
   var mx = (x0 + x1) / 2, my = (y0 + y1) / 2 - 12;
   ctx.font = 'bold 15px Cinzel, serif';
   ctx.textAlign = 'center';
@@ -169,8 +173,23 @@ function drawMapProps(ctx, m) {
   ctx.textBaseline = 'middle';
   (m.props || []).forEach(function(p) {
     if (p.kind === 'aoe') return; // drawn in drawMapAoE
-    ctx.font = Math.floor(m.cell * (p.size || 0.8)) + 'px serif';
-    ctx.fillText(p.icon, (p.x + 0.5) * m.cell, (p.y + 0.55) * m.cell);
+    var span = p.cells || 1;
+    var cx = (p.x + span / 2) * m.cell;
+    var cy = (p.y + span / 2) * m.cell;
+    // Parchment base plate so dark icons stay visible on dark ground
+    var br = m.cell * span * 0.44;
+    var grad = ctx.createRadialGradient(cx, cy, br * 0.2, cx, cy, br);
+    grad.addColorStop(0, 'rgba(232,218,184,0.34)');
+    grad.addColorStop(1, 'rgba(232,218,184,0.06)');
+    ctx.beginPath();
+    ctx.arc(cx, cy, br, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.font = Math.floor(m.cell * span * (p.size || 0.8)) + 'px serif';
+    ctx.fillText(p.icon, cx, cy + m.cell * span * 0.05);
   });
 }
 
@@ -370,9 +389,21 @@ function mapHitToken(pt) {
 function mapHitProp(pt) {
   var props = mapState.props || [];
   for (var i = props.length - 1; i >= 0; i--) {
-    if (props[i].x === pt.x && props[i].y === pt.y) return props[i];
+    var p = props[i];
+    var span = p.kind === 'aoe' ? 1 : (p.cells || 1);
+    if (pt.x >= p.x && pt.x < p.x + span && pt.y >= p.y && pt.y < p.y + span) return p;
   }
   return null;
+}
+
+function mapResizeProp(p, delta) {
+  if (p.kind === 'aoe') return;
+  var next = Math.max(1, Math.min(4, (p.cells || 1) + delta));
+  if (next === (p.cells || 1)) return;
+  p.cells = next;
+  renderMap();
+  syncMapState();
+  showToast(p.icon + ' now ' + next + '×' + next + ' (' + (next * 5) + ' ft)', 'info');
 }
 
 function mapPaintFog(pt, reveal) {
@@ -503,6 +534,25 @@ function initMapTab() {
         renderMap();
         syncMapState();
       }
+    });
+    // Scroll wheel over a prop resizes it (1×1 up to 4×4)
+    canvas.addEventListener('wheel', function(e) {
+      var pt = mapEventCell(e);
+      var hit = mapHitProp(pt);
+      if (!hit || hit.kind === 'aoe') return; // let the page scroll normally
+      e.preventDefault();
+      mapResizeProp(hit, e.deltaY < 0 ? 1 : -1);
+    }, { passive: false });
+    // Double-click cycles prop size (touch-friendly fallback)
+    canvas.addEventListener('dblclick', function(e) {
+      var pt = mapEventCell(e);
+      var hit = mapHitProp(pt);
+      if (!hit || hit.kind === 'aoe') return;
+      var next = (hit.cells || 1) >= 4 ? 1 : (hit.cells || 1) + 1;
+      hit.cells = next;
+      renderMap();
+      syncMapState();
+      showToast(hit.icon + ' now ' + next + '×' + next + ' (' + (next * 5) + ' ft)', 'info');
     });
     // Build prop palette
     var palette = document.getElementById('map-prop-palette');
