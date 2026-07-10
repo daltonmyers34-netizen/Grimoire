@@ -402,6 +402,7 @@ function openAddPlayerModal() {
   document.getElementById('pc-maxhp').value = '';
   document.getElementById('pc-ac').value = '';
   document.getElementById('pc-init-bonus').value = 0;
+  var spReset = document.getElementById('pc-speed'); if (spReset) spReset.value = 30;
   ['str','dex','con','int','wis','cha'].forEach(function(s) { document.getElementById('pc-' + s).value = 10; });
   populateSkillsGrid({});
   populateActionRows([]);
@@ -409,23 +410,46 @@ function openAddPlayerModal() {
 }
 
 // ─── Structured combat actions ───────────────────────────────
+var ACTION_DMG_TYPES = ['slashing','piercing','bludgeoning','fire','cold','lightning','thunder','poison','acid','necrotic','radiant','force','psychic'];
+var ACTION_CONDITIONS = ['Prone','Poisoned','Blinded','Restrained','Grappled','Paralyzed','Stunned','Frightened','Incapacitated'];
+
 function addActionRow(a) {
   a = a || {};
   var list = document.getElementById('pc-actions-list');
   if (!list) return;
   var row = document.createElement('div');
   row.className = 'pc-action-row';
-  row.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 62px 62px 1fr 26px;gap:5px;margin-bottom:5px;align-items:center;';
+  row.style.cssText = 'border:1px solid rgba(255,255,255,0.08);border-radius:5px;padding:6px;margin-bottom:6px;background:rgba(0,0,0,0.2);';
+  var dmgOptions = '<option value="">untyped</option>' + ACTION_DMG_TYPES.map(function(t) {
+    return '<option value="' + t + '"' + (a.damageType === t ? ' selected' : '') + '>' + t + '</option>';
+  }).join('');
+  var condOptions = '<option value="">no effect</option>' + ACTION_CONDITIONS.map(function(cn) {
+    return '<option value="' + cn + '"' + (a.applyCondition === cn ? ' selected' : '') + '>' + cn + '</option>';
+  }).join('');
+  var abilityOptions = '<option value="">—</option>' + ['str','dex','con','int','wis','cha'].map(function(ab) {
+    return '<option value="' + ab + '"' + (a.saveAbility === ab ? ' selected' : '') + '>' + ab.toUpperCase() + '</option>';
+  }).join('');
   row.innerHTML =
-    '<input class="pa-name" placeholder="Longsword" value="' + (a.name || '').replace(/"/g, '&quot;') + '" style="font-size:13px;padding:5px;">' +
-    '<select class="pa-kind" style="font-size:12px;padding:5px;">' +
-      '<option value="attack"' + (a.kind !== 'heal' ? ' selected' : '') + '>⚔ Attack</option>' +
-      '<option value="heal"' + (a.kind === 'heal' ? ' selected' : '') + '>❤ Heal</option>' +
-    '</select>' +
-    '<input class="pa-range" type="number" placeholder="5" title="Range in feet" value="' + (a.range || '') + '" style="font-size:13px;padding:5px;text-align:center;">' +
-    '<input class="pa-bonus" type="number" placeholder="+0" title="To-hit bonus (attacks only)" value="' + (a.bonus !== undefined && a.bonus !== null && a.bonus !== '' ? a.bonus : '') + '" style="font-size:13px;padding:5px;text-align:center;">' +
-    '<input class="pa-dice" placeholder="1d8+4" title="Damage or healing dice" value="' + (a.dice || '').replace(/"/g, '&quot;') + '" style="font-size:13px;padding:5px;">' +
-    '<button type="button" onclick="this.parentElement.remove()" style="background:none;border:1px solid var(--border);color:var(--blood-light);border-radius:3px;cursor:pointer;height:26px;font-size:12px;">✕</button>';
+    '<div style="display:grid;grid-template-columns:2fr 1fr 58px 58px 1fr 26px;gap:5px;align-items:center;margin-bottom:4px;">' +
+      '<input class="pa-name" placeholder="Longsword" value="' + (a.name || '').replace(/"/g, '&quot;') + '" style="font-size:13px;padding:5px;">' +
+      '<select class="pa-kind" style="font-size:12px;padding:5px;">' +
+        '<option value="attack"' + (a.kind !== 'heal' ? ' selected' : '') + '>⚔ Attack</option>' +
+        '<option value="heal"' + (a.kind === 'heal' ? ' selected' : '') + '>❤ Heal</option>' +
+      '</select>' +
+      '<input class="pa-range" type="number" placeholder="5" title="Range in feet" value="' + (a.range || '') + '" style="font-size:13px;padding:5px;text-align:center;">' +
+      '<input class="pa-bonus" type="number" placeholder="+0" title="To-hit bonus (attacks only)" value="' + (a.bonus !== undefined && a.bonus !== null && a.bonus !== '' ? a.bonus : '') + '" style="font-size:13px;padding:5px;text-align:center;">' +
+      '<input class="pa-dice" placeholder="1d8+4" title="Damage or healing dice" value="' + (a.dice || '').replace(/"/g, '&quot;') + '" style="font-size:13px;padding:5px;">' +
+      '<button type="button" onclick="this.closest(\'.pc-action-row\').remove()" style="background:none;border:1px solid var(--border);color:var(--blood-light);border-radius:3px;cursor:pointer;height:26px;font-size:12px;">✕</button>' +
+    '</div>' +
+    '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;">' +
+      '<span style="font-size:10px;color:var(--text-dim);">type</span>' +
+      '<select class="pa-dmgtype" title="Damage type — resistances and immunities auto-apply" style="font-size:11px;padding:3px;">' + dmgOptions + '</select>' +
+      '<span style="font-size:10px;color:var(--text-dim);margin-left:6px;">on hit</span>' +
+      '<select class="pa-condition" title="Condition inflicted on hit" style="font-size:11px;padding:3px;">' + condOptions + '</select>' +
+      '<span style="font-size:10px;color:var(--text-dim);">save</span>' +
+      '<select class="pa-saveability" title="Saving throw ability to resist the condition" style="font-size:11px;padding:3px;">' + abilityOptions + '</select>' +
+      '<input class="pa-savedc" type="number" placeholder="DC" title="Save DC" value="' + (a.saveDC || '') + '" style="font-size:11px;padding:3px;width:46px;text-align:center;">' +
+    '</div>';
   list.appendChild(row);
 }
 
@@ -441,13 +465,18 @@ function collectActions() {
   document.querySelectorAll('#pc-actions-list .pc-action-row').forEach(function(row) {
     var name = row.querySelector('.pa-name').value.trim();
     if (!name) return;
-    out.push({
+    var a = {
       name: name,
       kind: row.querySelector('.pa-kind').value,
       range: parseInt(row.querySelector('.pa-range').value) || 5,
       bonus: parseInt(row.querySelector('.pa-bonus').value) || 0,
       dice: row.querySelector('.pa-dice').value.trim() || '1d6'
-    });
+    };
+    var dt = row.querySelector('.pa-dmgtype'); if (dt && dt.value) a.damageType = dt.value;
+    var cond = row.querySelector('.pa-condition'); if (cond && cond.value) a.applyCondition = cond.value;
+    var sa = row.querySelector('.pa-saveability'); if (sa && sa.value) a.saveAbility = sa.value;
+    var dc = row.querySelector('.pa-savedc'); if (dc && dc.value) a.saveDC = parseInt(dc.value) || 0;
+    out.push(a);
   });
   return out;
 }
@@ -527,6 +556,7 @@ function editPlayer(id) {
   document.getElementById('pc-maxhp').value = pc.maxhp || '';
   document.getElementById('pc-ac').value = pc.ac || '';
   document.getElementById('pc-init-bonus').value = pc.initBonus || 0;
+  var spEl = document.getElementById('pc-speed'); if (spEl) spEl.value = pc.speed || 30;
   document.getElementById('pc-str').value = pc.str || 10;
   document.getElementById('pc-dex').value = pc.dex || 10;
   document.getElementById('pc-con').value = pc.con || 10;
@@ -562,6 +592,7 @@ function savePlayer() {
     maxhp: parseInt(document.getElementById('pc-maxhp').value) || 10,
     ac: parseInt(document.getElementById('pc-ac').value) || 10,
     initBonus: parseInt(document.getElementById('pc-init-bonus').value) || 0,
+    speed: parseInt(document.getElementById('pc-speed').value) || 30,
     str: parseInt(document.getElementById('pc-str').value) || 10,
     dex: parseInt(document.getElementById('pc-dex').value) || 10,
     con: parseInt(document.getElementById('pc-con').value) || 10,
@@ -570,6 +601,9 @@ function savePlayer() {
     cha: parseInt(document.getElementById('pc-cha').value) || 10,
     moves: document.getElementById('pc-moves').value,
     actions: collectActions(),
+    resist: (window._importedDefenses && window._importedDefenses.resist) || (existingPC && existingPC.resist) || [],
+    immune: (window._importedDefenses && window._importedDefenses.immune) || (existingPC && existingPC.immune) || [],
+    vuln: (window._importedDefenses && window._importedDefenses.vuln) || (existingPC && existingPC.vuln) || [],
     skills: collectSkillsFromGrid(),
     spellSlots: (function() {
       var cls = document.getElementById('pc-class').value;
@@ -612,6 +646,7 @@ function savePlayer() {
   } else {
     party.push(pc);
   }
+  window._importedDefenses = null;
   savePartyStorage();
   renderParty();
   closePlayerModal();
@@ -640,7 +675,8 @@ function addPCToInitiative(id) {
   init = isNaN(parsed) ? Math.floor(Math.random() * 20) + 1 + dexMod : parsed + dexMod;
   init = Math.max(1, init);
   if (!combatants.find(function(x) { return x.name === pc.name && x.type === 'ally'; })) {
-    combatants.push({id: uniqueId(), name: pc.name, init: init, hp: pc.maxhp || 20, maxHp: pc.maxhp || 20, ac: pc.ac || 14, type: 'ally', conditions: []});
+    combatants.push({id: uniqueId(), name: pc.name, init: init, hp: pc.maxhp || 20, maxHp: pc.maxhp || 20, ac: pc.ac || 14, type: 'ally', conditions: [],
+      resist: pc.resist || [], immune: pc.immune || [], vuln: pc.vuln || []});
     combatants.sort(function(a,b) { return b.init - a.init; });
     renderCombatants();
   }
@@ -707,7 +743,8 @@ function commitInitRolls() {
     var raw = parseInt(el ? el.value : '');
     var init = isNaN(raw) ? Math.floor(Math.random() * 20) + 1 + (pc.initBonus || 0) : raw;
     if (!combatants.find(function(x) { return x.name === pc.name && x.type === 'ally'; })) {
-      combatants.push({id: uniqueId(), name: pc.name, init: init, hp: pc.maxhp || 20, maxHp: pc.maxhp || 20, ac: pc.ac || 14, type: 'ally', conditions: []});
+      combatants.push({id: uniqueId(), name: pc.name, init: init, hp: pc.maxhp || 20, maxHp: pc.maxhp || 20, ac: pc.ac || 14, type: 'ally', conditions: [],
+      resist: pc.resist || [], immune: pc.immune || [], vuln: pc.vuln || []});
       added++;
     }
   });

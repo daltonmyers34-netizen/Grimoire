@@ -308,10 +308,13 @@ var SHEET_PARSE_PROMPT =
   ' "str":10,"dex":10,"con":10,"int":10,"wis":10,"cha":10,' +
   ' "skills":{"acrobatics":0,"animal_handling":0,"arcana":0,"athletics":0,"deception":0,"history":0,"insight":0,"intimidation":0,"investigation":0,"medicine":0,"nature":0,"perception":0,"performance":0,"persuasion":0,"religion":0,"sleight_of_hand":0,"stealth":0,"survival":0},' +
   ' "moves":"notable class features, one per line, format: Name — short description",' +
-  ' "actions":[{"name":"Longsword","kind":"attack or heal","range":5,"bonus":6,"dice":"1d8+4"}],' +
+  ' "actions":[{"name":"Longsword","kind":"attack or heal","range":5,"bonus":6,"dice":"1d8+4","damageType":"slashing"}],' +
+  ' "speed":30, "resist":[], "immune":[], "vuln":[],' +
   ' "spellSlots":[4,3,0,0,0,0,0,0,0]}\n' +
   'Rules: skills values are 0=untrained, 1=proficient, 2=expertise. spellSlots is max slots per level 1-9 (empty array if not a caster). ' +
-  'For actions, extract weapon attacks and healing/damage spells with their to-hit bonus, range in feet, and damage dice. Omit fields you cannot find rather than guessing wildly.';
+  'For actions, extract weapon attacks and healing/damage spells with to-hit bonus, range in feet, damage dice, and damageType (slashing/piercing/bludgeoning/fire/cold/lightning/thunder/poison/acid/necrotic/radiant/force/psychic). ' +
+  'A condition-inflicting action may add "applyCondition" (Prone/Poisoned/Restrained/Grappled/Frightened/Paralyzed/Stunned/Blinded), "saveAbility" (str/dex/con/int/wis/cha), "saveDC". ' +
+  'resist/immune/vuln: damage types from racial traits or features (e.g. tiefling → resist fire). speed in feet. Omit fields you cannot find rather than guessing wildly.';
 
 function importSheetImage(file) {
   var status = document.getElementById('sheet-import-status');
@@ -370,7 +373,11 @@ function prefillCharacterForm(d) {
   setVal('pc-ac', d.ac);
   setVal('pc-init-bonus', d.initBonus);
   ['str','dex','con','int','wis','cha'].forEach(function(s) { setVal('pc-' + s, d[s]); });
+  setVal('pc-speed', d.speed);
   setVal('pc-moves', d.moves);
+  // Defenses stash — savePlayer picks these up via window._importedDefenses
+  window._importedDefenses = (d.resist || d.immune || d.vuln)
+    ? { resist: d.resist || [], immune: d.immune || [], vuln: d.vuln || [] } : null;
   if (d.skills && typeof populateSkillsGrid === 'function') populateSkillsGrid(d.skills);
   if (Array.isArray(d.actions) && typeof populateActionRows === 'function') populateActionRows(d.actions);
   if (Array.isArray(d.spellSlots)) {
@@ -427,7 +434,10 @@ Respond ONLY with a JSON object, no markdown, no explanation. Format:
   "title": "Short dramatic encounter title",
   "description": "2-3 sentence scene description for the DM to read",
   "enemies": [
-    {"name": "Creature Name", "count": 2, "hp": 15, "ac": 13, "initiative_bonus": 2, "notes": "brief tactic note"}
+    {"name": "Creature Name", "count": 2, "hp": 15, "ac": 13, "initiative_bonus": 2, "notes": "brief tactic note",
+     "resist": ["fire"], "immune": [], "vuln": [],
+     "actions": [{"name": "Scimitar", "kind": "attack", "range": 5, "bonus": 4, "dice": "1d6+2", "damageType": "slashing"}]
+    }
   ]
 }
 
@@ -437,7 +447,9 @@ Rules:
 - count should be a number (how many of this creature)
 - Keep it to 1-4 distinct enemy types
 - Fit the environment and difficulty appropriately
-- notes should be a very short tactic hint (e.g. "focuses on weakest PC", "uses hit and run")`;
+- notes should be a very short tactic hint (e.g. "focuses on weakest PC", "uses hit and run")
+- resist/immune/vuln: damage types per official 5e stat blocks (empty arrays if none). Valid types: slashing, piercing, bludgeoning, fire, cold, lightning, thunder, poison, acid, necrotic, radiant, force, psychic
+- actions: the creature's 1-2 main attacks with 5e-accurate to-hit bonus, range in feet, damage dice, and damageType. A condition-inflicting attack may add "applyCondition" (Prone/Poisoned/Restrained/Grappled/Frightened/Paralyzed/Stunned/Blinded), "saveAbility" (str/dex/con/int/wis/cha) and "saveDC"`;
 
   try {
     const raw = await callClaudeAPI(prompt, 1000);
@@ -472,19 +484,24 @@ Rules:
 
 function loadEncounterToInitiative() {
   if (!lastEncounterData) return;
+  let idCounter = Date.now();
   lastEncounterData.enemies.forEach(e => {
     for (let i = 0; i < e.count; i++) {
       const name = e.count > 1 ? `${e.name} ${i + 1}` : e.name;
       const init = Math.floor(Math.random() * 20) + 1 + (e.initiative_bonus || 0);
       combatants.push({
-        id: Date.now(),
+        id: ++idCounter,
         name,
         init: Math.max(1, init),
         hp: e.hp,
         maxHp: e.hp,
         ac: e.ac,
         type: 'enemy',
-        conditions: []
+        conditions: [],
+        resist: e.resist || [],
+        immune: e.immune || [],
+        vuln: e.vuln || [],
+        actions: e.actions || []
       });
     }
   });
@@ -537,19 +554,24 @@ function renderSavedEncounters() {
 function loadSavedEncounter(idx) {
   var enc = savedEncounters[idx];
   if (!enc) return;
+  var idCounter = Date.now();
   enc.enemies.forEach(function(e) {
     for (var i = 0; i < e.count; i++) {
       var name = e.count > 1 ? e.name + ' ' + (i + 1) : e.name;
       var init = Math.floor(Math.random() * 20) + 1 + (e.initiative_bonus || 0);
       combatants.push({
-        id: Date.now() + i,
+        id: ++idCounter,
         name: name,
         init: Math.max(1, init),
         hp: e.hp,
         maxHp: e.hp,
         ac: e.ac,
         type: 'enemy',
-        conditions: []
+        conditions: [],
+        resist: e.resist || [],
+        immune: e.immune || [],
+        vuln: e.vuln || [],
+        actions: e.actions || []
       });
     }
   });
