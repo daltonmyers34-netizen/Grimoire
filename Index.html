@@ -162,6 +162,15 @@
       <div id="pc-actions-list"></div>
       <div style="font-size:10px;color:var(--text-dim);margin-top:4px;">e.g. Longsword · Attack · 5 ft · +6 to hit · 1d8+4 — or — Cure Wounds · Heal · 5 ft · 1d8+3</div>
     </div>
+    <!-- Spells -->
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <label style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:var(--text-dim);">SPELLS <span style="text-transform:none;letter-spacing:0;color:#666;">(castable from the player view — slots burn automatically)</span></label>
+        <button type="button" onclick="addSpellRow()" style="font-size:10px;padding:3px 10px;background:rgba(100,180,255,0.1);border:1px solid rgba(100,180,255,0.3);border-radius:3px;color:#90c8ff;cursor:pointer;font-family:Cinzel,serif;">+ Add Spell</button>
+      </div>
+      <div id="pc-spells-list"></div>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:4px;">e.g. Fireball · L3 · Save DEX · 20ft radius · 8d6 fire (+1d6/upcast) — or — Fire Bolt · Cantrip · Attack · 2d10 fire</div>
+    </div>
     <!-- Class feature toggles -->
     <div style="margin-bottom:12px;">
       <label style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:var(--text-dim);">CLASS FEATURES <span style="text-transform:none;letter-spacing:0;color:#666;">(players can toggle these in combat — Dodge is always available)</span></label>

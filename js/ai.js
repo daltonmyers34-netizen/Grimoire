@@ -310,11 +310,14 @@ var SHEET_PARSE_PROMPT =
   ' "moves":"notable class features, one per line, format: Name — short description",' +
   ' "actions":[{"name":"Longsword","kind":"attack or heal","range":5,"bonus":6,"dice":"1d8+4","damageType":"slashing"}],' +
   ' "speed":30, "resist":[], "immune":[], "vuln":[],' +
+  ' "spells":[{"name":"Fireball","level":3,"kind":"save","saveAbility":"dex","dice":"8d6","upcastDice":"1d6","damageType":"fire","range":150,"aoeFt":20,"concentration":false}],' +
   ' "spellSlots":[4,3,0,0,0,0,0,0,0]}\n' +
   'Rules: skills values are 0=untrained, 1=proficient, 2=expertise. spellSlots is max slots per level 1-9 (empty array if not a caster). ' +
   'For actions, extract weapon attacks and healing/damage spells with to-hit bonus, range in feet, damage dice, and damageType (slashing/piercing/bludgeoning/fire/cold/lightning/thunder/poison/acid/necrotic/radiant/force/psychic). ' +
   'A condition-inflicting action may add "applyCondition" (Prone/Poisoned/Restrained/Grappled/Frightened/Paralyzed/Stunned/Blinded), "saveAbility" (str/dex/con/int/wis/cha), "saveDC". ' +
-  'resist/immune/vuln: damage types from racial traits or features (e.g. tiefling → resist fire). speed in feet. Omit fields you cannot find rather than guessing wildly.';
+  'resist/immune/vuln: damage types from racial traits or features (e.g. tiefling → resist fire). speed in feet. ' +
+  'For spells: kind is save/attack/heal, level 0 = cantrip, aoeFt is blast radius in feet (omit for single-target), upcastDice = extra dice per slot level above base. ' +
+  'Omit fields you cannot find rather than guessing wildly.';
 
 function importSheetImage(file) {
   var status = document.getElementById('sheet-import-status');
@@ -380,6 +383,7 @@ function prefillCharacterForm(d) {
     ? { resist: d.resist || [], immune: d.immune || [], vuln: d.vuln || [] } : null;
   if (d.skills && typeof populateSkillsGrid === 'function') populateSkillsGrid(d.skills);
   if (Array.isArray(d.actions) && typeof populateActionRows === 'function') populateActionRows(d.actions);
+  if (Array.isArray(d.spells) && typeof populateSpellRows === 'function') populateSpellRows(d.spells);
   if (Array.isArray(d.spellSlots)) {
     for (var i = 1; i <= 9; i++) {
       var el = document.getElementById('pc-ss-' + i);
