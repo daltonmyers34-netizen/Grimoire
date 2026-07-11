@@ -26,8 +26,67 @@ var CONDITION_EFFECTS = {
   'Charmed':      {}, // can't attack the charmer — needs source tracking, DM adjudicates
   'Deafened':     {},
   'Exhaustion':   { selfDis: true },
-  'Stable':       {}
+  'Stable':       {},
+  // Class-feature stances (toggled, not afflictions)
+  'Raging':       { resistPhysical: true, bonusMeleeDamage: 2 },
+  'Reckless':     { selfAdv: true, attackersAdv: true },
+  'Dodging':      { attackersDis: true }
 };
+
+// Toggleable class features → the stance condition they apply + action cost
+var FEATURE_TOGGLES = {
+  'Rage':            { condition: 'Raging',   cost: 'bonus'  },
+  'Reckless Attack': { condition: 'Reckless', cost: 'free'   },
+  'Dodge':           { condition: 'Dodging',  cost: 'action' }
+};
+
+// ─── Action economy ──────────────────────────────────────────
+function ensureTurnUsed(c) {
+  if (!c.turnUsed) c.turnUsed = { action: false, bonus: false, movedFt: 0 };
+  return c.turnUsed;
+}
+
+// Called when a combatant's turn STARTS: fresh economy, stances that
+// last "until the start of your next turn" fall off.
+function startTurnFor(c) {
+  if (!c) return;
+  c.turnUsed = { action: false, bonus: false, movedFt: 0 };
+  var expiring = ['Reckless', 'Dodging'];
+  if (c.conditions && c.conditions.some(function(x) { return expiring.indexOf(x) >= 0; })) {
+    c.conditions = c.conditions.filter(function(x) { return expiring.indexOf(x) < 0; });
+  }
+}
+
+// Called when a combatant's turn ENDS: repeat saves + durations (all auto)
+function endTurnProcessing(c) {
+  if (!c || !c.conditions || !c.conditions.length) return;
+  var meta = c.condMeta || {};
+  c.conditions.slice().forEach(function(cond) {
+    var m = meta[cond];
+    if (!m) return;
+    if (m.saveAbility && m.saveDC) {
+      var bonus = saveBonusFor(c, m.saveAbility);
+      var roll = Math.floor(Math.random() * 20) + 1;
+      var total = roll + bonus;
+      if (total >= m.saveDC) {
+        c.conditions = c.conditions.filter(function(x) { return x !== cond; });
+        delete meta[cond];
+        logCombat('✓ ' + c.name + ' shook off ' + cond + ' (' + m.saveAbility.toUpperCase() + ' save ' + roll + (bonus >= 0 ? '+' : '') + bonus + '=' + total + ' vs DC ' + m.saveDC + ')', 'heal');
+        showToast('✓ ' + c.name + ' is no longer ' + cond, 'success');
+      } else {
+        logCombat('✗ ' + c.name + ' still ' + cond + ' (' + m.saveAbility.toUpperCase() + ' save ' + total + ' vs DC ' + m.saveDC + ')', 'info');
+      }
+    } else if (m.rounds !== undefined && m.rounds !== null) {
+      m.rounds--;
+      if (m.rounds <= 0) {
+        c.conditions = c.conditions.filter(function(x) { return x !== cond; });
+        delete meta[cond];
+        logCombat('⏳ ' + cond + ' expired on ' + c.name, 'info');
+        showToast('⏳ ' + c.name + ' — ' + cond + ' wore off', 'info');
+      }
+    }
+  });
+}
 
 // ─── Dice ────────────────────────────────────────────────────
 function rollDiceExpr(str) {
@@ -61,9 +120,11 @@ function applyDamageWithDefenses(target, amount, dmgType) {
       notes.push('immune to ' + dmgType + ' — no damage');
       return { taken: 0, notes: notes };
     }
-    if ((target.resist || []).indexOf(dmgType) >= 0 || resistAll) {
+    var physRes = ['slashing','piercing','bludgeoning'].indexOf(dmgType) >= 0 &&
+      conds.some(function(c) { return (CONDITION_EFFECTS[c] || {}).resistPhysical; });
+    if ((target.resist || []).indexOf(dmgType) >= 0 || resistAll || physRes) {
       taken = Math.floor(taken / 2);
-      notes.push('halved to ' + taken + ' (' + (resistAll ? 'petrified' : 'resistant to ' + dmgType) + ')');
+      notes.push('halved to ' + taken + ' (' + (resistAll ? 'petrified' : physRes ? 'raging — resists physical' : 'resistant to ' + dmgType) + ')');
     }
     if ((target.vuln || []).indexOf(dmgType) >= 0) {
       taken = taken * 2;
@@ -186,6 +247,17 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
     return null;
   }
 
+  // Action economy: attacks/heals cost your Action (or Bonus if flagged)
+  var cost = a.cost === 'bonus' ? 'bonus' : 'action';
+  if (combatActive) {
+    var tu = ensureTurnUsed(attacker);
+    if (tu[cost] && opts.source === 'player') {
+      showToast('🚫 ' + attacker.name + ' already used their ' + cost + ' this turn', 'warn');
+      return null;
+    }
+    tu[cost] = true; // spent whether it hits or not — DM act-as spends it too but is never blocked
+  }
+
   snapshotBeforeAction();
 
   var result = {
@@ -216,6 +288,12 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
       var dmg = rollDiceExpr(a.dice);
       var amount = dmg.total;
       if (result.crit) amount += rollDiceExpr(String(a.dice).replace(/[+-]\s*\d+$/, '')).total;
+      if (ctx.isMelee) {
+        (attacker.conditions || []).forEach(function(cn) {
+          var bmd = (CONDITION_EFFECTS[cn] || {}).bonusMeleeDamage;
+          if (bmd) { amount += bmd; result.notes.push('+' + bmd + ' rage damage'); }
+        });
+      }
       var dmgType = a.damageType || inferDamageType(a.name);
       var def = applyDamageWithDefenses(target, amount, dmgType);
       result.rawAmount = amount;
@@ -244,8 +322,12 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
         if (applied) {
           target.conditions = target.conditions || [];
           if (target.conditions.indexOf(a.applyCondition) < 0) target.conditions.push(a.applyCondition);
+          if (a.saveAbility && a.saveDC) {
+            target.condMeta = target.condMeta || {};
+            target.condMeta[a.applyCondition] = { saveAbility: a.saveAbility, saveDC: a.saveDC };
+          }
           result.appliedCondition = a.applyCondition;
-          result.notes.push(target.name + ' is now ' + a.applyCondition + '!');
+          result.notes.push(target.name + ' is now ' + a.applyCondition + (a.saveAbility ? ' (repeats the save at end of turn)' : '') + '!');
         }
       }
 
@@ -286,6 +368,8 @@ function processPlayerAction(req) {
     else if (req.type === 'action') processPlayerCombatAction(req);
     else if (req.type === 'endTurn') processPlayerEndTurn(req);
     else if (req.type === 'addCharacter') processPlayerAddCharacter(req);
+    else if (req.type === 'deathSave') processPlayerDeathSave(req);
+    else if (req.type === 'toggleFeature') processToggleFeature(req);
   } catch(e) {
     console.error('processPlayerAction', e);
   }
@@ -312,6 +396,17 @@ function processPlayerMove(req) {
   if (typeof mapState === 'undefined') return;
   var x = Math.max(0, Math.min(mapState.cols - 1, parseInt(req.x) || 0));
   var y = Math.max(0, Math.min(mapState.rows - 1, parseInt(req.y) || 0));
+  // Movement budget: distance walked accumulates across the whole turn
+  var from = mapState.tokens[c.id];
+  var dist = from ? dmDistFt(from, { x: x, y: y }) : 0;
+  if (combatActive) {
+    var tu = ensureTurnUsed(c);
+    if (tu.movedFt + dist > speed) {
+      showToast('🚫 ' + c.name + ' only has ' + Math.max(0, speed - tu.movedFt) + ' ft of movement left', 'warn');
+      return;
+    }
+    tu.movedFt += dist;
+  }
   snapshotBeforeAction();
   mapState.tokens[c.id] = { x: x, y: y };
   if (typeof renderMap === 'function') renderMap();
@@ -462,4 +557,85 @@ function processPlayerAddCharacter(req) {
   showToast('🧝 New character joined the party: ' + name + (pc.player ? ' (' + pc.player + ')' : ''), 'success');
   logCombat('🧝 ' + name + ' joined the party (added from Player View)', 'info');
   if (window.cloudSaveNow) window.cloudSaveNow();
+}
+
+// ─── DM-side 5-10-5 distance (same math as the player view) ──
+function dmDistFt(a, b) {
+  var dx = Math.abs(a.x - b.x), dy = Math.abs(a.y - b.y);
+  var diag = Math.min(dx, dy), straight = Math.max(dx, dy) - diag;
+  return straight * 5 + diag * 5 + Math.floor(diag / 2) * 5;
+}
+
+// ─── Player-entered death saves (private: that player + DM) ──
+function applyDeathSaveRoll(c, roll) {
+  if (roll === 20) {
+    c.hp = 1;
+    c.deathSuccess = 0; c.deathFail = 0;
+    c.conditions = (c.conditions || []).filter(function(x) { return x !== 'Unconscious'; });
+    logCombat('🎉 ' + c.name + ' rolled a natural 20 on a death save — back up with 1 HP!', 'heal');
+    showToast('🎉 ' + c.name + ' nat 20 death save — regains 1 HP!', 'success');
+  } else if (roll === 1) {
+    c.deathFail = (c.deathFail || 0) + 2;
+    logCombat('💀 ' + c.name + ' rolled a natural 1 on a death save — two failures', 'damage');
+  } else if (roll >= 10) {
+    c.deathSuccess = (c.deathSuccess || 0) + 1;
+    logCombat(c.name + ' death save success (' + roll + ')', 'info');
+  } else {
+    c.deathFail = (c.deathFail || 0) + 1;
+    logCombat(c.name + ' death save failure (' + roll + ')', 'damage');
+  }
+  if (c.deathSuccess >= 3) {
+    c.conditions = (c.conditions || []).filter(function(x) { return x !== 'Unconscious'; });
+    if (c.conditions.indexOf('Stable') < 0) c.conditions.push('Stable');
+    c.deathSuccess = 0; c.deathFail = 0;
+    logCombat('⚕ ' + c.name + ' stabilized!', 'heal');
+    showToast('⚕ ' + c.name + ' stabilized!', 'success');
+  } else if (c.deathFail >= 3) {
+    c.isDead = true;
+    logCombat('💀 ' + c.name + ' has died', 'damage');
+    showToast('💀 ' + c.name + ' has died', 'danger');
+  }
+}
+
+function processPlayerDeathSave(req) {
+  var c = combatants.find(function(x) { return x.id === req.combatantId; });
+  if (!c || c.type !== 'ally' || c.hp > 0) return;
+  var roll = Math.max(1, Math.min(20, parseInt(req.roll) || 1));
+  snapshotBeforeAction();
+  applyDeathSaveRoll(c, roll);
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+}
+
+// ─── Toggleable class features (Rage / Reckless / Dodge) ────
+function processToggleFeature(req) {
+  var c = combatants.find(function(x) { return x.id === req.combatantId; });
+  var ft = FEATURE_TOGGLES[req.feature];
+  if (!c || !ft) return;
+  c.conditions = c.conditions || [];
+  var active = c.conditions.indexOf(ft.condition) >= 0;
+
+  if (active) {
+    // Turning off is always free
+    c.conditions = c.conditions.filter(function(x) { return x !== ft.condition; });
+    logCombat('◦ ' + c.name + ' ends ' + req.feature, 'info');
+    showToast(c.name + ' — ' + req.feature + ' ended', 'info');
+  } else {
+    if (!requireTurn(c)) return;
+    var can = combatantCanAct(c);
+    if (!can.ok) { showToast('🚫 ' + c.name + ' can\'t use ' + req.feature + ' — ' + can.reason, 'warn'); return; }
+    if (combatActive && ft.cost !== 'free') {
+      var tu = ensureTurnUsed(c);
+      if (tu[ft.cost]) {
+        showToast('🚫 ' + c.name + ' already used their ' + ft.cost + ' this turn', 'warn');
+        return;
+      }
+      tu[ft.cost] = true;
+    }
+    c.conditions.push(ft.condition);
+    logCombat('⚡ ' + c.name + ' uses ' + req.feature + '!', 'info');
+    showToast('⚡ ' + c.name + ' — ' + req.feature + '!', 'success');
+  }
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
 }

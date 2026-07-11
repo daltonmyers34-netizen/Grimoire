@@ -705,8 +705,13 @@ const PV_CONDITION_EFFECTS = {
   'Invisible':    { attackersDis: true, selfAdv: true },
   'Frightened':   { selfDis: true },
   'Petrified':    { attackersAdv: true, cantAct: true, speedZero: true },
-  'Exhaustion':   { selfDis: true }
+  'Exhaustion':   { selfDis: true },
+  'Raging':       { bonusMeleeDamage: 2 },
+  'Reckless':     { selfAdv: true, attackersAdv: true },
+  'Dodging':      { attackersDis: true }
 };
+
+const PV_FEATURES = { 'Rage': 'Raging', 'Reckless Attack': 'Reckless', 'Dodge': 'Dodging' };
 
 function pvCanAct(c) {
   for (const cn of (c.conditions || [])) {
@@ -863,6 +868,27 @@ function openMapAttack(target) {
   });
 }
 
+function sendDeathSave() {
+  const d = latestData;
+  const me = myCombatant(d);
+  if (!me || me.hp > 0) return;
+  const inp = document.getElementById('pv-ds-roll');
+  const roll = parseInt(inp && inp.value);
+  if (!roll || roll < 1 || roll > 20) { if (inp) inp.style.borderColor = '#ff4040'; return; }
+  sendPlayerRequest({ type: 'deathSave', combatantId: me.id, roll, ts: Date.now() });
+  if (inp) { inp.value = ''; inp.style.borderColor = 'rgba(224,80,80,0.4)'; }
+  showWaiting('💀 Death save: ' + roll + '...');
+}
+window._pvDeathSave = sendDeathSave;
+
+function toggleFeature(f) {
+  const d = latestData;
+  const me = myCombatant(d);
+  if (!me) return;
+  sendPlayerRequest({ type: 'toggleFeature', combatantId: me.id, feature: f, ts: Date.now() });
+}
+window._pvToggleFeature = toggleFeature;
+
 function endMyTurn() {
   const d = latestData;
   if (!d || !isMyTurn(d)) return;
@@ -986,7 +1012,8 @@ function bindMapInteraction() {
     const y = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / m.cell);
 
     const pc = myPC(d);
-    const speed = pvSpeedFt(me, (pc && pc.speed) || 30);
+    const usedFt = (me.turnUsed && me.turnUsed.movedFt) || 0;
+    const speed = Math.max(0, pvSpeedFt(me, (pc && pc.speed) || 30) - usedFt);
 
     // Tap an enemy token → attack it from the map
     if (!moveSelecting) {
@@ -1221,10 +1248,21 @@ function renderTwoColumnView(d) {
     if (personalMsg) html += '<div class="msg-banner personal-msg">📨 <strong>DM to You:</strong> ' + esc(personalMsg) + '</div>';
   }
 
-  // YOUR TURN banner + End Turn
+  // YOUR TURN banner + economy meters + End Turn
   if (isMyTurn(d)) {
-    html += '<div class="your-turn-banner">⚔ YOUR TURN — move on the Map tab or use an action below' +
-      '<div style="margin-top:8px;"><button class="btn-pv" style="font-size:12px;border-color:var(--gold);" onclick="_pvEndTurn()">⏭ End My Turn</button></div>' +
+    const me = myCombatant(d);
+    const tu = (me && me.turnUsed) || { action: false, bonus: false, movedFt: 0 };
+    const spd = pvSpeedFt(me, (pc && pc.speed) || 30);
+    const chip = (label, spent) =>
+      '<span style="padding:3px 10px;border-radius:4px;font-size:11px;font-family:Cinzel,serif;border:1px solid ' +
+      (spent ? 'rgba(255,255,255,0.15);color:#666;background:rgba(0,0,0,0.3);text-decoration:line-through' : 'rgba(143,208,80,0.5);color:#8fd050;background:rgba(143,208,80,0.08)') +
+      ';">' + label + '</span>';
+    html += '<div class="your-turn-banner">⚔ YOUR TURN' +
+      '<div style="display:flex;gap:6px;justify-content:center;margin-top:8px;flex-wrap:wrap;">' +
+        chip('ACTION', tu.action) + chip('BONUS', tu.bonus) +
+        chip('MOVE ' + Math.max(0, spd - (tu.movedFt || 0)) + ' ft', (tu.movedFt || 0) >= spd) +
+        '<button class="btn-pv" style="font-size:11px;padding:3px 12px;border-color:var(--gold);" onclick="_pvEndTurn()">⏭ End Turn</button>' +
+      '</div>' +
     '</div>';
   }
 
@@ -1305,6 +1343,40 @@ function renderCharacterCard(d) {
     html += '<div style="margin:8px 0;">' + conditions.map(c => '<span class="cond-tag">' + esc(c) + '</span>').join('') + '</div>';
   }
 
+  // Death saves — private: only YOU (and the DM) see your pips
+  if (cmb && curHp <= 0 && maxHp > 0 && !(cmb.conditions || []).includes('Stable') && !cmb.isDead) {
+    const ds = cmb.deathSuccess || 0, df = cmb.deathFail || 0;
+    let pips = '<span style="color:#8fd050;letter-spacing:3px;">';
+    for (let i = 0; i < 3; i++) pips += i < ds ? '●' : '○';
+    pips += '</span> <span style="color:#e05050;letter-spacing:3px;">';
+    for (let i = 0; i < 3; i++) pips += i < df ? '●' : '○';
+    pips += '</span>';
+    html += '<div style="margin-top:14px;padding:14px;border:2px solid rgba(224,80,80,0.5);border-radius:8px;background:rgba(224,80,80,0.07);text-align:center;">' +
+      '<div style="font-family:Cinzel,serif;font-size:15px;color:#ff8080;margin-bottom:6px;">💀 DEATH SAVES <span style="font-size:9px;color:#666;">(only you and the DM see this)</span></div>' +
+      '<div style="font-size:20px;margin-bottom:10px;">' + pips + '</div>' +
+      '<div style="display:flex;gap:8px;justify-content:center;align-items:center;">' +
+        '<input id="pv-ds-roll" type="number" min="1" max="20" placeholder="d20" style="width:70px;font-size:18px;text-align:center;padding:6px;background:rgba(0,0,0,0.4);border:1px solid rgba(224,80,80,0.4);border-radius:6px;color:var(--parchment);">' +
+        '<button class="btn-pv" style="border-color:#e05050;color:#ff8080;" onclick="_pvDeathSave()">🎲 Roll Death Save</button>' +
+      '</div></div>';
+  }
+
+  // Class feature toggles (Rage, Reckless, Dodge)
+  if (cmb) {
+    const avail = ['Dodge'].concat((pc.features || []).filter(f => PV_FEATURES[f] && f !== 'Dodge'));
+    const myTurnNow = isMyTurn(d);
+    if (avail.length) {
+      html += '<div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;">';
+      avail.forEach(f => {
+        const active = (cmb.conditions || []).includes(PV_FEATURES[f]);
+        html += '<button class="btn-pv" style="font-size:12px;' +
+          (active ? 'border-color:#ffb450;color:#ffb450;background:rgba(255,180,80,0.12);' : '') + '" ' +
+          ((myTurnNow || active) ? '' : 'disabled ') + 'onclick="_pvToggleFeature(\'' + f + '\')">' +
+          (f === 'Rage' ? '😤 ' : f === 'Dodge' ? '🛡 ' : '⚔ ') + f + (active ? ' ✓' : '') + '</button>';
+      });
+      html += '</div>';
+    }
+  }
+
   // Combat actions (playable on your turn)
   const pcActions = pc.actions || [];
   if (pcActions.length) {
@@ -1314,13 +1386,17 @@ function renderCharacterCard(d) {
       (myTurn ? ' <span style="color:var(--gold-light);font-size:9px;text-transform:none;letter-spacing:0;">— it\'s your turn!</span>'
               : ' <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(usable on your turn during combat)</span>') + '</div>';
     pcActions.forEach((a, i) => {
+      const meNow = myCombatant(d);
+      const tuNow = (meNow && meNow.turnUsed) || {};
+      const costKey = a.cost === 'bonus' ? 'bonus' : 'action';
+      const spent = myTurn && tuNow[costKey];
       html += '<div class="pv-action-row">' +
         '<span style="font-size:16px;">' + (a.kind === 'heal' ? '❤' : '⚔') + '</span>' +
         '<div style="flex:1;min-width:0;">' +
           '<div style="font-size:14px;font-weight:600;color:var(--parchment);">' + esc(a.name) + '</div>' +
           '<div style="font-size:11px;color:var(--text-dim);">' + (a.range || 5) + ' ft · ' + esc(a.dice || '') + (a.kind !== 'heal' ? ' · +' + (a.bonus || 0) + ' to hit' : '') + '</div>' +
         '</div>' +
-        '<button class="pv-action-use" ' + (myTurn ? '' : 'disabled') + ' onclick="_pvUseAction(' + i + ')">USE</button>' +
+        '<button class="pv-action-use" ' + ((myTurn && !spent) ? '' : 'disabled') + ' onclick="_pvUseAction(' + i + ')">' + (spent ? 'USED' : 'USE') + '</button>' +
       '</div>';
     });
     html += '</div>';
@@ -1665,7 +1741,7 @@ function drawPlayerMap(d) {
   if (moveSelecting && isMyTurn(d)) {
     const me = myCombatant(d);
     const myPos = me ? (m.tokens || {})[me.id] : null;
-    const pcSpd = pvSpeedFt(me, (myPC(d) || {}).speed || 30);
+    const pcSpd = Math.max(0, pvSpeedFt(me, (myPC(d) || {}).speed || 30) - ((me && me.turnUsed && me.turnUsed.movedFt) || 0));
     if (myPos) {
       for (let yy = 0; yy < m.rows; yy++) {
         for (let xx = 0; xx < m.cols; xx++) {
@@ -1748,8 +1824,11 @@ function renderPartySidebar(d) {
       html += '<div class="sidebar-conds">' + conds.map(c => '<span class="sidebar-cond-tag">' + esc(c) + '</span>').join('') + '</div>';
     }
 
-    // Death saves (if HP is 0)
-    if (curHp <= 0 && maxHp > 0) {
+    // Death saves — private: pips only on YOUR card; others just see Down
+    if (curHp <= 0 && maxHp > 0 && !isYou) {
+      html += '<div class="sidebar-death-saves"><span style="color:#e05050;">💀 Down</span></div>';
+    }
+    if (curHp <= 0 && maxHp > 0 && isYou) {
       const successes = cmb ? (cmb.deathSuccess || 0) : 0;
       const failures = cmb ? (cmb.deathFail || 0) : 0;
       html += '<div class="sidebar-death-saves">' +

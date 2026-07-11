@@ -87,7 +87,19 @@ function setCombatantConc(id) {
 function checkConcentration(c, damage) {
   if (!c.concentrating || damage <= 0) return;
   var dc = Math.max(10, Math.floor(damage / 2));
-  showToast('⚠ ' + c.name + ' concentrating on "' + c.concentrating + '" — must make DC ' + dc + ' CON save!', 'warning');
+  var bonus = typeof saveBonusFor === 'function' ? saveBonusFor(c, 'con') : 0;
+  var roll = Math.floor(Math.random() * 20) + 1;
+  var total = roll + bonus;
+  var spell = c.concentrating;
+  if (total >= dc) {
+    combatLog.unshift({ round: currentRound || 0, text: '🧠 ' + c.name + ' maintains concentration on "' + spell + '" (CON ' + roll + (bonus >= 0 ? '+' : '') + bonus + '=' + total + ' vs DC ' + dc + ')', type: 'info', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) });
+    showToast('🧠 ' + c.name + ' holds concentration on ' + spell + ' (' + total + ' vs DC ' + dc + ')', 'info');
+  } else {
+    c.concentrating = null;
+    combatLog.unshift({ round: currentRound || 0, text: '💫 ' + c.name + ' LOSES concentration on "' + spell + '" (CON ' + total + ' vs DC ' + dc + ')', type: 'damage', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) });
+    showToast('💫 ' + c.name + ' loses concentration on ' + spell + '!', 'danger');
+  }
+  renderCombatLog();
 }
 
 function shortRest() {
@@ -215,6 +227,7 @@ function startCombat() {
   combatActive = true;
   round = 1;
   currentTurn = 0;
+  if (typeof startTurnFor === 'function') startTurnFor(combatants[0]);
   updateRoundDisplay();
   renderCombatants();
   syncCombatState();
@@ -225,6 +238,11 @@ function nextTurn() {
   if (!combatActive || combatants.length === 0) return;
   var alive = combatants.filter(function(c) { return c.hp > 0 && !c.hidden; });
   if (alive.length === 0) return;
+
+  // Outgoing combatant: repeat condition saves, tick durations (all auto)
+  if (typeof endTurnProcessing === 'function' && combatants[currentTurn]) {
+    endTurnProcessing(combatants[currentTurn]);
+  }
 
   var safety = 0;
   var maxIter = combatants.length;
@@ -237,6 +255,7 @@ function nextTurn() {
     safety++;
     if (safety > maxIter) break; // prevent infinite loop
   }
+  if (typeof startTurnFor === 'function') startTurnFor(combatants[currentTurn]);
   updateRoundDisplay();
   renderCombatants();
   syncCombatState();
