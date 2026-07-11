@@ -74,6 +74,7 @@
   <div class="nav-tab" onclick="switchTab('sounds')"><span class="tab-icon">🎵</span>Sound</div>
   <div class="nav-tab" onclick="switchTab('reference')"><span class="tab-icon">📜</span>Rules</div>
   <div class="nav-tab" onclick="switchTab('notes')"><span class="tab-icon">🪶</span>Notes</div>
+  <div class="nav-tab" onclick="switchTab('quests')"><span class="tab-icon">📜</span>Quests</div>
   <div class="nav-tab" onclick="switchTab('loot')"><span class="tab-icon">💰</span>Loot</div>
 </nav>
 
@@ -708,6 +709,31 @@
 <!-- NPC Detail Modal -->
 <div class="npc-detail" id="npc-detail-overlay" onclick="closeNPCDetail(event)">
   <div class="npc-detail-inner" id="npc-detail-content"></div>
+</div>
+
+<!-- ============================================================ -->
+<!--  QUESTS                                                      -->
+<!-- ============================================================ -->
+<div id="tab-quests" class="section">
+  <div class="panel">
+    <div class="panel-title"><span class="ornament">📜</span> Quest Tracker</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div class="field-group">
+        <label>Quest Title</label>
+        <input id="quest-title-input" placeholder="Rescue the miller's daughter">
+      </div>
+      <div class="field-group">
+        <label>Quest Giver</label>
+        <input id="quest-giver-input" placeholder="Elder Maeve">
+      </div>
+    </div>
+    <div class="field-group" style="margin-bottom:10px;">
+      <label>Notes</label>
+      <textarea id="quest-notes-input" rows="3" placeholder="Details, rewards, leads..."></textarea>
+    </div>
+    <button class="btn btn-gold btn-sm" onclick="addQuest()">+ Add Quest</button>
+    <div id="quests-list" style="margin-top:14px;"></div>
+  </div>
 </div>
 
 <!-- ============================================================ -->
@@ -1461,6 +1487,7 @@ Use this space freely during your session. Notes auto-save in your browser."></t
 <script src="js/session.js"></script>
 <script src="js/sidebar.js"></script>
 <script src="js/map.js"></script>
+<script src="js/quests.js"></script>
 <script src="js/player-actions.js"></script>
 
 <!-- Firebase (module - loads after regular scripts) -->

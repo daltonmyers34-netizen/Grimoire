@@ -370,6 +370,8 @@ function processPlayerAction(req) {
     else if (req.type === 'addCharacter') processPlayerAddCharacter(req);
     else if (req.type === 'deathSave') processPlayerDeathSave(req);
     else if (req.type === 'toggleFeature') processToggleFeature(req);
+    else if (req.type === 'equipItem') processEquipItem(req);
+    else if (req.type === 'journal') processJournal(req);
   } catch(e) {
     console.error('processPlayerAction', e);
   }
@@ -436,7 +438,7 @@ function dmOpenActMenu(combatantId) {
   var c = combatants.find(function(x) { return x.id === combatantId; });
   if (!c) return;
   var pc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === c.name; });
-  var actions = (c.actions && c.actions.length) ? c.actions : (pc && pc.actions) || [];
+  var actions = (c.actions && c.actions.length) ? c.actions : (pc ? effectiveActions(pc) : []);
   if (!actions.length) { showToast('No structured actions on ' + c.name + ' — add some via the character sheet or encounter generator', 'info'); return; }
 
   var existing = document.getElementById('dm-act-modal');
@@ -638,4 +640,113 @@ function processToggleFeature(req) {
   }
   renderCombatants();
   if (window.cloudSave) window.cloudSave();
+}
+
+// ============================================================
+// INVENTORY & EQUIPMENT — items shape stats, weapons make actions
+// ============================================================
+var ITEM_PRESETS = {
+  'torch':          { slot: 'light',  lightFt: 20 },
+  'lantern':        { slot: 'light',  lightFt: 30 },
+  'hooded lantern': { slot: 'light',  lightFt: 30 },
+  'candle':         { slot: 'light',  lightFt: 5 },
+  'shield':         { slot: 'shield', acBonus: 2 },
+  'leather armor':  { slot: 'armor',  acBonus: 1 },
+  'studded leather':{ slot: 'armor',  acBonus: 2 },
+  'hide armor':     { slot: 'armor',  acBonus: 2 },
+  'chain shirt':    { slot: 'armor',  acBonus: 3 },
+  'scale mail':     { slot: 'armor',  acBonus: 4 },
+  'breastplate':    { slot: 'armor',  acBonus: 4 },
+  'half plate':     { slot: 'armor',  acBonus: 5 },
+  'chain mail':     { slot: 'armor',  acBonus: 6 },
+  'plate':          { slot: 'armor',  acBonus: 8 },
+  'plate armor':    { slot: 'armor',  acBonus: 8 },
+  'dagger':         { slot: 'weapon', dice: '1d4', range: 20, damageType: 'piercing' },
+  'shortsword':     { slot: 'weapon', dice: '1d6', range: 5,  damageType: 'piercing' },
+  'longsword':      { slot: 'weapon', dice: '1d8', range: 5,  damageType: 'slashing' },
+  'greatsword':     { slot: 'weapon', dice: '2d6', range: 5,  damageType: 'slashing' },
+  'greataxe':       { slot: 'weapon', dice: '1d12', range: 5, damageType: 'slashing' },
+  'handaxe':        { slot: 'weapon', dice: '1d6', range: 20, damageType: 'slashing' },
+  'battleaxe':      { slot: 'weapon', dice: '1d8', range: 5,  damageType: 'slashing' },
+  'warhammer':      { slot: 'weapon', dice: '1d8', range: 5,  damageType: 'bludgeoning' },
+  'mace':           { slot: 'weapon', dice: '1d6', range: 5,  damageType: 'bludgeoning' },
+  'quarterstaff':   { slot: 'weapon', dice: '1d6', range: 5,  damageType: 'bludgeoning' },
+  'spear':          { slot: 'weapon', dice: '1d6', range: 20, damageType: 'piercing' },
+  'rapier':         { slot: 'weapon', dice: '1d8', range: 5,  damageType: 'piercing' },
+  'shortbow':       { slot: 'weapon', dice: '1d6', range: 80, damageType: 'piercing' },
+  'longbow':        { slot: 'weapon', dice: '1d8', range: 150, damageType: 'piercing' },
+  'light crossbow': { slot: 'weapon', dice: '1d8', range: 80, damageType: 'piercing' },
+  'crossbow':       { slot: 'weapon', dice: '1d8', range: 80, damageType: 'piercing' }
+};
+
+function itemPresetFor(name) {
+  return ITEM_PRESETS[String(name || '').trim().toLowerCase()] || null;
+}
+
+// Effective AC = base AC + everything equipped (armor, shield, magic items)
+function effectiveAC(pc) {
+  var ac = pc.ac || 10;
+  (pc.inventory || []).forEach(function(it) {
+    if (it.equipped && it.acBonus) ac += it.acBonus;
+  });
+  return ac;
+}
+
+// An equipped weapon becomes an attack action automatically:
+// to-hit = ability mod + proficiency, damage = dice + ability mod
+function weaponToAction(pc, item) {
+  var strMod = Math.floor(((pc.str || 10) - 10) / 2);
+  var dexMod = Math.floor(((pc.dex || 10) - 10) / 2);
+  var isRanged = (item.range || 5) > 20;
+  var abilityMod = isRanged ? dexMod : Math.max(strMod, dexMod); // melee uses best (finesse-friendly)
+  var prof = typeof getProfBonus === 'function' ? getProfBonus(pc.level || 1) : 2;
+  return {
+    name: item.name,
+    kind: 'attack',
+    range: item.range || 5,
+    bonus: abilityMod + prof,
+    dice: (item.dice || '1d6') + (abilityMod !== 0 ? (abilityMod > 0 ? '+' : '') + abilityMod : ''),
+    damageType: item.damageType || inferDamageType(item.name),
+    fromItem: true
+  };
+}
+
+// Full action list: manual sheet actions + equipped weapons
+function effectiveActions(pc) {
+  var acts = (pc.actions || []).slice();
+  (pc.inventory || []).forEach(function(it) {
+    if (it.equipped && it.slot === 'weapon' && it.dice) {
+      // Don't duplicate a manual action with the same name
+      if (!acts.some(function(a) { return a.name.toLowerCase() === it.name.toLowerCase(); })) {
+        acts.push(weaponToAction(pc, it));
+      }
+    }
+  });
+  return acts;
+}
+
+// Recompute the linked combatant's AC after equipment changes
+function recomputePcAC(pc) {
+  var c = combatants.find(function(x) { return x.name === pc.name && x.type === 'ally'; });
+  if (c) c.ac = effectiveAC(pc);
+}
+
+function processEquipItem(req) {
+  var pc = party.find(function(p) { return p.id === req.pcId; });
+  if (!pc) return;
+  var item = (pc.inventory || []).find(function(i) { return i.id === req.itemId; });
+  if (!item) return;
+  item.equipped = !!req.equipped;
+  if (item.acBonus) recomputePcAC(pc);
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+  if (typeof renderParty === 'function') renderParty();
+  renderCombatants();
+  showToast((item.equipped ? '🎒 ' : '📦 ') + pc.name + (item.equipped ? ' equipped ' : ' unequipped ') + item.name, 'info');
+}
+
+function processJournal(req) {
+  var pc = party.find(function(p) { return p.id === req.pcId; });
+  if (!pc) return;
+  pc.journal = String(req.text || '').slice(0, 20000);
+  if (typeof savePartyStorage === 'function') savePartyStorage();
 }
