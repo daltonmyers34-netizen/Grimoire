@@ -372,6 +372,7 @@ function processPlayerAction(req) {
     else if (req.type === 'toggleFeature') processToggleFeature(req);
     else if (req.type === 'equipItem') processEquipItem(req);
     else if (req.type === 'journal') processJournal(req);
+    else if (req.type === 'castSpell') processCastSpell(req);
   } catch(e) {
     console.error('processPlayerAction', e);
   }
@@ -749,4 +750,152 @@ function processJournal(req) {
   if (!pc) return;
   pc.journal = String(req.text || '').slice(0, 20000);
   if (typeof savePartyStorage === 'function') savePartyStorage();
+}
+
+// ============================================================
+// SPELLCASTING — slots burn, AoE auto-targets, saves auto-roll
+// ============================================================
+var CASTING_ABILITY = { Wizard: 'int', Cleric: 'wis', Druid: 'wis', Ranger: 'wis', Bard: 'cha', Sorcerer: 'cha', Warlock: 'cha', Paladin: 'cha' };
+
+function spellSaveDC(pc, spell) {
+  if (spell.saveDC) return spell.saveDC;
+  var ability = CASTING_ABILITY[pc.cls] || 'int';
+  var mod = Math.floor(((pc[ability] || 10) - 10) / 2);
+  var prof = typeof getProfBonus === 'function' ? getProfBonus(pc.level || 1) : 2;
+  return 8 + prof + mod;
+}
+
+function spellAttackBonus(pc) {
+  var ability = CASTING_ABILITY[pc.cls] || 'int';
+  var mod = Math.floor(((pc[ability] || 10) - 10) / 2);
+  var prof = typeof getProfBonus === 'function' ? getProfBonus(pc.level || 1) : 2;
+  return prof + mod;
+}
+
+function processCastSpell(req) {
+  var caster = combatants.find(function(x) { return x.id === req.combatantId; });
+  var pc = party.find(function(p) { return p.id === req.pcId; });
+  var spell = req.spell || {};
+  if (!caster || !pc || !spell.name) return;
+  if (!requireTurn(caster)) return;
+  var can = combatantCanAct(caster);
+  if (!can.ok) { showToast('🚫 ' + caster.name + ' can\'t cast — ' + can.reason, 'warn'); return; }
+
+  // Action economy
+  if (combatActive) {
+    var tu = ensureTurnUsed(caster);
+    var cost = spell.cost === 'bonus' ? 'bonus' : 'action';
+    if (tu[cost]) { showToast('🚫 ' + caster.name + ' already used their ' + cost, 'warn'); return; }
+    tu[cost] = true;
+  }
+
+  // Burn the slot (cantrips are free)
+  var slotLevel = parseInt(req.slotLevel) || spell.level || 0;
+  if ((spell.level || 0) > 0) {
+    var slot = (pc.spellSlots || [])[slotLevel - 1];
+    if (!slot || slot.used >= slot.max) {
+      showToast('🚫 ' + pc.name + ' has no level ' + slotLevel + ' slots left', 'warn');
+      return;
+    }
+    slot.used++;
+    if (typeof savePartyStorage === 'function') savePartyStorage();
+    if (typeof renderParty === 'function') renderParty();
+  }
+
+  snapshotBeforeAction();
+
+  // Concentration: casting a new concentration spell drops the old one
+  if (spell.concentration) {
+    if (caster.concentrating) logCombat('💫 ' + caster.name + ' drops "' + caster.concentrating + '" to cast ' + spell.name, 'info');
+    caster.concentrating = spell.name;
+  }
+
+  // Resolve targets
+  var targets = [];
+  if (spell.aoeFt && req.center) {
+    var rCells = Math.max(1, Math.round(spell.aoeFt / 5));
+    combatants.forEach(function(c) {
+      if (c.hp <= 0 && c.type === 'enemy') return;
+      var pos = (typeof mapState !== 'undefined' && mapState.tokens) ? mapState.tokens[c.id] : null;
+      if (pos && dmDistFt(pos, req.center) <= spell.aoeFt) targets.push(c);
+    });
+    // Drop a visible AoE ring on the map for the table
+    if (typeof mapState !== 'undefined') {
+      mapState.props.push({ id: Date.now(), kind: 'aoe', x: req.center.x, y: req.center.y, r: rCells, color: '255,120,30' });
+      if (typeof renderMap === 'function') renderMap();
+    }
+  } else if (req.targetId) {
+    var t = combatants.find(function(x) { return x.id === req.targetId; });
+    if (t) targets.push(t);
+  }
+  if (!targets.length) { showToast('✨ ' + spell.name + ' hits nothing — no targets in the area', 'info'); }
+
+  // Upcast: +upcastDice per level above base
+  var dice = spell.dice || '';
+  var extraLevels = Math.max(0, slotLevel - (spell.level || 0));
+
+  var feed = {
+    id: Date.now(), kind: 'spell', attacker: caster.name, caster: caster.name,
+    spellName: spell.name, actionName: spell.name, slotLevel: slotLevel,
+    aoeFt: spell.aoeFt || 0, damageType: spell.damageType || '',
+    targets: [], notes: [], ts: new Date().toISOString()
+  };
+
+  var dc = spell.kind === 'save' ? spellSaveDC(pc, spell) : null;
+
+  targets.forEach(function(t) {
+    var entry = { name: t.name, type: t.type };
+    var baseDamage = req.damageRoll ? Math.max(0, parseInt(req.damageRoll) || 0) : rollDiceExpr(dice).total;
+    if (extraLevels > 0 && spell.upcastDice && !req.damageRoll) {
+      for (var u = 0; u < extraLevels; u++) baseDamage += rollDiceExpr(spell.upcastDice).total;
+    }
+
+    if (spell.kind === 'heal') {
+      var prev = t.hp;
+      t.hp = Math.min(t.maxHp, t.hp + baseDamage);
+      entry.healed = t.hp - prev;
+      if (prev === 0 && t.hp > 0) {
+        t.conditions = (t.conditions || []).filter(function(x) { return x !== 'Unconscious'; });
+        feed.notes.push(t.name + ' regains consciousness!');
+      }
+      logCombat('✨ ' + caster.name + ' — ' + spell.name + ' heals ' + t.name + ' for ' + entry.healed, 'heal');
+    } else if (spell.kind === 'attack') {
+      var roll = req.roll ? Math.max(1, Math.min(20, parseInt(req.roll))) : rollD20WithAdvState(0);
+      var bonus = spell.bonus !== undefined ? spell.bonus : spellAttackBonus(pc);
+      var total = roll + bonus;
+      var hit = roll === 20 ? true : roll === 1 ? false : total >= (t.ac || 10);
+      entry.roll = roll; entry.bonus = bonus; entry.total = total; entry.ac = t.ac || 10; entry.hit = hit;
+      if (hit) {
+        var amt = roll === 20 ? baseDamage + rollDiceExpr(dice.replace(/[+-]\s*\d+$/, '')).total : baseDamage;
+        var def = applyDamageWithDefenses(t, amt, spell.damageType);
+        t.hp = Math.max(0, t.hp - def.taken);
+        entry.taken = def.taken;
+        entry.defNotes = def.notes;
+        if (def.taken > 0 && typeof checkConcentration === 'function') checkConcentration(t, def.taken);
+        logCombat('✨ ' + caster.name + ' — ' + spell.name + ' hits ' + t.name + ' (' + total + ' vs AC ' + entry.ac + ') for ' + def.taken + (def.notes.length ? ' · ' + def.notes.join(' · ') : ''), 'damage');
+      } else {
+        logCombat('✨ ' + caster.name + ' — ' + spell.name + ' misses ' + t.name + ' (' + total + ' vs AC ' + entry.ac + ')', 'info');
+      }
+    } else {
+      // Save-based (Fireball et al): target saves, half on success
+      var sb = saveBonusFor(t, spell.saveAbility || 'dex');
+      var sRoll = Math.floor(Math.random() * 20) + 1;
+      var sTotal = sRoll + sb;
+      var saved = sTotal >= dc;
+      entry.save = { ability: (spell.saveAbility || 'dex').toUpperCase(), dc: dc, roll: sRoll, bonus: sb, total: sTotal, saved: saved };
+      var amt2 = saved && spell.halfOnSave !== false ? Math.floor(baseDamage / 2) : (saved ? 0 : baseDamage);
+      var def2 = applyDamageWithDefenses(t, amt2, spell.damageType);
+      t.hp = Math.max(0, t.hp - def2.taken);
+      entry.taken = def2.taken;
+      entry.defNotes = def2.notes;
+      if (def2.taken > 0 && typeof checkConcentration === 'function') checkConcentration(t, def2.taken);
+      logCombat('✨ ' + spell.name + ' → ' + t.name + ': ' + entry.save.ability + ' save ' + sTotal + ' vs DC ' + dc + ' — ' + (saved ? 'SAVED, ' : 'FAILED, ') + def2.taken + ' dmg' + (def2.notes.length ? ' · ' + def2.notes.join(' · ') : ''), saved ? 'info' : 'damage');
+    }
+    feed.targets.push(entry);
+  });
+
+  window.lastActionResult = feed;
+  showToast('✨ ' + caster.name + ' casts ' + spell.name + (slotLevel > (spell.level||0) ? ' (level ' + slotLevel + ')' : '') + ' — ' + targets.length + ' target' + (targets.length !== 1 ? 's' : ''), 'success');
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
 }

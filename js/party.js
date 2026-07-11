@@ -407,6 +407,7 @@ function openAddPlayerModal() {
   ['str','dex','con','int','wis','cha'].forEach(function(s) { document.getElementById('pc-' + s).value = 10; });
   populateSkillsGrid({});
   populateActionRows([]);
+  populateSpellRows([]);
   var fr0 = document.getElementById('pc-feat-rage'); if (fr0) fr0.checked = false;
   var fk0 = document.getElementById('pc-feat-reckless'); if (fk0) fk0.checked = false;
   document.getElementById('player-modal').classList.add('show');
@@ -590,6 +591,7 @@ function editPlayer(id) {
   document.getElementById('pc-cha').value = pc.cha || 10;
   document.getElementById('pc-moves').value = pc.moves || '';
   populateActionRows(pc.actions || []);
+  populateSpellRows(pc.spells || []);
   var fr = document.getElementById('pc-feat-rage'); if (fr) fr.checked = (pc.features || []).indexOf('Rage') >= 0;
   var fk = document.getElementById('pc-feat-reckless'); if (fk) fk.checked = (pc.features || []).indexOf('Reckless Attack') >= 0;
   var existingSlots = pc.spellSlots || getDefaultSlots(pc.cls, pc.level) || [];
@@ -628,6 +630,7 @@ function savePlayer() {
     cha: parseInt(document.getElementById('pc-cha').value) || 10,
     moves: document.getElementById('pc-moves').value,
     actions: collectActions(),
+    spells: collectSpells(),
     features: (function() {
       var f = [];
       if (document.getElementById('pc-feat-rage') && document.getElementById('pc-feat-rage').checked) f.push('Rage');
@@ -936,4 +939,90 @@ function destroyEquipped(pcId) {
   renderInventoryModal(pcId);
   showToast('💥 ' + equipped.length + ' item' + (equipped.length > 1 ? 's' : '') + ' destroyed — ' + pc.name + ' weeps', 'danger');
   if (typeof logCombat === 'function') logCombat('💥 ' + pc.name + ' lost equipment: ' + equipped.map(function(i){return i.name;}).join(', '), 'damage');
+}
+
+// ══════════════════════════════════════════════════════════════
+// SPELL ROWS (character modal)
+// ══════════════════════════════════════════════════════════════
+function addSpellRow(s) {
+  s = s || {};
+  var list = document.getElementById('pc-spells-list');
+  if (!list) return;
+  var row = document.createElement('div');
+  row.className = 'pc-spell-row';
+  row.style.cssText = 'border:1px solid rgba(100,180,255,0.15);border-radius:5px;padding:6px;margin-bottom:6px;background:rgba(100,180,255,0.03);';
+  var dmgOptions = '<option value="">untyped</option>' + ACTION_DMG_TYPES.map(function(t) {
+    return '<option value="' + t + '"' + (s.damageType === t ? ' selected' : '') + '>' + t + '</option>';
+  }).join('');
+  var lvlOptions = '';
+  for (var L = 0; L <= 9; L++) lvlOptions += '<option value="' + L + '"' + ((s.level || 0) === L ? ' selected' : '') + '>' + (L === 0 ? 'Cantrip' : 'L' + L) + '</option>';
+  var abilityOptions = ['dex','con','str','int','wis','cha'].map(function(ab) {
+    return '<option value="' + ab + '"' + ((s.saveAbility || 'dex') === ab ? ' selected' : '') + '>' + ab.toUpperCase() + '</option>';
+  }).join('');
+  row.innerHTML =
+    '<div style="display:grid;grid-template-columns:2fr 78px 1fr 58px 26px;gap:5px;align-items:center;margin-bottom:4px;">' +
+      '<input class="ps-name" placeholder="Fireball" value="' + (s.name || '').replace(/"/g, '&quot;') + '" style="font-size:13px;padding:5px;" oninput="autoInferSpellType(this)">' +
+      '<select class="ps-level" style="font-size:11px;padding:5px;">' + lvlOptions + '</select>' +
+      '<select class="ps-kind" style="font-size:11px;padding:5px;">' +
+        '<option value="save"' + (s.kind === 'save' || !s.kind ? ' selected' : '') + '>💾 Save-based</option>' +
+        '<option value="attack"' + (s.kind === 'attack' ? ' selected' : '') + '>⚔ Spell attack</option>' +
+        '<option value="heal"' + (s.kind === 'heal' ? ' selected' : '') + '>❤ Heal</option>' +
+      '</select>' +
+      '<input class="ps-dice" placeholder="8d6" title="Damage/heal dice" value="' + (s.dice || '').replace(/"/g, '&quot;') + '" style="font-size:12px;padding:5px;">' +
+      '<button type="button" onclick="this.closest(\'.pc-spell-row\').remove()" style="background:none;border:1px solid var(--border);color:var(--blood-light);border-radius:3px;cursor:pointer;height:26px;font-size:12px;">✕</button>' +
+    '</div>' +
+    '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;">' +
+      '<span style="font-size:10px;color:var(--text-dim);">type</span>' +
+      '<select class="ps-dmgtype" style="font-size:11px;padding:3px;">' + dmgOptions + '</select>' +
+      '<span style="font-size:10px;color:var(--text-dim);">save</span>' +
+      '<select class="ps-save" style="font-size:11px;padding:3px;">' + abilityOptions + '</select>' +
+      '<span style="font-size:10px;color:var(--text-dim);">range ft</span>' +
+      '<input class="ps-range" type="number" placeholder="120" value="' + (s.range || '') + '" style="font-size:11px;padding:3px;width:52px;text-align:center;">' +
+      '<span style="font-size:10px;color:var(--text-dim);">AoE radius ft</span>' +
+      '<input class="ps-aoe" type="number" placeholder="0" title="0 = single target" value="' + (s.aoeFt || '') + '" style="font-size:11px;padding:3px;width:46px;text-align:center;">' +
+      '<span style="font-size:10px;color:var(--text-dim);">upcast dice</span>' +
+      '<input class="ps-upcast" placeholder="1d6" title="Extra dice per slot level above base" value="' + (s.upcastDice || '').replace(/"/g, '&quot;') + '" style="font-size:11px;padding:3px;width:48px;">' +
+      '<label style="font-size:10px;color:var(--text-dim);display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" class="ps-conc"' + (s.concentration ? ' checked' : '') + '> conc.</label>' +
+    '</div>';
+  list.appendChild(row);
+}
+
+function autoInferSpellType(nameInput) {
+  var row = nameInput.closest('.pc-spell-row');
+  if (!row) return;
+  var sel = row.querySelector('.ps-dmgtype');
+  if (!sel || sel.value) return;
+  if (typeof inferDamageType !== 'function') return;
+  var t = inferDamageType(nameInput.value);
+  if (t) { sel.value = t; sel.style.color = '#8fd050'; setTimeout(function() { sel.style.color = ''; }, 800); }
+}
+
+function populateSpellRows(spells) {
+  var list = document.getElementById('pc-spells-list');
+  if (!list) return;
+  list.innerHTML = '';
+  (spells || []).forEach(function(s) { addSpellRow(s); });
+}
+
+function collectSpells() {
+  var out = [];
+  document.querySelectorAll('#pc-spells-list .pc-spell-row').forEach(function(row) {
+    var name = row.querySelector('.ps-name').value.trim();
+    if (!name) return;
+    var s = {
+      name: name,
+      level: parseInt(row.querySelector('.ps-level').value) || 0,
+      kind: row.querySelector('.ps-kind').value,
+      dice: row.querySelector('.ps-dice').value.trim() || '1d6',
+      range: parseInt(row.querySelector('.ps-range').value) || 60
+    };
+    var dt = row.querySelector('.ps-dmgtype'); if (dt && dt.value) s.damageType = dt.value;
+    else if (s.kind !== 'heal' && typeof inferDamageType === 'function') { var inf = inferDamageType(name); if (inf) s.damageType = inf; }
+    if (s.kind === 'save') s.saveAbility = row.querySelector('.ps-save').value;
+    var aoe = parseInt(row.querySelector('.ps-aoe').value); if (aoe > 0) s.aoeFt = aoe;
+    var up = row.querySelector('.ps-upcast').value.trim(); if (up) s.upcastDice = up;
+    if (row.querySelector('.ps-conc').checked) s.concentration = true;
+    out.push(s);
+  });
+  return out;
 }

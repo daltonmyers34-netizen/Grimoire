@@ -915,6 +915,165 @@ function toggleFeature(f) {
 }
 window._pvToggleFeature = toggleFeature;
 
+// ── Spellcasting flow ────────────────────────────────────────
+let pendingCast = null; // { spell, slotLevel } while placing an AoE on the map
+
+function castSpell(spellIdx) {
+  const d = latestData;
+  if (!d || !isMyTurn(d)) return;
+  const pc = myPC(d), me = myCombatant(d);
+  const s = (pc.spells || [])[spellIdx];
+  if (!s) return;
+  const can = pvCanAct(me);
+  if (!can.ok) {
+    showOverlay('<div style="text-align:center;font-size:15px;color:#e05050;">You can\'t cast — you are ' + esc(can.reason) + '.</div>' +
+      '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCloseOverlay()">OK</button>');
+    return;
+  }
+  const lvl = s.level || 0;
+  if (lvl === 0) { chooseCastTargets(s, 0); return; }
+  // Slot picker: any level >= spell level with a free slot
+  const options = (pc.spellSlots || []).map((sl, idx) => ({ level: idx + 1, free: sl.max - sl.used, max: sl.max }))
+    .filter(o => o.level >= lvl && o.max > 0);
+  const usable = options.filter(o => o.free > 0);
+  if (!usable.length) {
+    showOverlay('<div style="text-align:center;font-size:15px;color:#e05050;">No level ' + lvl + '+ slots left.</div>' +
+      '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCloseOverlay()">OK</button>');
+    return;
+  }
+  if (usable.length === 1 && usable[0].level === lvl) { chooseCastTargets(s, lvl); return; }
+  let html = '<div style="font-family:Cinzel,serif;font-size:17px;color:var(--gold);margin-bottom:10px;">✨ ' + esc(s.name) + ' — which slot?</div>';
+  options.forEach(o => {
+    html += '<button class="pv-target-btn" ' + (o.free <= 0 ? 'disabled' : '') + ' data-slot="' + o.level + '">' +
+      '<span>Level ' + o.level + (o.level > lvl ? ' (upcast)' : '') + '</span>' +
+      '<span style="margin-left:auto;font-size:12px;color:' + (o.free > 0 ? '#8fd050' : '#555') + ';">' + o.free + '/' + o.max + ' left</span></button>';
+  });
+  html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:8px;" onclick="_pvCloseOverlay()">Cancel</button>';
+  showOverlay(html);
+  document.querySelectorAll('[data-slot]').forEach(btn => btn.addEventListener('click', () => {
+    const sl = parseInt(btn.dataset.slot);
+    closeOverlay();
+    chooseCastTargets(s, sl);
+  }));
+}
+window._pvCastSpell = castSpell;
+
+function chooseCastTargets(s, slotLevel) {
+  const d = latestData;
+  const me = myCombatant(d);
+  if (s.aoeFt) {
+    // AoE: place the circle on the map
+    pendingCast = { spell: s, slotLevel };
+    activeTab = 'map';
+    renderRoot(d);
+    showOverlay('<div style="text-align:center;font-size:15px;color:var(--gold-light);">🎯 Tap the map where you want the center of your ' + s.aoeFt + ' ft ' + esc(s.name) + '.</div>' +
+      '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCancelCast()">Cancel</button>');
+    setTimeout(closeOverlay, 2200);
+    return;
+  }
+  // Single target
+  const candidates = (d.combatants || []).filter(c => {
+    if (c.hidden) return false;
+    if (s.kind === 'heal') return c.type === 'ally';
+    return c.id !== me.id && c.hp > 0;
+  });
+  const m = d.mapState;
+  const myPos = m && m.tokens ? m.tokens[me.id] : null;
+  let html = '<div style="font-family:Cinzel,serif;font-size:17px;color:var(--gold);margin-bottom:10px;">✨ ' + esc(s.name) + ' — target?</div>';
+  candidates.forEach(c => {
+    const tPos = m && m.tokens ? m.tokens[c.id] : null;
+    let far = false, distLabel = '';
+    if (myPos && tPos) {
+      const ft = distFt(myPos, tPos);
+      far = ft > (s.range || 60);
+      distLabel = '<span style="margin-left:auto;font-size:12px;color:' + (far ? '#e05050' : '#8fd050') + ';">' + ft + ' ft' + (far ? ' — too far' : '') + '</span>';
+    }
+    html += '<button class="pv-target-btn" ' + (far ? 'disabled' : '') + ' data-sptarget="' + c.id + '">' +
+      '<span style="color:' + (c.type === 'ally' ? '#90c8ff' : '#ff9090') + ';">' + esc(c.name) + '</span>' +
+      '<span style="font-size:12px;color:var(--text-dim);">' + c.hp + '/' + c.maxHp + '</span>' + distLabel + '</button>';
+  });
+  html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:8px;" onclick="_pvCloseOverlay()">Cancel</button>';
+  showOverlay(html);
+  document.querySelectorAll('[data-sptarget]').forEach(btn => btn.addEventListener('click', () => {
+    const tid = parseFloat(btn.dataset.sptarget);
+    closeOverlay();
+    finishCast(s, slotLevel, { targetId: tid });
+  }));
+}
+
+function cancelCast() { pendingCast = null; closeOverlay(); if (latestData) renderRoot(latestData); }
+window._pvCancelCast = cancelCast;
+
+// Called from the map click handler when an AoE cast is pending
+function placeAoECast(center) {
+  const cast = pendingCast;
+  pendingCast = null;
+  const d = latestData;
+  // Preview who's inside
+  const inside = (d.combatants || []).filter(c => {
+    if (c.hidden && c.type !== 'ally') return false;
+    const pos = (d.mapState.tokens || {})[c.id];
+    return pos && distFt(pos, center) <= cast.spell.aoeFt;
+  });
+  let html = '<div style="font-family:Cinzel,serif;font-size:16px;color:var(--gold);margin-bottom:8px;">💥 ' + esc(cast.spell.name) + ' will hit:</div>';
+  html += inside.length
+    ? inside.map(c => '<div style="font-size:14px;padding:3px 0;color:' + (c.type === 'ally' ? '#90c8ff' : '#ff9090') + ';">• ' + esc(c.name) + (c.type === 'ally' ? ' ⚠' : '') + '</div>').join('')
+    : '<div style="font-size:13px;color:var(--text-dim);">Nobody. The dungeon floor takes it personally.</div>';
+  if (inside.some(c => c.type === 'ally')) html += '<div style="font-size:11px;color:#ffb450;margin-top:6px;">⚠ Allies are in the blast!</div>';
+  html += '<div style="display:flex;gap:8px;margin-top:12px;">' +
+    '<button class="btn-pv" style="flex:1;justify-content:center;border-color:var(--gold);" id="pv-cast-confirm">🔥 Cast it!</button>' +
+    '<button class="btn-pv" style="justify-content:center;" onclick="_pvCancelCast()">Cancel</button></div>';
+  showOverlay(html);
+  document.getElementById('pv-cast-confirm').addEventListener('click', () => {
+    closeOverlay();
+    finishCast(cast.spell, cast.slotLevel, { center });
+  });
+}
+
+function finishCast(s, slotLevel, targeting) {
+  const d = latestData;
+  const pc = myPC(d), me = myCombatant(d);
+  const send = (roll, damageRoll) => {
+    sendPlayerRequest(Object.assign({ type: 'castSpell', combatantId: me.id, pcId: pc.id, spell: s, slotLevel, roll, damageRoll, ts: Date.now() }, targeting));
+    showWaiting('✨ Casting ' + s.name + '...');
+  };
+  const askDamage = (roll) => {
+    if (!s.dice) { send(roll, null); return; }
+    const extra = Math.max(0, slotLevel - (s.level || 0));
+    const diceLabel = s.dice + (extra > 0 && s.upcastDice ? ' + ' + extra + '×' + s.upcastDice : '');
+    showOverlay('<div style="font-family:Cinzel,serif;font-size:16px;color:var(--gold);margin-bottom:8px;text-align:center;">🎲 Roll your damage: ' + esc(diceLabel) + '</div>' +
+      '<div style="font-size:12px;color:var(--text-dim);text-align:center;margin-bottom:10px;">Enter the total of your dice, or let the app roll.</div>' +
+      '<input id="pv-dmg-input" type="number" min="0" placeholder="total" style="width:100%;font-size:24px;text-align:center;padding:8px;background:rgba(0,0,0,0.4);border:2px solid rgba(212,175,55,0.4);border-radius:8px;color:var(--parchment);margin-bottom:10px;">' +
+      '<div style="display:flex;gap:8px;">' +
+        '<button class="btn-pv" style="flex:1;justify-content:center;border-color:var(--gold);" id="pv-dmg-go">💥 Deal it</button>' +
+        '<button class="btn-pv" style="justify-content:center;" id="pv-dmg-auto">🎲 Roll for me</button>' +
+      '</div>');
+    const inp = document.getElementById('pv-dmg-input');
+    inp.focus();
+    document.getElementById('pv-dmg-go').addEventListener('click', () => {
+      const v = parseInt(inp.value);
+      if (!v && v !== 0) { inp.style.borderColor = '#e05050'; return; }
+      closeOverlay(); send(roll, v);
+    });
+    document.getElementById('pv-dmg-auto').addEventListener('click', () => { closeOverlay(); send(roll, null); });
+  };
+  if (s.kind === 'attack') {
+    // d20 first, then damage
+    showOverlay('<div style="font-family:Cinzel,serif;font-size:17px;color:var(--gold);margin-bottom:10px;text-align:center;">🎲 Spell attack — roll your d20!</div>' +
+      '<input id="pv-sroll" type="number" min="1" max="20" placeholder="1–20" style="width:100%;font-size:28px;text-align:center;padding:10px;background:rgba(0,0,0,0.4);border:2px solid rgba(212,175,55,0.4);border-radius:8px;color:var(--parchment);font-family:Cinzel,serif;margin-bottom:12px;">' +
+      '<button class="btn-pv" style="width:100%;justify-content:center;" id="pv-sroll-go">✨ Cast!</button>');
+    const inp = document.getElementById('pv-sroll');
+    inp.focus();
+    document.getElementById('pv-sroll-go').addEventListener('click', () => {
+      const roll = parseInt(inp.value);
+      if (!roll || roll < 1 || roll > 20) { inp.style.borderColor = '#e05050'; return; }
+      closeOverlay(); askDamage(roll);
+    });
+  } else {
+    askDamage(null);
+  }
+}
+
 function endMyTurn() {
   const d = latestData;
   if (!d || !isMyTurn(d)) return;
@@ -989,6 +1148,26 @@ function showActionResult(r) {
   const wrap = document.createElement('div');
   wrap.className = 'pv-result-overlay';
   let inner = '';
+  if (r.kind === 'spell') {
+    inner += '<div class="pv-result-card hit" style="border-color:#64b4ff;box-shadow:0 0 40px rgba(100,180,255,0.5);max-width:340px;">';
+    inner += '<div style="font-size:13px;color:var(--text-dim);margin-bottom:4px;">' + esc(r.caster || r.attacker) + ' casts</div>';
+    inner += '<div style="font-family:Cinzel,serif;font-size:26px;font-weight:700;color:#90c8ff;">✨ ' + esc(r.spellName || r.actionName) + (r.slotLevel > 0 ? ' <span style="font-size:13px;color:var(--text-dim);">L' + r.slotLevel + '</span>' : '') + '</div>';
+    (r.targets || []).forEach((t, i) => {
+      let line = '<strong style="color:' + (t.type === 'ally' ? '#90c8ff' : '#ff9090') + ';">' + esc(t.name) + '</strong> — ';
+      if (t.healed !== undefined) line += '<span style="color:#64b4ff;">+' + t.healed + ' HP</span>';
+      else if (t.save) line += t.save.ability + ' ' + t.save.total + ' vs DC ' + t.save.dc + ': ' + (t.save.saved ? '<span style="color:#8fd050;">SAVED</span>' : '<span style="color:#e05050;">FAILED</span>') + ' · ' + t.taken + ' dmg';
+      else if (t.hit !== undefined) line += (t.hit ? '<span style="color:#e05050;">HIT</span> · ' + t.taken + ' dmg' : '<span style="color:#8fd050;">MISS</span>');
+      if (t.defNotes && t.defNotes.length) line += ' <span style="font-size:10px;color:var(--text-dim);">(' + esc(t.defNotes.join(', ')) + ')</span>';
+      inner += '<div style="font-size:14px;margin-top:6px;text-align:left;opacity:0;animation:pvSlideIn 0.35s ease-out ' + (0.4 + i * 0.25) + 's forwards;">' + line + '</div>';
+    });
+    if (!(r.targets || []).length) inner += '<div style="font-size:13px;color:var(--text-dim);margin-top:8px;">...and hits nothing at all.</div>';
+    if (r.notes && r.notes.length) inner += '<div style="font-size:11px;color:var(--text-secondary);margin-top:8px;">' + r.notes.map(esc).join(' · ') + '</div>';
+    inner += '</div>';
+    wrap.innerHTML = inner;
+    document.body.appendChild(wrap);
+    setTimeout(() => wrap.remove(), 4500 + (r.targets || []).length * 250);
+    return;
+  }
   const cls = r.kind === 'heal' ? 'heal' : (r.hit ? 'hit' : 'miss');
   inner += '<div class="pv-result-card ' + cls + '">';
   inner += '<div style="font-size:13px;color:var(--text-dim);margin-bottom:8px;">' + esc(r.attacker) + ' → ' + esc(r.target) + ' · ' + esc(r.actionName || '') + '</div>';
@@ -1040,6 +1219,12 @@ function bindMapInteraction() {
     const pc = myPC(d);
     const usedFt = (me.turnUsed && me.turnUsed.movedFt) || 0;
     const speed = Math.max(0, pvSpeedFt(me, (pc && pc.speed) || 30) - usedFt);
+
+    // A pending AoE spell placement takes priority over everything
+    if (pendingCast) {
+      placeAoECast({ x, y });
+      return;
+    }
 
     // Tap an enemy token → attack it from the map
     if (!moveSelecting) {
@@ -1429,6 +1614,35 @@ function renderCharacterCard(d) {
           '<div style="font-size:11px;color:var(--text-dim);">' + (a.range || 5) + ' ft · ' + esc(a.dice || '') + (a.kind !== 'heal' ? ' · +' + (a.bonus || 0) + ' to hit' : '') + '</div>' +
         '</div>' +
         '<button class="pv-action-use" ' + ((myTurn && !spent) ? '' : 'disabled') + ' onclick="_pvUseAction(' + i + ')">' + (spent ? 'USED' : 'USE') + '</button>' +
+      '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Spells — cast with automatic slot burn
+  const pcSpells = pc.spells || [];
+  if (pcSpells.length) {
+    const meNow2 = myCombatant(d);
+    const tu2 = (meNow2 && meNow2.turnUsed) || {};
+    const myTurn2 = isMyTurn(d);
+    html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);">';
+    html += '<div class="card-section-label" style="border:none;padding:0;margin-bottom:8px;">Spells</div>';
+    pcSpells.forEach((s, i) => {
+      const lvl = s.level || 0;
+      const slotOk = lvl === 0 || (pc.spellSlots || []).some((sl, idx) => idx + 1 >= lvl && sl.max > 0 && sl.used < sl.max);
+      const canCast = myTurn2 && !tu2.action && slotOk;
+      const bits = [lvl === 0 ? 'Cantrip' : 'L' + lvl,
+        s.kind === 'save' ? (s.saveAbility || 'dex').toUpperCase() + ' save' : s.kind === 'heal' ? 'Heal' : 'Spell attack',
+        s.aoeFt ? s.aoeFt + ' ft radius' : (s.range || 60) + ' ft',
+        esc(s.dice || '') + (s.damageType ? ' ' + esc(s.damageType) : ''),
+        s.concentration ? 'conc.' : ''].filter(Boolean);
+      html += '<div class="pv-action-row">' +
+        '<span style="font-size:16px;">✨</span>' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div style="font-size:14px;font-weight:600;color:#90c8ff;">' + esc(s.name) + '</div>' +
+          '<div style="font-size:11px;color:var(--text-dim);">' + bits.join(' · ') + '</div>' +
+        '</div>' +
+        '<button class="pv-action-use" style="border-color:#64b4ff;color:#90c8ff;background:rgba(100,180,255,0.12);" ' + (canCast ? '' : 'disabled') + ' onclick="_pvCastSpell(' + i + ')">' + (!slotOk && lvl > 0 ? 'NO SLOT' : tu2.action && myTurn2 ? 'USED' : 'CAST') + '</button>' +
       '</div>';
     });
     html += '</div>';
