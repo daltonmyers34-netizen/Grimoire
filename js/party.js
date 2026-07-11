@@ -406,6 +406,8 @@ function openAddPlayerModal() {
   ['str','dex','con','int','wis','cha'].forEach(function(s) { document.getElementById('pc-' + s).value = 10; });
   populateSkillsGrid({});
   populateActionRows([]);
+  var fr0 = document.getElementById('pc-feat-rage'); if (fr0) fr0.checked = false;
+  var fk0 = document.getElementById('pc-feat-reckless'); if (fk0) fk0.checked = false;
   document.getElementById('player-modal').classList.add('show');
 }
 
@@ -446,6 +448,11 @@ function addActionRow(a) {
       '<select class="pa-dmgtype" title="Damage type — resistances and immunities auto-apply" style="font-size:11px;padding:3px;">' + dmgOptions + '</select>' +
       '<span style="font-size:10px;color:var(--text-dim);margin-left:6px;">on hit</span>' +
       '<select class="pa-condition" title="Condition inflicted on hit" style="font-size:11px;padding:3px;">' + condOptions + '</select>' +
+      '<span style="font-size:10px;color:var(--text-dim);margin-left:6px;">cost</span>' +
+      '<select class="pa-cost" title="Action economy cost" style="font-size:11px;padding:3px;">' +
+        '<option value="action"' + (a.cost !== 'bonus' ? ' selected' : '') + '>Action</option>' +
+        '<option value="bonus"' + (a.cost === 'bonus' ? ' selected' : '') + '>Bonus</option>' +
+      '</select>' +
       '<span style="font-size:10px;color:var(--text-dim);">save</span>' +
       '<select class="pa-saveability" title="Saving throw ability to resist the condition" style="font-size:11px;padding:3px;">' + abilityOptions + '</select>' +
       '<input class="pa-savedc" type="number" placeholder="DC" title="Save DC" value="' + (a.saveDC || '') + '" style="font-size:11px;padding:3px;width:46px;text-align:center;">' +
@@ -492,6 +499,7 @@ function collectActions() {
     var cond = row.querySelector('.pa-condition'); if (cond && cond.value) a.applyCondition = cond.value;
     var sa = row.querySelector('.pa-saveability'); if (sa && sa.value) a.saveAbility = sa.value;
     var dc = row.querySelector('.pa-savedc'); if (dc && dc.value) a.saveDC = parseInt(dc.value) || 0;
+    var pcost = row.querySelector('.pa-cost'); if (pcost && pcost.value === 'bonus') a.cost = 'bonus';
     out.push(a);
   });
   return out;
@@ -581,6 +589,8 @@ function editPlayer(id) {
   document.getElementById('pc-cha').value = pc.cha || 10;
   document.getElementById('pc-moves').value = pc.moves || '';
   populateActionRows(pc.actions || []);
+  var fr = document.getElementById('pc-feat-rage'); if (fr) fr.checked = (pc.features || []).indexOf('Rage') >= 0;
+  var fk = document.getElementById('pc-feat-reckless'); if (fk) fk.checked = (pc.features || []).indexOf('Reckless Attack') >= 0;
   var existingSlots = pc.spellSlots || getDefaultSlots(pc.cls, pc.level) || [];
   for (var i = 1; i <= 9; i++) {
     var el = document.getElementById('pc-ss-' + i);
@@ -617,6 +627,12 @@ function savePlayer() {
     cha: parseInt(document.getElementById('pc-cha').value) || 10,
     moves: document.getElementById('pc-moves').value,
     actions: collectActions(),
+    features: (function() {
+      var f = [];
+      if (document.getElementById('pc-feat-rage') && document.getElementById('pc-feat-rage').checked) f.push('Rage');
+      if (document.getElementById('pc-feat-reckless') && document.getElementById('pc-feat-reckless').checked) f.push('Reckless Attack');
+      return f;
+    })(),
     resist: (window._importedDefenses && window._importedDefenses.resist) || (existingPC && existingPC.resist) || [],
     immune: (window._importedDefenses && window._importedDefenses.immune) || (existingPC && existingPC.immune) || [],
     vuln: (window._importedDefenses && window._importedDefenses.vuln) || (existingPC && existingPC.vuln) || [],
