@@ -24,6 +24,7 @@ function collectState() {
     savedEncounters: savedEncounters || [],
     mapState: (typeof mapState !== 'undefined' && mapState) ? mapState : null,
     savedMaps: (typeof savedMaps !== 'undefined' && savedMaps) ? savedMaps : [],
+    quests: (typeof quests !== 'undefined' && quests) ? quests : [],
     pvMessages: window.pvMessages || {},
     pvPartyMessage: window.pvPartyMessage || '',
     notes: {
@@ -51,6 +52,7 @@ function applyState(s) {
   if (s.savedEncounters) { savedEncounters = s.savedEncounters; if(typeof renderSavedEncounters==='function') renderSavedEncounters(); }
   if (s.mapState && typeof mapState !== 'undefined') { mapState = s.mapState; if(typeof renderMap==='function') renderMap(); }
   if (s.savedMaps && typeof savedMaps !== 'undefined') { savedMaps = s.savedMaps; if(typeof renderSavedMaps==='function') renderSavedMaps(); }
+  if (s.quests && typeof quests !== 'undefined') { quests = s.quests; if (typeof renderQuests === 'function') renderQuests(); }
   if (s.pvMessages) { window.pvMessages = s.pvMessages; }
   if (s.pvPartyMessage) { window.pvPartyMessage = s.pvPartyMessage; }
   if (s.partyInventory) { partyInventory = s.partyInventory; window.partyInventory = s.partyInventory; try { localStorage.setItem('dm-party-inventory', JSON.stringify(s.partyInventory)); } catch(e){}; if (typeof renderPartyInventory==='function') try { renderPartyInventory(); } catch(e){} }
@@ -228,6 +230,7 @@ function newCampaign() {
   totalXP = 0; xpLog = [];
   worldTotalHours = 6; worldSeason = 0;
   savedEncounters = [];
+  quests = [];
   window.pvMessages = {}; window.pvPartyMessage = '';
   if (typeof mapState !== 'undefined' && typeof defaultMapState === 'function') mapState = defaultMapState();
 
@@ -238,7 +241,7 @@ function newCampaign() {
   localStorage.removeItem('dm-plot-notes');
 
   // Re-render everything
-  ['renderCombatants','renderParty','renderNPCs','renderLocations','renderXP','updateWorldDisplay','syncTopBar','renderSavedEncounters','renderPartyInventory','renderMap','renderSavedMaps'].forEach(function(fn) {
+  ['renderCombatants','renderParty','renderNPCs','renderLocations','renderXP','updateWorldDisplay','syncTopBar','renderSavedEncounters','renderPartyInventory','renderMap','renderSavedMaps','renderQuests'].forEach(function(fn) {
     try { if (typeof window[fn] === 'function') window[fn](); } catch(e) {}
   });
 

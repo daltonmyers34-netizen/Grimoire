@@ -25,6 +25,7 @@ let lastGeneratedNPC = null;
 let lastEncounterData = null;
 let savedEncounters = [];
 let savedMaps = [];
+let quests = [];
 let diceOverlayExpanded = true;
 let worldTotalHours = 6;
 let worldSeason = 0;
@@ -185,6 +186,7 @@ document.addEventListener('DOMContentLoaded', function() {
   try { renderPresets(); } catch(e) { console.warn('renderPresets:', e); }
   try { renderPartyInventory(); } catch(e) { console.warn('renderPartyInventory:', e); }
   try { renderSavedEncounters(); } catch(e) { console.warn('renderSavedEncounters:', e); }
+  try { renderQuests(); } catch(e) { console.warn('renderQuests:', e); }
   try { refreshNamePanel(); } catch(e) { console.warn('refreshNamePanel:', e); }
   try { rollOneName(); } catch(e) { console.warn('rollOneName:', e); }
   try { initSidebarDrag(); } catch(e) { console.warn('initSidebarDrag:', e); }

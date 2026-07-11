@@ -754,6 +754,31 @@ function pvAttackContext(attacker, target, action) {
   return { net, notes };
 }
 
+// Equipped weapons become attack actions (mirror of the DM engine)
+function pvEffectiveActions(pc) {
+  const acts = (pc.actions || []).slice();
+  (pc.inventory || []).forEach(it => {
+    if (!it.equipped || it.slot !== 'weapon' || !it.dice) return;
+    if (acts.some(a => a.name.toLowerCase() === it.name.toLowerCase())) return;
+    const strMod = mod(pc.str || 10), dexMod = mod(pc.dex || 10);
+    const isRanged = (it.range || 5) > 20;
+    const am = isRanged ? dexMod : Math.max(strMod, dexMod);
+    acts.push({
+      name: it.name, kind: 'attack', range: it.range || 5,
+      bonus: am + profBonus(pc.level || 1),
+      dice: (it.dice || '1d6') + (am !== 0 ? (am > 0 ? '+' : '') + am : ''),
+      damageType: it.damageType || '', fromItem: true
+    });
+  });
+  return acts;
+}
+
+function pvEffectiveAC(pc) {
+  let ac = pc.ac || 10;
+  (pc.inventory || []).forEach(it => { if (it.equipped && it.acBonus) ac += it.acBonus; });
+  return ac;
+}
+
 async function sendPlayerRequest(payload) {
   try {
     await addDoc(collection(db, 'playerActions', dmUid, 'requests'), payload);
@@ -769,7 +794,7 @@ function useAction(actionIdx) {
   const d = latestData;
   if (!d || !isMyTurn(d)) return;
   const pc = myPC(d), me = myCombatant(d);
-  const a = (pc.actions || [])[actionIdx];
+  const a = pvEffectiveActions(pc)[actionIdx];
   if (!a) return;
   const can = pvCanAct(me);
   if (!can.ok) {
@@ -837,7 +862,8 @@ function openMapAttack(target) {
       '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCloseOverlay()">OK</button>');
     return;
   }
-  const acts = (pc.actions || []).filter(a => a.kind !== 'heal');
+  const allActs = pvEffectiveActions(pc);
+  const acts = allActs.filter(a => a.kind !== 'heal');
   if (!acts.length) {
     showOverlay('<div style="text-align:center;font-size:14px;color:var(--text-dim);">No attacks on your sheet yet — ask your DM to add Combat Actions to your character.</div>' +
       '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCloseOverlay()">OK</button>');
@@ -850,7 +876,7 @@ function openMapAttack(target) {
   let html = '<div style="font-family:Cinzel,serif;font-size:17px;color:var(--gold);margin-bottom:4px;">⚔ Attack ' + esc(target.name) + '</div>' +
     '<div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">' + target.hp + '/' + target.maxHp + ' HP' + (ft !== null ? ' · ' + ft + ' ft away' : '') + '</div>';
   acts.forEach((a, i) => {
-    const idx = (pc.actions || []).indexOf(a);
+    const idx = allActs.indexOf(a);
     const outOfRange = ft !== null && ft > (a.range || 5);
     html += '<button class="pv-target-btn" ' + (outOfRange ? 'disabled' : '') + ' data-mattack="' + idx + '">' +
       '<span>⚔ ' + esc(a.name) + '</span>' +
@@ -861,7 +887,7 @@ function openMapAttack(target) {
   showOverlay(html);
   document.querySelectorAll('[data-mattack]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const a = (pc.actions || [])[parseInt(btn.dataset.mattack)];
+      const a = pvEffectiveActions(pc)[parseInt(btn.dataset.mattack)];
       closeOverlay();
       askForRoll(a, me.id, target.id, pvAttackContext(me, target, a));
     });
@@ -1094,6 +1120,9 @@ window._pvSwitchTab = switchPvTab;
 // ══════════════════════════════════════════════════════════════
 function renderRoot(d) {
   latestData = d;
+  // Don't clobber a journal draft mid-typing — data updates still land in latestData
+  const ta = document.getElementById('pv-journal');
+  if (activeTab === 'journal' && ta && document.activeElement === ta) return;
   const root = document.getElementById('pv-root');
   const party = d.party || [];
 
@@ -1268,11 +1297,12 @@ function renderTwoColumnView(d) {
 
   // Tab toggle \u2014 Initiative shows when combat exists, Map shows when the DM has a map
   const hasMap = !!(d.mapState && d.mapState.cols);
-  if (hasCombat || hasMap) {
+  if (true) { // tabs always show — Journal is always available
     html += '<div class="pv-tabs">' +
       '<button class="pv-tab' + (activeTab === 'character' ? ' active' : '') + '" onclick="_pvSwitchTab(\'character\')">My Character</button>' +
       (hasCombat ? '<button class="pv-tab' + (activeTab === 'initiative' ? ' active' : '') + '" onclick="_pvSwitchTab(\'initiative\')">\u2694 Initiative</button>' : '') +
       (hasMap ? '<button class="pv-tab' + (activeTab === 'map' ? ' active' : '') + '" onclick="_pvSwitchTab(\'map\')">\ud83d\uddfa Map</button>' : '') +
+      '<button class="pv-tab' + (activeTab === 'journal' ? ' active' : '') + '" onclick="_pvSwitchTab(\'journal\')">📖 Journal</button>' +
     '</div>';
   }
 
@@ -1281,6 +1311,8 @@ function renderTwoColumnView(d) {
     html += renderInitiativePanel(d);
   } else if (activeTab === 'map' && hasMap) {
     html += renderMapPanel(d);
+  } else if (activeTab === 'journal') {
+    html += renderJournalPanel(d);
   } else {
     html += renderCharacterCard(d);
   }
@@ -1333,7 +1365,7 @@ function renderCharacterCard(d) {
 
   // AC + Init + Inspiration
   html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;">' +
-    '<span style="padding:5px 14px;border-radius:5px;font-size:13px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#aaa;">🛡 AC <strong style="color:var(--parchment);">' + (pc.ac || '?') + '</strong></span>' +
+    '<span style="padding:5px 14px;border-radius:5px;font-size:13px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#aaa;">🛡 AC <strong style="color:var(--parchment);">' + pvEffectiveAC(pc) + '</strong></span>' +
     '<span style="padding:5px 14px;border-radius:5px;font-size:13px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#aaa;">\u26A1 Init <strong style="color:var(--parchment);">' + fmtMod(pc.initBonus || 0) + '</strong></span>' +
     (pc.inspiration ? '<span class="insp-badge">\u2605 Inspired</span>' : '') +
   '</div>';
@@ -1378,7 +1410,7 @@ function renderCharacterCard(d) {
   }
 
   // Combat actions (playable on your turn)
-  const pcActions = pc.actions || [];
+  const pcActions = pvEffectiveActions(pc);
   if (pcActions.length) {
     const myTurn = isMyTurn(d);
     html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);">';
@@ -1478,6 +1510,33 @@ function renderCharacterCard(d) {
     html += '</div>';
   }
 
+  // Personal inventory & equipment
+  const myInv = pc.inventory || [];
+  if (myInv.length || pc.gold !== undefined) {
+    html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);">';
+    html += '<div class="card-section-label" style="border:none;padding:0;margin-bottom:8px;">My Inventory' +
+      (pc.gold !== undefined ? ' <span style="color:#ffd700;font-size:11px;text-transform:none;letter-spacing:0;margin-left:8px;">🪙 ' + (pc.gold || 0) + ' gold</span>' : '') + '</div>';
+    if (!myInv.length) {
+      html += '<div style="font-size:12px;color:#555;font-style:italic;">Empty pockets. Ask your DM for loot!</div>';
+    }
+    const slotIcons = { weapon: '⚔', armor: '🛡', shield: '🛡', light: '🕯', gear: '🎒' };
+    myInv.forEach(it => {
+      const extra = [];
+      if (it.dice) extra.push(it.dice + (it.damageType ? ' ' + it.damageType : ''));
+      if (it.acBonus) extra.push('+' + it.acBonus + ' AC');
+      if (it.lightFt) extra.push('💡 ' + it.lightFt + ' ft');
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid ' + (it.equipped ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.07)') + ';border-radius:5px;margin-bottom:4px;background:' + (it.equipped ? 'rgba(212,175,55,0.05)' : 'rgba(0,0,0,0.15)') + ';">' +
+        '<span>' + (slotIcons[it.slot] || '🎒') + '</span>' +
+        '<div style="flex:1;min-width:0;">' +
+          '<span style="font-size:13px;color:var(--parchment);">' + esc(it.name) + (it.qty > 1 ? ' ×' + it.qty : '') + '</span>' +
+          (extra.length ? '<span style="font-size:10px;color:var(--text-dim);margin-left:6px;">' + extra.join(' · ') + '</span>' : '') +
+        '</div>' +
+        (it.slot !== 'gear' ? '<button class="btn-pv" style="font-size:10px;padding:3px 10px;' + (it.equipped ? 'border-color:var(--gold);color:var(--gold-light);' : '') + '" onclick="_pvEquip(' + it.id + ',' + (it.equipped ? 'false' : 'true') + ')">' + (it.equipped ? '✓ Equipped' : 'Equip') + '</button>' : '') +
+      '</div>';
+    });
+    html += '</div>';
+  }
+
   // Party Inventory
   const inv = d.partyInventory || [];
   if (inv.length) {
@@ -1555,6 +1614,38 @@ function renderInitiativePanel(d) {
 // ══════════════════════════════════════════════════════════════
 // RENDER: Battle Map Panel (left panel, when tab active)
 // ══════════════════════════════════════════════════════════════
+function renderJournalPanel(d) {
+  const pc = myPC(d);
+  if (!pc) return '';
+  return '<div class="card">' +
+    '<div class="card-section-label">📖 ' + esc(pc.name) + '\'s Journal <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(saved to the campaign)</span></div>' +
+    '<textarea id="pv-journal" style="width:100%;min-height:300px;background:rgba(0,0,0,0.3);border:1px solid rgba(212,175,55,0.2);border-radius:8px;color:var(--parchment);font-family:Crimson Text,serif;font-size:16px;line-height:1.6;padding:12px;resize:vertical;box-sizing:border-box;">' + esc(pc.journal || '') + '</textarea>' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;">' +
+      '<button class="btn-pv" style="border-color:var(--gold);" onclick="_pvSaveJournal()">💾 Save Journal</button>' +
+      '<span id="pv-journal-status" style="font-size:12px;color:var(--text-dim);"></span>' +
+    '</div>' +
+  '</div>';
+}
+
+async function saveJournal() {
+  const d = latestData;
+  const pc = myPC(d);
+  const ta = document.getElementById('pv-journal');
+  if (!pc || !ta) return;
+  const ok = await sendPlayerRequest({ type: 'journal', pcId: pc.id, text: ta.value, ts: Date.now() });
+  const st = document.getElementById('pv-journal-status');
+  if (st) { st.textContent = ok ? '✓ Saved' : '⚠ failed'; st.style.color = ok ? '#8fd050' : '#e05050'; setTimeout(() => { if (st) st.textContent = ''; }, 2500); }
+}
+window._pvSaveJournal = saveJournal;
+
+function sendEquip(itemId, equipped) {
+  const d = latestData;
+  const pc = myPC(d);
+  if (!pc) return;
+  sendPlayerRequest({ type: 'equipItem', pcId: pc.id, itemId, equipped, ts: Date.now() });
+}
+window._pvEquip = sendEquip;
+
 function renderMapPanel(d) {
   const myTurn = isMyTurn(d);
   return '<div class="card">' +

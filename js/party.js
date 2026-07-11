@@ -382,6 +382,7 @@ function renderParty() {
         '<button class="add-to-init-btn" onclick="addPCToInitiative(' + pc.id + ')">⚔ Add to Initiative</button>' +
         '<button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;" onclick="editPlayer(' + pc.id + ')">✏ Edit</button>' +
         '<button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;background:rgba(80,160,40,0.15);border-color:rgba(80,160,40,0.4);color:#8fd050;" onclick="levelUp(' + pc.id + ')">⬆ Level Up</button>' +
+        '<button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;color:#d4a820;border-color:rgba(212,168,32,0.4);" onclick="openInventoryModal(' + pc.id + ')" title="Inventory & equipment">🎒</button>' +
         '<button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;color:var(--blood-light);border-color:rgba(139,26,26,0.4);" onclick="sendPlayerMessage(' + pc.id + ')" title="Message player">📨</button>' +
         '<button class="add-to-init-btn" style="right:auto;position:relative;bottom:auto;color:var(--blood-light);border-color:rgba(139,26,26,0.4);" onclick="deletePlayer(' + pc.id + ')">✕</button>' +
       '</div>' +
@@ -784,4 +785,155 @@ function commitInitRolls() {
   renderCombatants();
   var m = document.getElementById('init-roll-modal'); if (m) m.remove();
   showToast('⚔ ' + added + ' party member' + (added !== 1 ? 's' : '') + ' added to initiative!', 'success');
+}
+
+// ══════════════════════════════════════════════════════════════
+// INVENTORY & EQUIPMENT (DM manager)
+// ══════════════════════════════════════════════════════════════
+function openInventoryModal(pcId) {
+  var pc = party.find(function(p) { return p.id === pcId; });
+  if (!pc) return;
+  pc.inventory = pc.inventory || [];
+  if (pc.gold === undefined) pc.gold = 0;
+  var existing = document.getElementById('inv-modal');
+  if (existing) existing.remove();
+  var ov = document.createElement('div');
+  ov.id = 'inv-modal';
+  ov.className = 'modal-overlay show';
+  ov.style.zIndex = '2600';
+  ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+  renderInventoryModal(pcId);
+}
+
+function renderInventoryModal(pcId) {
+  var pc = party.find(function(p) { return p.id === pcId; });
+  var ov = document.getElementById('inv-modal');
+  if (!pc || !ov) return;
+  var esc = function(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
+  var slotIcons = { weapon: '⚔', armor: '🛡', shield: '🛡', light: '🕯', gear: '🎒' };
+  var html = '<div class="modal" style="max-width:520px;width:95%;max-height:88vh;overflow-y:auto;">' +
+    '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:4px;">🎒 ' + esc(pc.name) + ' — Inventory</h3>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">' +
+      '<span style="font-size:13px;color:var(--text-dim);">Gold:</span>' +
+      '<input id="inv-gold" type="number" value="' + (pc.gold || 0) + '" onchange="setPcGold(' + pcId + ', this.value)" style="width:90px;font-size:14px;padding:4px;text-align:center;"> 🪙' +
+      '<span style="margin-left:auto;font-size:11px;color:var(--text-dim);">AC with gear: <strong style="color:var(--parchment);">' + (typeof effectiveAC === 'function' ? effectiveAC(pc) : pc.ac) + '</strong></span>' +
+    '</div>';
+
+  // Add item row
+  html += '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:12px;">' +
+    '<div style="display:grid;grid-template-columns:2fr 60px 1fr auto;gap:6px;align-items:end;">' +
+      '<div class="field-group" style="margin:0;"><label>Item <span style="color:#666;font-weight:normal;">(known names auto-fill stats)</span></label><input id="inv-new-name" placeholder="Longsword, Torch, Shield, Rope..."></div>' +
+      '<div class="field-group" style="margin:0;"><label>Qty</label><input id="inv-new-qty" type="number" value="1" style="text-align:center;"></div>' +
+      '<div class="field-group" style="margin:0;"><label>Slot</label><select id="inv-new-slot">' +
+        '<option value="gear">Gear</option><option value="weapon">Weapon</option><option value="armor">Armor</option><option value="shield">Shield</option><option value="light">Light</option>' +
+      '</select></div>' +
+      '<button class="btn btn-gold btn-sm" onclick="addInventoryItem(' + pcId + ')">+ Add</button>' +
+    '</div></div>';
+
+  // Item list
+  if (!pc.inventory.length) {
+    html += '<div style="color:var(--text-dim);font-size:13px;padding:12px;text-align:center;font-style:italic;">No items yet.</div>';
+  } else {
+    pc.inventory.forEach(function(it) {
+      var extra = [];
+      if (it.dice) extra.push(it.dice + (it.damageType ? ' ' + it.damageType : ''));
+      if (it.acBonus) extra.push('+' + it.acBonus + ' AC');
+      if (it.lightFt) extra.push('💡 ' + it.lightFt + ' ft');
+      if (it.range && it.slot === 'weapon') extra.push(it.range + ' ft');
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid ' + (it.equipped ? 'rgba(212,175,55,0.45)' : 'rgba(255,255,255,0.08)') + ';border-radius:6px;margin-bottom:5px;background:' + (it.equipped ? 'rgba(212,175,55,0.06)' : 'rgba(0,0,0,0.2)') + ';">' +
+        '<span>' + (slotIcons[it.slot] || '🎒') + '</span>' +
+        '<div style="flex:1;min-width:0;">' +
+          '<span style="font-size:14px;color:var(--parchment);">' + esc(it.name) + (it.qty > 1 ? ' ×' + it.qty : '') + '</span>' +
+          (extra.length ? '<span style="font-size:11px;color:var(--text-dim);margin-left:8px;">' + extra.join(' · ') + '</span>' : '') +
+        '</div>' +
+        (it.slot !== 'gear' ? '<button class="btn btn-ghost btn-sm" style="' + (it.equipped ? 'border-color:var(--gold);color:var(--gold);' : '') + '" onclick="dmToggleEquip(' + pcId + ',' + it.id + ')">' + (it.equipped ? '✓ Equipped' : 'Equip') + '</button>' : '') +
+        '<button onclick="deleteInventoryItem(' + pcId + ',' + it.id + ')" style="background:none;border:1px solid var(--border);color:var(--blood-light);border-radius:3px;cursor:pointer;width:24px;height:24px;font-size:11px;">✕</button>' +
+      '</div>';
+    });
+  }
+
+  // DM chaos tools
+  html += '<div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;display:flex;gap:8px;flex-wrap:wrap;">' +
+    '<button class="btn btn-blood btn-sm" onclick="destroyEquipped(' + pcId + ')" title="Lava, rust monsters, cursed dispels...">💥 Destroy Equipped</button>' +
+    '<button class="btn btn-ghost" style="margin-left:auto;" onclick="document.getElementById(\'inv-modal\').remove()">Close</button>' +
+  '</div></div>';
+  ov.innerHTML = html;
+}
+
+function addInventoryItem(pcId) {
+  var pc = party.find(function(p) { return p.id === pcId; });
+  if (!pc) return;
+  var name = document.getElementById('inv-new-name').value.trim();
+  if (!name) return;
+  var qty = parseInt(document.getElementById('inv-new-qty').value) || 1;
+  var slot = document.getElementById('inv-new-slot').value;
+  var item = { id: typeof uniqueId === 'function' ? uniqueId() : Date.now(), name: name, qty: qty, slot: slot, equipped: false };
+  var preset = typeof itemPresetFor === 'function' ? itemPresetFor(name) : null;
+  if (preset) {
+    item.slot = preset.slot;
+    if (preset.acBonus) item.acBonus = preset.acBonus;
+    if (preset.dice) item.dice = preset.dice;
+    if (preset.range) item.range = preset.range;
+    if (preset.damageType) item.damageType = preset.damageType;
+    if (preset.lightFt) item.lightFt = preset.lightFt;
+  } else if (slot === 'weapon') {
+    item.dice = '1d6';
+    item.range = 5;
+    item.damageType = typeof inferDamageType === 'function' ? (inferDamageType(name) || 'bludgeoning') : 'bludgeoning';
+  } else if (slot === 'shield') {
+    item.acBonus = 2;
+  } else if (slot === 'light') {
+    item.lightFt = 20;
+  }
+  pc.inventory = pc.inventory || [];
+  pc.inventory.push(item);
+  savePartyStorage();
+  renderInventoryModal(pcId);
+  showToast('+ ' + name + ' → ' + pc.name, 'success');
+}
+
+function dmToggleEquip(pcId, itemId) {
+  var pc = party.find(function(p) { return p.id === pcId; });
+  var it = pc && (pc.inventory || []).find(function(i) { return i.id === itemId; });
+  if (!it) return;
+  it.equipped = !it.equipped;
+  if (typeof recomputePcAC === 'function' && it.acBonus) recomputePcAC(pc);
+  savePartyStorage();
+  renderParty();
+  renderCombatants();
+  renderInventoryModal(pcId);
+}
+
+function deleteInventoryItem(pcId, itemId) {
+  var pc = party.find(function(p) { return p.id === pcId; });
+  if (!pc) return;
+  pc.inventory = (pc.inventory || []).filter(function(i) { return i.id !== itemId; });
+  if (typeof recomputePcAC === 'function') recomputePcAC(pc);
+  savePartyStorage();
+  renderParty();
+  renderInventoryModal(pcId);
+}
+
+function setPcGold(pcId, val) {
+  var pc = party.find(function(p) { return p.id === pcId; });
+  if (!pc) return;
+  pc.gold = Math.max(0, parseInt(val) || 0);
+  savePartyStorage();
+}
+
+function destroyEquipped(pcId) {
+  var pc = party.find(function(p) { return p.id === pcId; });
+  if (!pc) return;
+  var equipped = (pc.inventory || []).filter(function(i) { return i.equipped; });
+  if (!equipped.length) { showToast('Nothing equipped to destroy', 'info'); return; }
+  if (!confirm('Destroy ' + pc.name + '\'s equipped items (' + equipped.map(function(i){return i.name;}).join(', ') + ')? The lava shows no mercy.')) return;
+  pc.inventory = pc.inventory.filter(function(i) { return !i.equipped; });
+  if (typeof recomputePcAC === 'function') recomputePcAC(pc);
+  savePartyStorage();
+  renderParty();
+  renderCombatants();
+  renderInventoryModal(pcId);
+  showToast('💥 ' + equipped.length + ' item' + (equipped.length > 1 ? 's' : '') + ' destroyed — ' + pc.name + ' weeps', 'danger');
+  if (typeof logCombat === 'function') logCombat('💥 ' + pc.name + ' lost equipment: ' + equipped.map(function(i){return i.name;}).join(', '), 'damage');
 }
