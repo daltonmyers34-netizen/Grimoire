@@ -30,27 +30,66 @@ var CONDITION_EFFECTS = {
   // Class-feature stances (toggled, not afflictions)
   'Raging':       { resistPhysical: true, bonusMeleeDamage: 2 },
   'Reckless':     { selfAdv: true, attackersAdv: true },
-  'Dodging':      { attackersDis: true }
+  'Dodging':      { attackersDis: true },
+  'Hastened':     { extraAction: 1, acMod: 2, speedFactor: 2 },
+  'Slowed':       { acMod: -2, halfSpeed: true }
 };
 
 // Toggleable class features → the stance condition they apply + action cost
 var FEATURE_TOGGLES = {
   'Rage':            { condition: 'Raging',   cost: 'bonus'  },
   'Reckless Attack': { condition: 'Reckless', cost: 'free'   },
-  'Dodge':           { condition: 'Dodging',  cost: 'action' }
+  'Dodge':           { condition: 'Dodging',  cost: 'action' },
+  'Action Surge':    { instant: 'extraAction', cost: 'free'  } // fighter: one more action, once per rest
 };
 
 // ─── Action economy ──────────────────────────────────────────
 function ensureTurnUsed(c) {
-  if (!c.turnUsed) c.turnUsed = { action: false, bonus: false, movedFt: 0 };
+  if (!c.turnUsed) c.turnUsed = { actions: 0, bonus: false, movedFt: 0 };
+  // migrate the old boolean shape
+  if (c.turnUsed.actions === undefined) c.turnUsed.actions = c.turnUsed.action ? 1 : 0;
   return c.turnUsed;
+}
+
+// How many Actions this creature gets this turn (Haste, Action Surge...)
+function maxActionsFor(c) {
+  var max = 1 + (c._surgeExtra || 0);
+  (c.conditions || []).forEach(function(cn) {
+    var eff = CONDITION_EFFECTS[cn];
+    if (eff && eff.extraAction) max += eff.extraAction;
+  });
+  return max;
+}
+
+function actionAvailable(c, cost) {
+  var tu = ensureTurnUsed(c);
+  if (cost === 'bonus') return !tu.bonus;
+  return tu.actions < maxActionsFor(c);
+}
+
+function spendActionFor(c, cost) {
+  var tu = ensureTurnUsed(c);
+  if (cost === 'bonus') tu.bonus = true;
+  else tu.actions++;
+}
+
+// Effective AC including condition modifiers (Haste +2, Slow -2)
+function conditionACMod(c) {
+  var m = 0;
+  (c.conditions || []).forEach(function(cn) {
+    var eff = CONDITION_EFFECTS[cn];
+    if (eff && eff.acMod) m += eff.acMod;
+  });
+  return m;
 }
 
 // Called when a combatant's turn STARTS: fresh economy, stances that
 // last "until the start of your next turn" fall off.
 function startTurnFor(c) {
   if (!c) return;
-  c.turnUsed = { action: false, bonus: false, movedFt: 0 };
+  c.turnUsed = { actions: 0, bonus: false, movedFt: 0 };
+  c._surgeExtra = 0;
+  if (c.legendary) c.legendary.used = 0; // legendary pool refreshes on its own turn
   var expiring = ['Reckless', 'Dodging'];
   if (c.conditions && c.conditions.some(function(x) { return expiring.indexOf(x) >= 0; })) {
     c.conditions = c.conditions.filter(function(x) { return expiring.indexOf(x) < 0; });
@@ -61,21 +100,13 @@ function startTurnFor(c) {
 function endTurnProcessing(c) {
   if (!c || !c.conditions || !c.conditions.length) return;
   var meta = c.condMeta || {};
+  var saveEntries = [];
   c.conditions.slice().forEach(function(cond) {
     var m = meta[cond];
     if (!m) return;
     if (m.saveAbility && m.saveDC) {
       var bonus = saveBonusFor(c, m.saveAbility);
-      var roll = Math.floor(Math.random() * 20) + 1;
-      var total = roll + bonus;
-      if (total >= m.saveDC) {
-        c.conditions = c.conditions.filter(function(x) { return x !== cond; });
-        delete meta[cond];
-        logCombat('✓ ' + c.name + ' shook off ' + cond + ' (' + m.saveAbility.toUpperCase() + ' save ' + roll + (bonus >= 0 ? '+' : '') + bonus + '=' + total + ' vs DC ' + m.saveDC + ')', 'heal');
-        showToast('✓ ' + c.name + ' is no longer ' + cond, 'success');
-      } else {
-        logCombat('✗ ' + c.name + ' still ' + cond + ' (' + m.saveAbility.toUpperCase() + ' save ' + total + ' vs DC ' + m.saveDC + ')', 'info');
-      }
+      saveEntries.push({ id: cond, label: c.name + ' — ' + m.saveAbility.toUpperCase() + ' save vs ' + cond, sub: 'DC ' + m.saveDC + ' · bonus ' + (bonus >= 0 ? '+' : '') + bonus, adv: 0, _dc: m.saveDC, _bonus: bonus });
     } else if (m.rounds !== undefined && m.rounds !== null) {
       m.rounds--;
       if (m.rounds <= 0) {
@@ -86,6 +117,23 @@ function endTurnProcessing(c) {
       }
     }
   });
+  if (saveEntries.length) {
+    requestRolls('⏳ End of ' + c.name + '\'s turn — condition saves', saveEntries, function(results) {
+      saveEntries.forEach(function(en) {
+        var total = (results[en.id] || 10) + en._bonus;
+        if (total >= en._dc) {
+          c.conditions = (c.conditions || []).filter(function(x) { return x !== en.id; });
+          delete (c.condMeta || {})[en.id];
+          logCombat('✓ ' + c.name + ' shook off ' + en.id + ' (' + total + ' vs DC ' + en._dc + ')', 'heal');
+          showToast('✓ ' + c.name + ' is no longer ' + en.id, 'success');
+        } else {
+          logCombat('✗ ' + c.name + ' still ' + en.id + ' (' + total + ' vs DC ' + en._dc + ')', 'info');
+        }
+      });
+      renderCombatants();
+      if (window.cloudSave) window.cloudSave();
+    });
+  }
 }
 
 // ─── Dice ────────────────────────────────────────────────────
@@ -155,6 +203,7 @@ function combatantSpeedFt(c, baseFt) {
     var eff = CONDITION_EFFECTS[conds[i]];
     if (!eff) continue;
     if (eff.speedZero) return 0;
+    if (eff.speedFactor) speed = speed * eff.speedFactor;
     if (eff.halfSpeed) speed = Math.floor(speed / 2);
   }
   return speed;
@@ -186,7 +235,10 @@ function computeAttackContext(attacker, target, action) {
 // Ability mod for saves: PCs use their sheet; monsters estimate +1
 function saveBonusFor(combatant, ability) {
   var pc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === combatant.name; });
-  if (pc && pc[ability]) return Math.floor((pc[ability] - 10) / 2);
+  if (pc && pc[ability]) {
+    var score = typeof effectiveAbility === 'function' ? effectiveAbility(pc, ability) : pc[ability];
+    return Math.floor((score - 10) / 2);
+  }
   return 1;
 }
 
@@ -258,13 +310,19 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
 
   // Action economy: attacks/heals cost your Action (or Bonus if flagged)
   var cost = a.cost === 'bonus' ? 'bonus' : 'action';
-  if (combatActive) {
-    var tu = ensureTurnUsed(attacker);
-    if (tu[cost] && opts.source === 'player') {
+  if (combatActive && a.cost !== 'legendary') {
+    if (!actionAvailable(attacker, cost) && opts.source === 'player') {
       showToast('🚫 ' + attacker.name + ' already used their ' + cost + ' this turn', 'warn');
       return null;
     }
-    tu[cost] = true; // spent whether it hits or not — DM act-as spends it too but is never blocked
+    spendActionFor(attacker, cost); // spent whether it hits or not — DM act-as is never blocked
+  }
+  if (a.cost === 'legendary' && attacker.legendary) {
+    if (attacker.legendary.used >= attacker.legendary.max) {
+      showToast('🚫 ' + attacker.name + ' has no legendary actions left this round', 'warn');
+      return null;
+    }
+    attacker.legendary.used++;
   }
 
   snapshotBeforeAction();
@@ -288,10 +346,11 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
       : rollD20WithAdvState(ctx.net);
     var bonus = parseInt(a.bonus) || 0;
     var total = roll + bonus;
-    var crit = roll === 20 || (ctx.autoCrit && total >= (target.ac || 10));
-    var hit = roll === 20 ? true : roll === 1 ? false : total >= (target.ac || 10);
+    var effAC = (target.ac || 10) + conditionACMod(target);
+    var crit = roll === 20 || (ctx.autoCrit && total >= effAC);
+    var hit = roll === 20 ? true : roll === 1 ? false : total >= effAC;
     result.roll = roll; result.bonus = bonus; result.total = total;
-    result.targetAC = target.ac || 10; result.hit = hit; result.crit = hit && crit;
+    result.targetAC = effAC; result.hit = hit; result.crit = hit && crit;
     learnFromAttack(target);
 
     if (hit) {
@@ -318,27 +377,35 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
 
       // Condition rider: on-hit save-or-suffer
       if (a.applyCondition && CONDITION_EFFECTS[a.applyCondition] !== undefined) {
-        var applied = false;
         if (a.saveAbility && a.saveDC) {
-          var sb = saveBonusFor(target, a.saveAbility);
-          var saveRoll = Math.floor(Math.random() * 20) + 1;
-          var saveTotal = saveRoll + sb;
-          var saved = saveTotal >= a.saveDC;
-          result.save = { ability: a.saveAbility.toUpperCase(), dc: a.saveDC, roll: saveRoll, bonus: sb, total: saveTotal, saved: saved };
-          if (!saved) applied = true;
-          result.notes.push(target.name + ' ' + a.saveAbility.toUpperCase() + ' save: ' + saveRoll + (sb >= 0 ? '+' : '') + sb + '=' + saveTotal + ' vs DC ' + a.saveDC + ' — ' + (saved ? 'SAVED' : 'FAILED'));
+          // Save entered at the table (or auto) via the DM roll modal
+          result.notes.push(target.name + ' must make a DC ' + a.saveDC + ' ' + a.saveAbility.toUpperCase() + ' save or be ' + a.applyCondition);
+          (function(tgt, act) {
+            var sb = saveBonusFor(tgt, act.saveAbility);
+            requestRolls('⚡ ' + act.name + ' — ' + tgt.name + ' saves vs ' + act.applyCondition,
+              [{ id: 'r', label: tgt.name + ' — ' + act.saveAbility.toUpperCase() + ' save', sub: 'DC ' + act.saveDC + ' · their bonus ' + (sb >= 0 ? '+' : '') + sb, adv: 0 }],
+              function(results) {
+                var total = (results.r || 10) + sb;
+                if (total >= act.saveDC) {
+                  logCombat('✓ ' + tgt.name + ' saves vs ' + act.applyCondition + ' (' + total + ' vs DC ' + act.saveDC + ')', 'info');
+                  showToast('✓ ' + tgt.name + ' resists ' + act.applyCondition, 'info');
+                } else {
+                  tgt.conditions = tgt.conditions || [];
+                  if (tgt.conditions.indexOf(act.applyCondition) < 0) tgt.conditions.push(act.applyCondition);
+                  tgt.condMeta = tgt.condMeta || {};
+                  tgt.condMeta[act.applyCondition] = { saveAbility: act.saveAbility, saveDC: act.saveDC };
+                  logCombat('⚡ ' + tgt.name + ' FAILS (' + total + ' vs DC ' + act.saveDC + ') — now ' + act.applyCondition + ' (repeats save at end of turn)', 'damage');
+                  showToast('⚡ ' + tgt.name + ' is ' + act.applyCondition + '!', 'danger');
+                }
+                renderCombatants();
+                if (window.cloudSave) window.cloudSave();
+              });
+          })(target, a);
         } else {
-          applied = true;
-        }
-        if (applied) {
           target.conditions = target.conditions || [];
           if (target.conditions.indexOf(a.applyCondition) < 0) target.conditions.push(a.applyCondition);
-          if (a.saveAbility && a.saveDC) {
-            target.condMeta = target.condMeta || {};
-            target.condMeta[a.applyCondition] = { saveAbility: a.saveAbility, saveDC: a.saveDC };
-          }
           result.appliedCondition = a.applyCondition;
-          result.notes.push(target.name + ' is now ' + a.applyCondition + (a.saveAbility ? ' (repeats the save at end of turn)' : '') + '!');
+          result.notes.push(target.name + ' is now ' + a.applyCondition + '!');
         }
       }
 
@@ -452,7 +519,7 @@ function dmOpenActMenu(combatantId) {
   if (!c) return;
   var pc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === c.name; });
   var actions = (c.actions && c.actions.length) ? c.actions : (pc ? effectiveActions(pc) : []);
-  if (!actions.length) { showToast('No structured actions on ' + c.name + ' — add some via the character sheet or encounter generator', 'info'); return; }
+  if (!actions.length) { dmEditActions(combatantId); return; }
 
   var existing = document.getElementById('dm-act-modal');
   if (existing) existing.remove();
@@ -460,15 +527,19 @@ function dmOpenActMenu(combatantId) {
   ov.id = 'dm-act-modal';
   ov.className = 'modal-overlay show';
   ov.style.zIndex = '2600';
+  var legInfo = c.legendary ? ' · ⭐ ' + (c.legendary.max - (c.legendary.used || 0)) + '/' + c.legendary.max + ' legendary left' : '';
   var inner = '<div class="modal" style="max-width:420px;width:95%;">' +
-    '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:4px;">⚔ ' + c.name + ' acts</h3>' +
-    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">Pick an action, then a target. The engine handles defenses, conditions, and crits.</div>';
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' +
+      '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin:0;flex:1;">⚔ ' + c.name + ' acts</h3>' +
+      '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'dm-act-modal\').remove();dmEditActions(' + combatantId + ')">✎ Edit</button>' +
+    '</div>' +
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">Pick an action, then a target. You enter the rolls (or auto)' + legInfo + '.</div>';
   actions.forEach(function(a, i) {
     inner += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:rgba(0,0,0,0.25);">' +
       '<span>' + (a.kind === 'heal' ? '❤' : '⚔') + '</span>' +
       '<div style="flex:1;">' +
         '<div style="font-size:14px;color:var(--parchment);">' + a.name + '</div>' +
-        '<div style="font-size:11px;color:var(--text-dim);">' + (a.range || 5) + ' ft · ' + (a.dice || '') + (a.kind !== 'heal' ? ' · +' + (a.bonus || 0) + (a.damageType ? ' · ' + a.damageType : '') : '') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-dim);">' + (a.cost === 'legendary' ? '⭐ legendary · ' : a.cost === 'bonus' ? 'bonus · ' : '') + (a.range || 5) + ' ft · ' + (a.dice || '') + (a.kind !== 'heal' ? ' · +' + (a.bonus || 0) + (a.damageType ? ' · ' + a.damageType : '') : '') + '</div>' +
       '</div>' +
       '<button class="btn btn-gold btn-sm" onclick="dmPickTarget(' + combatantId + ',' + i + ')">Use</button>' +
     '</div>';
@@ -507,8 +578,18 @@ function dmExecuteAction(attackerId, targetId, actionIdx) {
   var modal = document.getElementById('dm-act-modal');
   if (modal) modal.remove();
   if (!a) return;
-  // DM rolls digitally — the engine applies advantage/disadvantage automatically
-  resolveCombatAction(attackerId, targetId, a, { roll: null, source: 'dm' });
+  if (a.kind === 'heal') {
+    resolveCombatAction(attackerId, targetId, a, { roll: null, source: 'dm' });
+    return;
+  }
+  var attacker = combatants.find(function(x) { return x.id === attackerId; });
+  var target = combatants.find(function(x) { return x.id === targetId; });
+  var ctx = (attacker && target) ? computeAttackContext(attacker, target, a) : { net: 0, notes: [] };
+  requestRolls('⚔ ' + (attacker ? attacker.name : '?') + ' — ' + a.name + ' vs ' + (target ? target.name : '?'),
+    [{ id: 'r', label: 'Attack roll', sub: '+' + (a.bonus || 0) + ' to hit' + (ctx.notes.length ? ' · ' + ctx.notes.join(', ') : ''), adv: ctx.net }],
+    function(results) {
+      resolveCombatAction(attackerId, targetId, a, { roll: results.r, source: 'dm' });
+    });
 }
 
 // ─── Damage type inference from action names ─────────────────
@@ -627,6 +708,18 @@ function processToggleFeature(req) {
   var c = combatants.find(function(x) { return x.id === req.combatantId; });
   var ft = FEATURE_TOGGLES[req.feature];
   if (!c || !ft) return;
+  // Instant features (Action Surge): grant now, no stance
+  if (ft.instant === 'extraAction') {
+    if (!requireTurn(c)) return;
+    if (c.actionSurgeUsed) { showToast('🚫 ' + c.name + ' already used Action Surge (recharges on a rest)', 'warn'); return; }
+    c.actionSurgeUsed = true;
+    c._surgeExtra = (c._surgeExtra || 0) + 1;
+    logCombat('⚡⚡ ' + c.name + ' ACTION SURGES — an extra action this turn!', 'round');
+    showToast('⚡⚡ ' + c.name + ' — ACTION SURGE!', 'success');
+    renderCombatants();
+    if (window.cloudSave) window.cloudSave();
+    return;
+  }
   c.conditions = c.conditions || [];
   var active = c.conditions.indexOf(ft.condition) >= 0;
 
@@ -698,18 +791,14 @@ function itemPresetFor(name) {
 
 // Effective AC = base AC + everything equipped (armor, shield, magic items)
 function effectiveAC(pc) {
-  var ac = pc.ac || 10;
-  (pc.inventory || []).forEach(function(it) {
-    if (it.equipped && it.acBonus) ac += it.acBonus;
-  });
-  return ac;
+  return (pc.ac || 10) + (typeof equipmentMods === 'function' ? equipmentMods(pc).ac : 0);
 }
 
 // An equipped weapon becomes an attack action automatically:
 // to-hit = ability mod + proficiency, damage = dice + ability mod
 function weaponToAction(pc, item) {
-  var strMod = Math.floor(((pc.str || 10) - 10) / 2);
-  var dexMod = Math.floor(((pc.dex || 10) - 10) / 2);
+  var strMod = Math.floor((effectiveAbility(pc, 'str') - 10) / 2);
+  var dexMod = Math.floor((effectiveAbility(pc, 'dex') - 10) / 2);
   var isRanged = (item.range || 5) > 20;
   var abilityMod = isRanged ? dexMod : Math.max(strMod, dexMod); // melee uses best (finesse-friendly)
   var prof = typeof getProfBonus === 'function' ? getProfBonus(pc.level || 1) : 2;
@@ -728,10 +817,15 @@ function weaponToAction(pc, item) {
 function effectiveActions(pc) {
   var acts = (pc.actions || []).slice();
   (pc.inventory || []).forEach(function(it) {
-    if (it.equipped && it.slot === 'weapon' && it.dice) {
-      // Don't duplicate a manual action with the same name
+    if (!it.equipped) return;
+    if (it.slot === 'weapon' && it.dice) {
       if (!acts.some(function(a) { return a.name.toLowerCase() === it.name.toLowerCase(); })) {
         acts.push(weaponToAction(pc, it));
+      }
+    }
+    if (it.grantAction && it.grantAction.name) {
+      if (!acts.some(function(a) { return a.name.toLowerCase() === it.grantAction.name.toLowerCase(); })) {
+        acts.push(Object.assign({ fromItem: true }, it.grantAction));
       }
     }
   });
@@ -750,7 +844,7 @@ function processEquipItem(req) {
   var item = (pc.inventory || []).find(function(i) { return i.id === req.itemId; });
   if (!item) return;
   item.equipped = !!req.equipped;
-  if (item.acBonus) recomputePcAC(pc);
+  if (typeof recomputePcCombat === 'function') recomputePcCombat(pc); else recomputePcAC(pc);
   if (typeof savePartyStorage === 'function') savePartyStorage();
   if (typeof renderParty === 'function') renderParty();
   renderCombatants();
@@ -803,15 +897,15 @@ function processCastSpell(req) {
       return;
     }
   }
-  if (combatActive) {
-    var tu = ensureTurnUsed(caster);
-    var cost = spell.cost === 'bonus' ? 'bonus' : 'action';
-    if (tu[cost]) { showToast('🚫 ' + caster.name + ' already used their ' + cost, 'warn'); return; }
+  var castCost = spell.cost === 'bonus' ? 'bonus' : 'action';
+  if (combatActive && !actionAvailable(caster, castCost)) {
+    showToast('🚫 ' + caster.name + ' already used their ' + castCost, 'warn');
+    return;
   }
 
   // Snapshot the pre-cast world, THEN spend resources
   snapshotBeforeAction();
-  if (combatActive) ensureTurnUsed(caster)[spell.cost === 'bonus' ? 'bonus' : 'action'] = true;
+  if (combatActive) spendActionFor(caster, castCost);
   if (slot) {
     slot.used++;
     if (typeof savePartyStorage === 'function') savePartyStorage();
@@ -856,6 +950,7 @@ function processCastSpell(req) {
   };
 
   var dc = spell.kind === 'save' ? spellSaveDC(pc, spell) : null;
+  var savePending = [];
 
   targets.forEach(function(t) {
     var entry = { name: t.name, type: t.type };
@@ -864,7 +959,16 @@ function processCastSpell(req) {
       for (var u = 0; u < extraLevels; u++) baseDamage += rollDiceExpr(spell.upcastDice).total;
     }
 
-    if (spell.kind === 'heal') {
+    if (spell.kind === 'buff') {
+      if (spell.applyCondition && CONDITION_EFFECTS[spell.applyCondition] !== undefined) {
+        t.conditions = t.conditions || [];
+        if (t.conditions.indexOf(spell.applyCondition) < 0) t.conditions.push(spell.applyCondition);
+        entry.buffed = spell.applyCondition;
+        logCombat('✨ ' + caster.name + ' — ' + spell.name + ': ' + t.name + ' is ' + spell.applyCondition + '!', 'heal');
+      } else {
+        logCombat('✨ ' + caster.name + ' casts ' + spell.name + ' on ' + t.name, 'info');
+      }
+    } else if (spell.kind === 'heal') {
       var prev = t.hp;
       t.hp = Math.min(t.maxHp, t.hp + baseDamage);
       entry.healed = t.hp - prev;
@@ -891,28 +995,54 @@ function processCastSpell(req) {
         logCombat('✨ ' + caster.name + ' — ' + spell.name + ' misses ' + t.name + ' (' + total + ' vs AC ' + entry.ac + ')', 'info');
       }
     } else {
-      // Save-based (Fireball et al): target saves, half on success
-      var sb = saveBonusFor(t, spell.saveAbility || 'dex');
-      var sRoll = Math.floor(Math.random() * 20) + 1;
-      var sTotal = sRoll + sb;
-      var saved = sTotal >= dc;
-      entry.save = { ability: (spell.saveAbility || 'dex').toUpperCase(), dc: dc, roll: sRoll, bonus: sb, total: sTotal, saved: saved };
-      var amt2 = saved && spell.halfOnSave !== false ? Math.floor(baseDamage / 2) : (saved ? 0 : baseDamage);
-      var def2 = applyDamageWithDefenses(t, amt2, spell.damageType);
-      t.hp = Math.max(0, t.hp - def2.taken);
-      entry.taken = def2.taken;
-      entry.defNotes = def2.notes;
-      learnDefense(t, spell.damageType, def2.notes);
-      if (def2.taken > 0 && typeof checkConcentration === 'function') checkConcentration(t, def2.taken);
-      logCombat('✨ ' + spell.name + ' → ' + t.name + ': ' + entry.save.ability + ' save ' + sTotal + ' vs DC ' + dc + ' — ' + (saved ? 'SAVED, ' : 'FAILED, ') + def2.taken + ' dmg' + (def2.notes.length ? ' · ' + def2.notes.join(' · ') : ''), saved ? 'info' : 'damage');
+      // Save-based (Fireball et al): rolls entered at the table via the DM modal
+      savePending.push({ t: t, entry: entry, baseDamage: baseDamage });
+      return; // entry pushed after the save resolves
     }
     feed.targets.push(entry);
   });
 
-  window.lastActionResult = feed;
-  showToast('✨ ' + caster.name + ' casts ' + spell.name + (slotLevel > (spell.level||0) ? ' (level ' + slotLevel + ')' : '') + ' — ' + targets.length + ' target' + (targets.length !== 1 ? 's' : ''), 'success');
-  renderCombatants();
-  if (window.cloudSave) window.cloudSave();
+  function finalizeSpell() {
+    window.lastActionResult = feed;
+    showToast('✨ ' + caster.name + ' casts ' + spell.name + (slotLevel > (spell.level||0) ? ' (level ' + slotLevel + ')' : '') + ' — ' + targets.length + ' target' + (targets.length !== 1 ? 's' : ''), 'success');
+    renderCombatants();
+    if (window.cloudSave) window.cloudSave();
+  }
+
+  if (savePending.length) {
+    var ability = (spell.saveAbility || 'dex').toUpperCase();
+    var rollEntries = savePending.map(function(sp) {
+      var sb = saveBonusFor(sp.t, spell.saveAbility || 'dex');
+      return { id: String(sp.t.id), label: sp.t.name + ' — ' + ability + ' save', sub: 'DC ' + dc + ' · their bonus ' + (sb >= 0 ? '+' : '') + sb + ' (added automatically)', adv: 0 };
+    });
+    requestRolls('✨ ' + spell.name + ' (' + caster.name + ') — ' + ability + ' saves, DC ' + dc, rollEntries, function(results) {
+      savePending.forEach(function(sp) {
+        var t = sp.t, entry = sp.entry;
+        var sb = saveBonusFor(t, spell.saveAbility || 'dex');
+        var sRoll = results[String(t.id)] || 10;
+        var sTotal = sRoll + sb;
+        var saved = sTotal >= dc;
+        entry.save = { ability: ability, dc: dc, roll: sRoll, bonus: sb, total: sTotal, saved: saved };
+        var amt2 = saved && spell.halfOnSave !== false ? Math.floor(sp.baseDamage / 2) : (saved ? 0 : sp.baseDamage);
+        var def2 = applyDamageWithDefenses(t, amt2, spell.damageType);
+        t.hp = Math.max(0, t.hp - def2.taken);
+        entry.taken = def2.taken;
+        entry.defNotes = def2.notes;
+        learnDefense(t, spell.damageType, def2.notes);
+        if (spell.applyCondition && !saved && CONDITION_EFFECTS[spell.applyCondition] !== undefined) {
+          t.conditions = t.conditions || [];
+          if (t.conditions.indexOf(spell.applyCondition) < 0) t.conditions.push(spell.applyCondition);
+          entry.appliedCondition = spell.applyCondition;
+        }
+        if (def2.taken > 0 && typeof checkConcentration === 'function') checkConcentration(t, def2.taken);
+        logCombat('✨ ' + spell.name + ' → ' + t.name + ': ' + ability + ' save ' + sTotal + ' vs DC ' + dc + ' — ' + (saved ? 'SAVED, ' : 'FAILED, ') + def2.taken + ' dmg' + (def2.notes.length ? ' · ' + def2.notes.join(' · ') : ''), saved ? 'info' : 'damage');
+        feed.targets.push(entry);
+      });
+      finalizeSpell();
+    });
+  } else {
+    finalizeSpell();
+  }
 }
 
 // ============================================================
@@ -1014,4 +1144,228 @@ function improvisedAttackFor(name, cr) {
   var dice = n < 1 ? '1d6+2' : n < 4 ? '1d8+3' : n < 8 ? '2d8+4' : n < 13 ? '2d10+5' : '3d10+7';
   var dmgType = inferDamageType(name) || 'slashing';
   return { name: 'Strike', kind: 'attack', range: 5, bonus: bonus, dice: dice, damageType: dmgType, improvised: true };
+}
+
+// ============================================================
+// DM ROLL ENTRY — every d20 the table rolls can be typed in,
+// or auto-rolled per row / all at once. One modal, many rows.
+// ============================================================
+var _rollGroups = {};
+var _rollGroupSeq = 0;
+
+function requestRolls(title, entries, onDone) {
+  // entries: [{ id, label, sub, bonus, adv (-1|0|1 for auto rolls) }]
+  if (!entries || !entries.length) { onDone({}); return; }
+  var gid = 'g' + (++_rollGroupSeq);
+  _rollGroups[gid] = { entries: entries, onDone: onDone, results: {} };
+
+  var modal = document.getElementById('dm-roll-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'dm-roll-modal';
+    modal.className = 'modal-overlay show';
+    modal.style.zIndex = '2700';
+    modal.innerHTML = '<div class="modal" style="max-width:480px;width:95%;max-height:85vh;overflow-y:auto;">' +
+      '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:4px;">🎲 Rolls needed</h3>' +
+      '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">Enter the raw d20s rolled at the table — or hit auto. Empty rows auto-roll on Apply.</div>' +
+      '<div id="dm-roll-rows"></div>' +
+      '<div class="modal-btns" style="margin-top:12px;">' +
+        '<button class="btn btn-ghost" onclick="dmRollAutoAll()">🎲 Auto-roll all</button>' +
+        '<button class="btn btn-gold" onclick="dmRollApply()">✓ Apply</button>' +
+      '</div></div>';
+    document.body.appendChild(modal);
+  }
+  var rows = document.getElementById('dm-roll-rows');
+  var titleRow = document.createElement('div');
+  titleRow.style.cssText = 'font-family:Cinzel,serif;font-size:12px;color:var(--gold-light);margin:8px 0 6px;letter-spacing:0.05em;';
+  titleRow.textContent = title;
+  rows.appendChild(titleRow);
+  entries.forEach(function(en) {
+    var row = document.createElement('div');
+    row.className = 'dm-roll-row';
+    row.dataset.gid = gid;
+    row.dataset.eid = en.id;
+    row.dataset.adv = en.adv || 0;
+    var advNote = en.adv > 0 ? ' <span style="color:#6fdc75;font-size:10px;">ADV: roll 2, higher</span>'
+                : en.adv < 0 ? ' <span style="color:#ff8080;font-size:10px;">DIS: roll 2, lower</span>' : '';
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.1);border-radius:5px;margin-bottom:5px;background:rgba(0,0,0,0.25);';
+    row.innerHTML =
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="font-size:13px;color:var(--parchment);">' + en.label + advNote + '</div>' +
+        (en.sub ? '<div style="font-size:11px;color:var(--text-dim);">' + en.sub + '</div>' : '') +
+      '</div>' +
+      '<input type="number" min="1" max="20" placeholder="d20" class="dm-roll-input" style="width:62px;font-size:16px;text-align:center;padding:5px;background:rgba(0,0,0,0.4);border:1px solid rgba(212,175,55,0.35);border-radius:5px;color:var(--parchment);">' +
+      '<button class="btn btn-ghost btn-sm" onclick="dmRollAutoRow(this)">🎲</button>';
+    rows.appendChild(row);
+  });
+  var firstInput = rows.querySelector('.dm-roll-row input');
+  if (firstInput) firstInput.focus();
+}
+
+function dmRollAutoRow(btn) {
+  var row = btn.closest('.dm-roll-row');
+  var inp = row.querySelector('input');
+  inp.value = rollD20WithAdvState(parseInt(row.dataset.adv) || 0);
+  inp.style.borderColor = '#8fd050';
+}
+
+function dmRollAutoAll() {
+  document.querySelectorAll('#dm-roll-rows .dm-roll-row').forEach(function(row) {
+    var inp = row.querySelector('input');
+    if (!inp.value) {
+      inp.value = rollD20WithAdvState(parseInt(row.dataset.adv) || 0);
+      inp.style.borderColor = '#8fd050';
+    }
+  });
+  dmRollApply();
+}
+
+function dmRollApply() {
+  var rows = document.querySelectorAll('#dm-roll-rows .dm-roll-row');
+  rows.forEach(function(row) {
+    var gid = row.dataset.gid, eid = row.dataset.eid;
+    var inp = row.querySelector('input');
+    var v = parseInt(inp.value);
+    if (!v || v < 1 || v > 20) v = rollD20WithAdvState(parseInt(row.dataset.adv) || 0); // empty/invalid → auto
+    if (_rollGroups[gid]) _rollGroups[gid].results[eid] = v;
+  });
+  var modal = document.getElementById('dm-roll-modal');
+  if (modal) modal.remove();
+  Object.keys(_rollGroups).forEach(function(gid) {
+    var g = _rollGroups[gid];
+    delete _rollGroups[gid];
+    try { g.onDone(g.results); } catch(e) { console.error('roll group', e); }
+  });
+}
+
+// ============================================================
+// CUSTOM ITEM EFFECTS — anything you invent pulls into the stats
+// ============================================================
+function equipmentMods(pc) {
+  var out = { ac: 0, speed: 0, stats: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 }, resist: [], immune: [], vuln: [], actions: [] };
+  (pc.inventory || []).forEach(function(it) {
+    if (!it.equipped) return;
+    if (it.acBonus) out.ac += it.acBonus;
+    if (it.speedBonus) out.speed += it.speedBonus;
+    if (it.statBonuses) Object.keys(out.stats).forEach(function(k) { out.stats[k] += it.statBonuses[k] || 0; });
+    (it.grantResist || []).forEach(function(t) { if (out.resist.indexOf(t) < 0) out.resist.push(t); });
+    (it.grantImmune || []).forEach(function(t) { if (out.immune.indexOf(t) < 0) out.immune.push(t); });
+    (it.grantVuln || []).forEach(function(t) { if (out.vuln.indexOf(t) < 0) out.vuln.push(t); });
+    if (it.grantAction && it.grantAction.name) out.actions.push(Object.assign({ fromItem: true }, it.grantAction));
+  });
+  return out;
+}
+
+// Ability score including magic item bonuses (Belt of Giant Strength...)
+function effectiveAbility(pc, ability) {
+  var base = pc[ability] || 10;
+  var mods = equipmentMods(pc);
+  return base + (mods.stats[ability] || 0);
+}
+
+// Push every equipment effect onto the live combatant
+function recomputePcCombat(pc) {
+  var c = combatants.find(function(x) { return x.name === pc.name && x.type === 'ally'; });
+  if (!c) return;
+  var mods = equipmentMods(pc);
+  c.ac = (pc.ac || 10) + mods.ac;
+  var merge = function(base, extra) {
+    var outArr = (base || []).slice();
+    (extra || []).forEach(function(t) { if (outArr.indexOf(t) < 0) outArr.push(t); });
+    return outArr;
+  };
+  c.resist = merge(pc.resist, mods.resist);
+  c.immune = merge(pc.immune, mods.immune);
+  c.vuln = merge(pc.vuln, mods.vuln);
+}
+
+// ============================================================
+// MONSTER ACTION EDITOR + LEGENDARY ACTIONS
+// ============================================================
+function dmEditActions(combatantId) {
+  var c = combatants.find(function(x) { return x.id === combatantId; });
+  if (!c) return;
+  var existing = document.getElementById('dm-act-modal');
+  if (existing) existing.remove();
+  var ov = document.createElement('div');
+  ov.id = 'dm-actedit-modal';
+  ov.className = 'modal-overlay show';
+  ov.style.zIndex = '2650';
+  var actions = (c.actions || []).slice();
+  var rowsHtml = function() {
+    return actions.map(function(a, i) {
+      return '<div class="ae-row" data-i="' + i + '" style="display:grid;grid-template-columns:2fr 72px 52px 52px 1fr 1fr 82px 24px;gap:4px;margin-bottom:4px;align-items:center;">' +
+        '<input class="ae-name" value="' + (a.name || '').replace(/"/g, '&quot;') + '" placeholder="Bite" style="font-size:12px;padding:4px;">' +
+        '<select class="ae-kind" style="font-size:11px;padding:4px;"><option value="attack"' + (a.kind !== 'heal' ? ' selected' : '') + '>⚔ Atk</option><option value="heal"' + (a.kind === 'heal' ? ' selected' : '') + '>❤ Heal</option></select>' +
+        '<input class="ae-range" type="number" value="' + (a.range || 5) + '" title="Range ft" style="font-size:12px;padding:4px;text-align:center;">' +
+        '<input class="ae-bonus" type="number" value="' + (a.bonus || 0) + '" title="To-hit" style="font-size:12px;padding:4px;text-align:center;">' +
+        '<input class="ae-dice" value="' + (a.dice || '').replace(/"/g, '&quot;') + '" placeholder="2d6+3" style="font-size:12px;padding:4px;">' +
+        '<select class="ae-type" style="font-size:11px;padding:4px;"><option value="">type</option>' + DAMAGE_TYPES.map(function(t) { return '<option value="' + t + '"' + (a.damageType === t ? ' selected' : '') + '>' + t.slice(0, 6) + '</option>'; }).join('') + '</select>' +
+        '<select class="ae-cost" style="font-size:11px;padding:4px;"><option value="action"' + (!a.cost || a.cost === 'action' ? ' selected' : '') + '>Action</option><option value="bonus"' + (a.cost === 'bonus' ? ' selected' : '') + '>Bonus</option><option value="legendary"' + (a.cost === 'legendary' ? ' selected' : '') + '>⭐ Leg.</option></select>' +
+        '<button onclick="this.closest(\'.ae-row\').remove()" style="background:none;border:1px solid var(--border);color:var(--blood-light);border-radius:3px;cursor:pointer;height:22px;font-size:11px;">✕</button>' +
+      '</div>';
+    }).join('');
+  };
+  ov.innerHTML = '<div class="modal" style="max-width:640px;width:96%;max-height:85vh;overflow-y:auto;">' +
+    '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:4px;">✎ ' + c.name + ' — actions</h3>' +
+    '<div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">⭐ Legendary actions can be used at the END of other creatures\' turns and draw from the legendary pool below.</div>' +
+    '<div id="ae-rows">' + rowsHtml() + '</div>' +
+    '<button class="btn btn-ghost btn-sm" onclick="dmAddActionRow()" style="margin:6px 0 12px;">+ Add action</button>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">' +
+      '<span style="font-size:12px;color:var(--text-dim);">⭐ Legendary actions per round:</span>' +
+      '<input id="ae-legmax" type="number" min="0" max="5" value="' + ((c.legendary && c.legendary.max) || 0) + '" style="width:56px;font-size:14px;padding:4px;text-align:center;">' +
+      '<span style="font-size:10px;color:#555;">(0 = none)</span>' +
+    '</div>' +
+    '<div class="modal-btns">' +
+      '<button class="btn btn-gold" onclick="dmSaveActions(' + combatantId + ')">💾 Save</button>' +
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'dm-actedit-modal\').remove()">Cancel</button>' +
+    '</div></div>';
+  ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+
+function dmAddActionRow() {
+  var rows = document.getElementById('ae-rows');
+  if (!rows) return;
+  var div = document.createElement('div');
+  div.innerHTML = '<div class="ae-row" style="display:grid;grid-template-columns:2fr 72px 52px 52px 1fr 1fr 82px 24px;gap:4px;margin-bottom:4px;align-items:center;">' +
+    '<input class="ae-name" placeholder="Tail Swipe" style="font-size:12px;padding:4px;">' +
+    '<select class="ae-kind" style="font-size:11px;padding:4px;"><option value="attack">⚔ Atk</option><option value="heal">❤ Heal</option></select>' +
+    '<input class="ae-range" type="number" value="5" style="font-size:12px;padding:4px;text-align:center;">' +
+    '<input class="ae-bonus" type="number" value="4" style="font-size:12px;padding:4px;text-align:center;">' +
+    '<input class="ae-dice" placeholder="2d6+3" style="font-size:12px;padding:4px;">' +
+    '<select class="ae-type" style="font-size:11px;padding:4px;"><option value="">type</option>' + DAMAGE_TYPES.map(function(t) { return '<option value="' + t + '">' + t.slice(0, 6) + '</option>'; }).join('') + '</select>' +
+    '<select class="ae-cost" style="font-size:11px;padding:4px;"><option value="action">Action</option><option value="bonus">Bonus</option><option value="legendary">⭐ Leg.</option></select>' +
+    '<button onclick="this.closest(\'.ae-row\').remove()" style="background:none;border:1px solid var(--border);color:var(--blood-light);border-radius:3px;cursor:pointer;height:22px;font-size:11px;">✕</button>' +
+  '</div>';
+  rows.appendChild(div.firstChild);
+}
+
+function dmSaveActions(combatantId) {
+  var c = combatants.find(function(x) { return x.id === combatantId; });
+  if (!c) return;
+  var acts = [];
+  document.querySelectorAll('#ae-rows .ae-row').forEach(function(row) {
+    var name = row.querySelector('.ae-name').value.trim();
+    if (!name) return;
+    var a = {
+      name: name,
+      kind: row.querySelector('.ae-kind').value,
+      range: parseInt(row.querySelector('.ae-range').value) || 5,
+      bonus: parseInt(row.querySelector('.ae-bonus').value) || 0,
+      dice: row.querySelector('.ae-dice').value.trim() || '1d6'
+    };
+    var t = row.querySelector('.ae-type').value; if (t) a.damageType = t;
+    else { var inf = inferDamageType(name); if (inf) a.damageType = inf; }
+    var cost = row.querySelector('.ae-cost').value; if (cost !== 'action') a.cost = cost;
+    acts.push(a);
+  });
+  c.actions = acts;
+  var legMax = parseInt(document.getElementById('ae-legmax').value) || 0;
+  c.legendary = legMax > 0 ? { max: legMax, used: (c.legendary && c.legendary.used) || 0 } : undefined;
+  var m = document.getElementById('dm-actedit-modal');
+  if (m) m.remove();
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+  showToast('💾 ' + c.name + ': ' + acts.length + ' action' + (acts.length !== 1 ? 's' : '') + (legMax ? ' · ' + legMax + ' legendary/round' : ''), 'success');
 }

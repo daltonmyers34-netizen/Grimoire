@@ -89,18 +89,28 @@ function checkConcentration(c, damage) {
   if (!c.concentrating || damage <= 0) return;
   var dc = Math.max(10, Math.floor(damage / 2));
   var bonus = typeof saveBonusFor === 'function' ? saveBonusFor(c, 'con') : 0;
-  var roll = Math.floor(Math.random() * 20) + 1;
-  var total = roll + bonus;
   var spell = c.concentrating;
-  if (total >= dc) {
-    combatLog.unshift({ round: currentRound || 0, text: '🧠 ' + c.name + ' maintains concentration on "' + spell + '" (CON ' + roll + (bonus >= 0 ? '+' : '') + bonus + '=' + total + ' vs DC ' + dc + ')', type: 'info', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) });
-    showToast('🧠 ' + c.name + ' holds concentration on ' + spell + ' (' + total + ' vs DC ' + dc + ')', 'info');
+  var resolve = function(roll) {
+    var total = roll + bonus;
+    if (total >= dc) {
+      combatLog.unshift({ round: currentRound || 0, text: '🧠 ' + c.name + ' maintains concentration on "' + spell + '" (CON ' + roll + (bonus >= 0 ? '+' : '') + bonus + '=' + total + ' vs DC ' + dc + ')', type: 'info', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) });
+      showToast('🧠 ' + c.name + ' holds concentration on ' + spell + ' (' + total + ' vs DC ' + dc + ')', 'info');
+    } else {
+      c.concentrating = null;
+      combatLog.unshift({ round: currentRound || 0, text: '💫 ' + c.name + ' LOSES concentration on "' + spell + '" (CON ' + total + ' vs DC ' + dc + ')', type: 'damage', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) });
+      showToast('💫 ' + c.name + ' loses concentration on ' + spell + '!', 'danger');
+      renderCombatants();
+      syncCombatState();
+    }
+    renderCombatLog();
+  };
+  if (typeof requestRolls === 'function') {
+    requestRolls('🧠 Concentration — ' + c.name + ' holds "' + spell + '"?',
+      [{ id: 'r', label: c.name + ' — CON save', sub: 'DC ' + dc + ' · bonus ' + (bonus >= 0 ? '+' : '') + bonus, adv: 0 }],
+      function(results) { resolve(results.r || 10); });
   } else {
-    c.concentrating = null;
-    combatLog.unshift({ round: currentRound || 0, text: '💫 ' + c.name + ' LOSES concentration on "' + spell + '" (CON ' + total + ' vs DC ' + dc + ')', type: 'damage', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) });
-    showToast('💫 ' + c.name + ' loses concentration on ' + spell + '!', 'danger');
+    resolve(Math.floor(Math.random() * 20) + 1);
   }
-  renderCombatLog();
 }
 
 function shortRest() {
@@ -121,6 +131,7 @@ function shortRest() {
     if (cmb) { cmb.hp = Math.min(cmb.maxHp, cmb.hp + heal); }
     pc.lastRest = 'short';
   });
+  combatants.forEach(function(c) { if (c.type === 'ally') c.actionSurgeUsed = false; });
   savePartyStorage();
   renderParty();
   renderCombatants();
@@ -142,6 +153,7 @@ function longRest() {
     if (pc.spellSlots) pc.spellSlots.forEach(function(sl) { sl.used = 0; });
     pc.usedSlots = {}; // legacy compat
   });
+  combatants.forEach(function(c) { if (c.type === 'ally') c.actionSurgeUsed = false; });
   // Also heal allies in combat
   combatants.filter(function(c) { return c.type === 'ally'; }).forEach(function(c) { c.hp = c.maxHp; });
   savePartyStorage();
