@@ -120,6 +120,15 @@
     </div>
     <div class="grid-2" style="gap:10px;margin-bottom:10px;">
       <div class="field-group"><label>Character Name</label><input id="pc-name" placeholder="Aldric Brightblade"></div>
+      <div class="field-group"><label>Portrait <span style="color:var(--text-dim);font-weight:normal;">(shows on tokens & cards)</span></label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <img id="pc-portrait-preview" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid rgba(212,175,55,0.4);display:none;">
+          <label class="btn btn-ghost btn-sm" style="cursor:pointer;">📷 Upload
+            <input type="file" accept="image/*" style="display:none;" onchange="if(this.files[0])setPcPortrait(this.files[0]);this.value='';">
+          </label>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="window._pendingPortrait='';document.getElementById('pc-portrait-preview').style.display='none';">✕</button>
+        </div>
+      </div>
       <div class="field-group"><label>Player Name</label><input id="pc-player" placeholder="John"></div>
       <div class="field-group">
         <label>Class</label>

@@ -395,6 +395,27 @@ function renderParty() {
   if (partySidebarOpen) renderSidebar();
 }
 
+function setPcPortrait(file) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var img = new Image();
+    img.onload = function() {
+      var size = 128;
+      var cv = document.createElement('canvas');
+      cv.width = size; cv.height = size;
+      var ctx = cv.getContext('2d');
+      // center-crop to square
+      var m = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width - m) / 2, (img.height - m) / 2, m, m, 0, 0, size, size);
+      window._pendingPortrait = cv.toDataURL('image/jpeg', 0.82);
+      var prev = document.getElementById('pc-portrait-preview');
+      if (prev) { prev.src = window._pendingPortrait; prev.style.display = 'block'; }
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
 function openAddPlayerModal() {
   document.getElementById('player-modal-title').textContent = '🧝 Add Character';
   document.getElementById('edit-player-id').value = '';
@@ -410,6 +431,8 @@ function openAddPlayerModal() {
   populateSkillsGrid({});
   populateActionRows([]);
   populateSpellRows([]);
+  window._pendingPortrait = undefined;
+  var pp0 = document.getElementById('pc-portrait-preview'); if (pp0) pp0.style.display = 'none';
   var fr0 = document.getElementById('pc-feat-rage'); if (fr0) fr0.checked = false;
   var fk0 = document.getElementById('pc-feat-reckless'); if (fk0) fk0.checked = false;
   var fs0 = document.getElementById('pc-feat-surge'); if (fs0) fs0.checked = false;
@@ -595,6 +618,9 @@ function editPlayer(id) {
   document.getElementById('pc-moves').value = pc.moves || '';
   populateActionRows(pc.actions || []);
   populateSpellRows(pc.spells || []);
+  window._pendingPortrait = undefined;
+  var pp = document.getElementById('pc-portrait-preview');
+  if (pp) { if (pc.portrait) { pp.src = pc.portrait; pp.style.display = 'block'; } else pp.style.display = 'none'; }
   var fr = document.getElementById('pc-feat-rage'); if (fr) fr.checked = (pc.features || []).indexOf('Rage') >= 0;
   var fk = document.getElementById('pc-feat-reckless'); if (fk) fk.checked = (pc.features || []).indexOf('Reckless Attack') >= 0;
   var fs = document.getElementById('pc-feat-surge'); if (fs) fs.checked = (pc.features || []).indexOf('Action Surge') >= 0;
@@ -626,6 +652,7 @@ function savePlayer() {
     ac: parseInt(document.getElementById('pc-ac').value) || 10,
     initBonus: parseInt(document.getElementById('pc-init-bonus').value) || 0,
     speed: parseInt(document.getElementById('pc-speed').value) || 30,
+    portrait: window._pendingPortrait !== undefined ? (window._pendingPortrait || undefined) : (existingPC && existingPC.portrait),
     str: parseInt(document.getElementById('pc-str').value) || 10,
     dex: parseInt(document.getElementById('pc-dex').value) || 10,
     con: parseInt(document.getElementById('pc-con').value) || 10,
