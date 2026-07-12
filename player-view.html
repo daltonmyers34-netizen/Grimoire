@@ -597,6 +597,7 @@ const db = getFirestore(app);
 // ── Get DM UID from URL ──────────────────────────────────────
 const params = new URLSearchParams(window.location.search);
 const dmUid = params.get('dm');
+const tableMode = params.get('table') === '1'; // shared screen at the table — follows the current turn
 if (!dmUid) {
   document.getElementById('pv-root').innerHTML =
     '<div style="text-align:center;padding:60px 20px;">' +
@@ -665,7 +666,7 @@ const SKILL_LIST = [
 // ── State ────────────────────────────────────────────────────
 let selectedPcId = sessionStorage.getItem('pv_selected_pc') || null;
 let latestData = null;
-let activeTab = 'character'; // 'character' | 'initiative' | 'map'
+let activeTab = tableMode ? 'map' : 'character'; // character | initiative | map | journal | world
 let moveSelecting = false;   // tap-to-move: own token selected
 let lastFeedId = sessionStorage.getItem('pv_last_feed') || null;
 let wasMyTurn = false;
@@ -1540,6 +1541,18 @@ function renderRoot(d) {
     }
   }
 
+  // Table mode: always show whoever's turn it is (or the first character)
+  if (tableMode && party.length) {
+    let pick = null;
+    if (d.combatActive && (d.combatants || [])[d.currentTurn]) {
+      const cur = d.combatants[d.currentTurn];
+      pick = party.find(p => p.name === cur.name || p.name === cur.owner);
+    }
+    if (!pick && selectedPcId) pick = party.find(p => String(p.id) === selectedPcId);
+    if (!pick) pick = party[0];
+    selectedPcId = String(pick.id);
+  }
+
   // If we just created a character, auto-select it as soon as the DM's app adds it
   const pendingAdd = sessionStorage.getItem('pv_pending_add');
   if (!selectedPcId && pendingAdd) {
@@ -1661,11 +1674,15 @@ function renderTwoColumnView(d) {
   // ── LEFT: Main panel ──
   html += '<div class="pv-main">';
 
-  // Toolbar
-  html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' +
-    '<button class="btn-pv" onclick="_pvChangeChar()">\u2190 Change Character</button>' +
-    '<button class="btn-pv" id="copy-link-btn" onclick="_pvCopyLink()">📋 Copy Link</button>' +
-  '</div>';
+  // Toolbar (hidden in table mode — the table just plays)
+  if (!tableMode) {
+    html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' +
+      '<button class="btn-pv" onclick="_pvChangeChar()">\u2190 Change Character</button>' +
+      '<button class="btn-pv" id="copy-link-btn" onclick="_pvCopyLink()">📋 Copy Link</button>' +
+    '</div>';
+  } else {
+    html += '<div style="text-align:center;font-family:Cinzel,serif;font-size:11px;letter-spacing:0.15em;color:var(--text-dim);margin-bottom:10px;">📺 TABLE MODE — following the current turn</div>';
+  }
 
   // Messages
   const msgs = d.pvMessages || {};
@@ -1701,12 +1718,14 @@ function renderTwoColumnView(d) {
 
   // Tab toggle \u2014 Initiative shows when combat exists, Map shows when the DM has a map
   const hasMap = !!(d.mapState && d.mapState.cols);
+  const hasWorld = !!(d.worldMap && d.worldMap.image);
   if (true) { // tabs always show — Journal is always available
     html += '<div class="pv-tabs">' +
       '<button class="pv-tab' + (activeTab === 'character' ? ' active' : '') + '" onclick="_pvSwitchTab(\'character\')">My Character</button>' +
       (hasCombat ? '<button class="pv-tab' + (activeTab === 'initiative' ? ' active' : '') + '" onclick="_pvSwitchTab(\'initiative\')">\u2694 Initiative</button>' : '') +
       (hasMap ? '<button class="pv-tab' + (activeTab === 'map' ? ' active' : '') + '" onclick="_pvSwitchTab(\'map\')">\ud83d\uddfa Map</button>' : '') +
-      '<button class="pv-tab' + (activeTab === 'journal' ? ' active' : '') + '" onclick="_pvSwitchTab(\'journal\')">📖 Journal</button>' +
+      (hasWorld ? '<button class="pv-tab' + (activeTab === 'world' ? ' active' : '') + '" onclick="_pvSwitchTab(\'world\')">🌍 World</button>' : '') +
+      (tableMode ? '' : '<button class="pv-tab' + (activeTab === 'journal' ? ' active' : '') + '" onclick="_pvSwitchTab(\'journal\')">📖 Journal</button>') +
     '</div>';
   }
 
@@ -1715,6 +1734,9 @@ function renderTwoColumnView(d) {
     html += renderInitiativePanel(d);
   } else if (activeTab === 'map' && hasMap) {
     html += renderMapPanel(d);
+  } else if (activeTab === 'world' && hasWorld) {
+    html += '<div class="card"><div class="card-section-label">🌍 The World</div>' +
+      '<img src="' + d.worldMap.image + '" style="width:100%;height:auto;display:block;border-radius:8px;border:1px solid rgba(212,175,55,0.25);"></div>';
   } else if (activeTab === 'journal') {
     html += renderJournalPanel(d);
   } else {
@@ -2127,6 +2149,19 @@ function pvCellHash(x, y, seed) {
   return (h % 1000) / 1000;
 }
 
+let _pvBgCache = {};
+function pvBgImage(m) {
+  if (!m.bgImage) return null;
+  let img = _pvBgCache[m.bgImage];
+  if (img) return img.complete ? img : null;
+  img = new Image();
+  img.onload = () => { if (latestData) drawPlayerMap(latestData); };
+  img.src = m.bgImage;
+  _pvBgCache = {};
+  _pvBgCache[m.bgImage] = img;
+  return null;
+}
+
 function drawPlayerMap(d) {
   const m = d.mapState;
   const canvas = document.getElementById('pv-map-canvas');
@@ -2135,8 +2170,16 @@ function drawPlayerMap(d) {
   canvas.height = m.rows * m.cell;
   const ctx = canvas.getContext('2d');
 
+  // Uploaded map image replaces the generated ground
+  if (m.bgImage) {
+    const bg = pvBgImage(m);
+    if (bg) ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+    else { ctx.fillStyle = '#181210'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  }
+
   // Ground
   const g = PV_GROUNDS[m.ground] || PV_GROUNDS.stone;
+  if (!m.bgImage)
   for (let y = 0; y < m.rows; y++) {
     for (let x = 0; x < m.cols; x++) {
       const v = pvCellHash(x, y, m.seed);
@@ -2340,6 +2383,7 @@ function drawPlayerMap(d) {
   });
 
   // Grid
+  if (m.gridOn === false) return;
   ctx.strokeStyle = 'rgba(0,0,0,0.28)';
   ctx.lineWidth = 1;
   for (let x = 0; x <= m.cols; x++) {
@@ -2446,7 +2490,7 @@ if (dmUid) {
     if (nowMyTurn && !wasMyTurn) {
       pvSound('turn');
       const meNow = myCombatant(d);
-      if (meNow && meNow.hp <= 0 && !meNow.isDead && !(meNow.conditions || []).includes('Stable')) {
+      if (!tableMode && meNow && meNow.hp <= 0 && !meNow.isDead && !(meNow.conditions || []).includes('Stable')) {
         const key = (d.currentRound || 0) + ':' + (d.currentTurn || 0);
         if (lastDeathPrompt !== key) {
           lastDeathPrompt = key;

@@ -24,6 +24,7 @@ function collectState() {
     savedEncounters: savedEncounters || [],
     mapState: (typeof mapState !== 'undefined' && mapState) ? mapState : null,
     savedMaps: (typeof savedMaps !== 'undefined' && savedMaps) ? savedMaps : [],
+    worldMap: (typeof worldMap !== 'undefined' && worldMap) ? worldMap : null,
     quests: (typeof quests !== 'undefined' && quests) ? quests : [],
     pvMessages: window.pvMessages || {},
     pvPartyMessage: window.pvPartyMessage || '',
@@ -52,6 +53,7 @@ function applyState(s) {
   if (s.savedEncounters) { savedEncounters = s.savedEncounters; if(typeof renderSavedEncounters==='function') renderSavedEncounters(); }
   if (s.mapState && typeof mapState !== 'undefined') { mapState = s.mapState; if(typeof renderMap==='function') renderMap(); }
   if (s.savedMaps && typeof savedMaps !== 'undefined') { savedMaps = s.savedMaps; if(typeof renderSavedMaps==='function') renderSavedMaps(); }
+  if (s.worldMap && typeof worldMap !== 'undefined') { worldMap = s.worldMap; }
   if (s.quests && typeof quests !== 'undefined') { quests = s.quests; if (typeof renderQuests === 'function') renderQuests(); }
   if (s.pvMessages) { window.pvMessages = s.pvMessages; }
   if (s.pvPartyMessage) { window.pvPartyMessage = s.pvPartyMessage; }

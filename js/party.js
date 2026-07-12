@@ -184,6 +184,7 @@ function openPlayerView() {
   if (!window.__fbUid) { showToast('Sign in first to use Player View', 'warn'); return; }
   var basePath = window.location.pathname.replace(/\/[^\/]*$/, '/');
   var link = window.location.origin + basePath + 'player-view.html?dm=' + window.__fbUid;
+  var tableLink = link + '&table=1';
   var existing = document.getElementById('pv-link-modal');
   if (existing) existing.remove();
   var m = document.createElement('div');
@@ -198,10 +199,11 @@ function openPlayerView() {
       '<input id="pv-link-input" readonly value="' + link + '" style="flex:1;font-size:12px;padding:10px;background:rgba(0,0,0,0.4);border:1px solid rgba(212,175,55,0.3);border-radius:5px;color:var(--parchment);font-family:monospace;" onclick="this.select()">' +
       '<button onclick="navigator.clipboard.writeText(document.getElementById(\'pv-link-input\').value).then(function(){showToast(\'Link copied!\',\'success\');})" style="padding:10px 16px;background:linear-gradient(135deg,var(--gold-dim),var(--gold));color:var(--ink);border:none;border-radius:5px;font-family:Cinzel,serif;font-size:12px;font-weight:bold;cursor:pointer;white-space:nowrap;">📋 Copy</button>' +
     '</div>' +
-    '<div style="display:flex;gap:8px;">' +
+    '<div style="display:flex;gap:8px;margin-bottom:12px;">' +
       '<button onclick="window.open(\'' + link + '\',\'_blank\')" style="flex:1;padding:10px;background:rgba(100,180,255,0.1);border:1px solid rgba(100,180,255,0.3);border-radius:5px;color:#90c8ff;font-family:Cinzel,serif;font-size:11px;cursor:pointer;">🔗 Open Preview</button>' +
-      '<button onclick="var w=window.open(\'\',\'_blank\',\'width=900,height=700\');w.document.write(buildPlayerViewHTML(window.__fbUid));w.document.close();" style="flex:1;padding:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:5px;color:var(--text-dim);font-family:Cinzel,serif;font-size:11px;cursor:pointer;">📺 Legacy Popup</button>' +
+      '<button onclick="window.open(\'' + tableLink + '\',\'_blank\')" style="flex:1;padding:10px;background:rgba(212,175,55,0.12);border:1px solid rgba(212,175,55,0.35);border-radius:5px;color:var(--gold);font-family:Cinzel,serif;font-size:11px;cursor:pointer;">📺 Table Mode</button>' +
     '</div>' +
+    '<div style="font-size:11px;color:var(--text-dim);font-family:Crimson Text,serif;font-style:italic;">📺 Table Mode is for a shared screen or touch-TV at the table: it follows whoever\'s turn it is automatically and can act for any player. No character selection needed.</div>' +
   '</div>';
   document.body.appendChild(m);
 }

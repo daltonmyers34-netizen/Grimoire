@@ -362,9 +362,12 @@ function updateRoundDisplay() {
   document.querySelector('.round-display span').textContent = 'Active Combat';
   var cur = combatants[currentTurn];
   document.getElementById('turn-indicator').textContent = cur ? 'Current: ' + cur.name : '';
+  var mapBar = document.getElementById('map-turn-indicator');
+  if (mapBar) mapBar.textContent = combatActive ? ('R' + round + ' · ' + (cur ? cur.name : '')) : '';
 }
 
 function renderCombatants() {
+  if (typeof ensureTokensPlaced === 'function') try { ensureTokensPlaced(); } catch(e) {}
   var list = document.getElementById('combatant-list');
   if (combatants.length === 0) {
     list.innerHTML = '<li class="empty-state"><div class="icon">⚔</div>No combatants yet. Add some above!</li>';

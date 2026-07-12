@@ -160,7 +160,8 @@ async function doCloudWrite() {
       partyInventory: state.partyInventory || [],
       pvMessages: state.pvMessages || {},
       pvPartyMessage: state.pvPartyMessage || '',
-      mapState: state.mapState || null,
+      mapState: (state.mapState && state.mapState.hiddenFromPlayers) ? null : (state.mapState || null),
+      worldMap: (typeof worldMap !== 'undefined' && worldMap && worldMap.image) ? worldMap : null,
       actionFeed: window.lastActionResult || null,
       updatedAt: new Date().toISOString()
     };
