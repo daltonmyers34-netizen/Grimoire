@@ -350,6 +350,15 @@
       <button class="btn btn-blood btn-sm" onclick="mapNewMap()">✦ New Map</button>
     </div>
 
+    <!-- Combat controls right on the map -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;padding:8px;background:rgba(139,26,26,0.08);border:1px solid rgba(139,26,26,0.25);border-radius:6px;">
+      <button class="btn btn-gold btn-sm" onclick="startCombat()">▶ Start Combat</button>
+      <button class="btn btn-ghost btn-sm" onclick="nextTurn()">Next Turn ▷</button>
+      <button class="btn btn-ghost btn-sm" onclick="endCombat()">⏹ End</button>
+      <span id="map-turn-indicator" style="font-family:Cinzel,serif;font-size:13px;color:var(--gold-light);margin-left:6px;"></span>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-dim);font-style:italic;">double-click any token to act as it</span>
+    </div>
+
     <!-- Toolbar row: generators + save -->
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
       <span style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.1em;color:var(--text-dim);">GENERATE:</span>
@@ -360,6 +369,18 @@
       <button class="btn btn-ghost btn-sm" onclick="mapAIRenameBuildings()" title="AI re-flavors all building names (needs API key)">✨ AI Names</button>
       <span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>
       <button class="btn btn-gold btn-sm" onclick="saveCurrentMap()">💾 Save Map</button>
+      <span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>
+      <label class="btn btn-ghost btn-sm" style="cursor:pointer;" title="Upload a battle map image (book scan, screenshot) — the grid overlays it">🖼 Upload Map
+        <input type="file" accept="image/*" style="display:none;" onchange="if(this.files[0])uploadBattleMapImage(this.files[0]);this.value='';">
+      </label>
+      <button class="btn btn-ghost btn-sm" onclick="clearBattleMapImage()" title="Back to the generated ground">✕ Img</button>
+      <button class="btn btn-ghost btn-sm" onclick="toggleMapGrid()" title="Grid on/off">▦ Grid</button>
+      <button class="btn btn-ghost btn-sm" id="map-vis-btn" onclick="toggleMapVisibility()" title="Hide the battle map from players (they still see the world map)">👁 Players see it</button>
+      <span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>
+      <label class="btn btn-ghost btn-sm" style="cursor:pointer;" title="World/town map — players can view it ANY time from their Map tab">🌍 World Map
+        <input type="file" accept="image/*" style="display:none;" onchange="if(this.files[0])uploadWorldMapImage(this.files[0]);this.value='';">
+      </label>
+      <button class="btn btn-ghost btn-sm" onclick="viewWorldMap()">🌍 View</button>
     </div>
 
     <!-- AoE palette (shown when AoE tool active) -->

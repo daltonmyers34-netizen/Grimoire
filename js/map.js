@@ -56,6 +56,109 @@ function syncMapState() {
   if (window.cloudSave) window.cloudSave();
 }
 
+// Late arrivals walk onto the map: place tokens for any combatant
+// that doesn't have one yet (called on every initiative change)
+function ensureTokensPlaced() {
+  if (typeof mapState === 'undefined') return;
+  var before = Object.keys(mapState.tokens || {}).length;
+  mapTokenList(false); // allocates positions for anyone missing
+  if (Object.keys(mapState.tokens).length !== before) {
+    if (typeof renderMap === 'function') renderMap();
+    syncMapState();
+  }
+}
+
+// Background image (uploaded battle map from a book/PDF screenshot)
+var _bgImageCache = {};
+function mapBgImage(m) {
+  if (!m.bgImage) return null;
+  var img = _bgImageCache[m.bgImage];
+  if (img) return img.complete ? img : null;
+  img = new Image();
+  img.onload = function() { if (typeof renderMap === 'function') renderMap(); };
+  img.src = m.bgImage;
+  _bgImageCache = {}; // keep only the current one
+  _bgImageCache[m.bgImage] = img;
+  return null;
+}
+
+function uploadBattleMapImage(file) {
+  compressMapImage(file, function(dataUrl, kb) {
+    mapState.bgImage = dataUrl;
+    renderMap();
+    syncMapState();
+    showToast('🖼 Map image set (' + kb + ' KB)' + (kb > 600 ? ' — big! consider a smaller crop' : '') + '. Toggle the grid with ▦.', 'success');
+  });
+}
+
+function clearBattleMapImage() {
+  mapState.bgImage = null;
+  renderMap();
+  syncMapState();
+}
+
+function compressMapImage(file, cb) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var img = new Image();
+    img.onload = function() {
+      var maxDim = 1400;
+      var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      var cv = document.createElement('canvas');
+      cv.width = Math.round(img.width * scale);
+      cv.height = Math.round(img.height * scale);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      var dataUrl = cv.toDataURL('image/jpeg', 0.72);
+      cb(dataUrl, Math.round(dataUrl.length * 0.75 / 1024));
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function toggleMapGrid() {
+  mapState.gridOn = mapState.gridOn === false ? true : false;
+  renderMap();
+  syncMapState();
+}
+
+// Battle map visibility: players only see it when you say so
+function toggleMapVisibility() {
+  mapState.hiddenFromPlayers = !mapState.hiddenFromPlayers;
+  var btn = document.getElementById('map-vis-btn');
+  if (btn) {
+    btn.textContent = mapState.hiddenFromPlayers ? '🙈 Hidden from players' : '👁 Players see it';
+    btn.style.color = mapState.hiddenFromPlayers ? '#ff9090' : '';
+    btn.style.borderColor = mapState.hiddenFromPlayers ? 'rgba(224,80,80,0.4)' : '';
+  }
+  syncMapState();
+  showToast(mapState.hiddenFromPlayers ? '🙈 Battle map hidden — players see only the world map' : '👁 Battle map visible to players', 'info');
+}
+
+// World map: always available to players (town/region/continent)
+function uploadWorldMapImage(file) {
+  compressMapImage(file, function(dataUrl, kb) {
+    worldMap.image = dataUrl;
+    syncMapState();
+    showToast('🌍 World map set (' + kb + ' KB) — players can view it any time', 'success');
+  });
+}
+
+function viewWorldMap() {
+  if (!worldMap.image) { showToast('No world map yet — upload one with 🌍', 'info'); return; }
+  var ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.style.zIndex = '2800';
+  ov.innerHTML = '<div class="modal" style="max-width:92vw;max-height:92vh;padding:10px;">' +
+    '<img src="' + worldMap.image + '" style="max-width:100%;max-height:80vh;display:block;border-radius:6px;">' +
+    '<div class="modal-btns" style="margin-top:8px;">' +
+      '<button class="btn btn-blood btn-sm" onclick="worldMap.image=null;syncMapState();this.closest(\'.modal-overlay\').remove();showToast(\'World map removed\',\'info\')">🗑 Remove</button>' +
+      '<button class="btn btn-ghost" onclick="this.closest(\'.modal-overlay\').remove()">Close</button>' +
+    '</div></div>';
+  ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+
 // ─── Rendering ───────────────────────────────────────────────
 function renderMap() {
   var canvas = document.getElementById('battle-map-canvas');
@@ -234,6 +337,12 @@ function drawMapMeasure(ctx, m) {
 }
 
 function drawMapGround(ctx, m, forPlayers) {
+  var bg = mapBgImage(m);
+  if (m.bgImage) {
+    if (bg) ctx.drawImage(bg, 0, 0, m.cols * m.cell, m.rows * m.cell);
+    else { ctx.fillStyle = '#181210'; ctx.fillRect(0, 0, m.cols * m.cell, m.rows * m.cell); }
+    return;
+  }
   var g = MAP_GROUNDS[m.ground] || MAP_GROUNDS.stone;
   for (var y = 0; y < m.rows; y++) {
     for (var x = 0; x < m.cols; x++) {
@@ -253,6 +362,7 @@ function drawMapGround(ctx, m, forPlayers) {
 }
 
 function drawMapGrid(ctx, m) {
+  if (m.gridOn === false) return;
   ctx.strokeStyle = 'rgba(0,0,0,0.28)';
   ctx.lineWidth = 1;
   for (var x = 0; x <= m.cols; x++) {

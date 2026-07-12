@@ -27,6 +27,7 @@ let savedEncounters = [];
 let savedMaps = [];
 let quests = [];
 let homebrewSpells = JSON.parse(localStorage.getItem('dm_homebrew_spells') || '[]');
+let worldMap = { image: null, name: '' };
 let diceOverlayExpanded = true;
 let worldTotalHours = 6;
 let worldSeason = 0;
