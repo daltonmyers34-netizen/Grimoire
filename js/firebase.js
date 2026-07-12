@@ -3,6 +3,8 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
                                 from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, deleteDoc }
                                 from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getStorage, ref as storageRef, uploadString, getDownloadURL }
+                                from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey:            "AIzaSyAHeoD6eKkxm7ezwvBcEt5W6S7nVqZYknY",
@@ -17,6 +19,22 @@ const firebaseConfig = {
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
+const storage = getStorage(app);
+
+// Upload an image to Firebase Storage → tiny URL in the sync instead of
+// a fat base64 blob. Returns null if Storage isn't enabled (Blaze plan);
+// callers fall back to the compressed data URL.
+window.uploadToStorage = async (dataUrl, path) => {
+  if (!currentUid) return null;
+  try {
+    const r = storageRef(storage, 'users/' + currentUid + '/' + path);
+    await uploadString(r, dataUrl, 'data_url');
+    return await getDownloadURL(r);
+  } catch(e) {
+    console.warn('Storage upload unavailable (' + e.code + ') — using inline image', e.message);
+    return null;
+  }
+};
 window.__db = db; window.__doc = doc; window.__onSnapshot = onSnapshot;
 
 let currentUid   = null;
@@ -163,6 +181,7 @@ async function doCloudWrite() {
       mapState: (state.mapState && state.mapState.hiddenFromPlayers) ? null : (state.mapState || null),
       worldMap: (typeof worldMap !== 'undefined' && worldMap && worldMap.image) ? worldMap : null,
       actionFeed: window.lastActionResult || null,
+      pendingReaction: window.pendingReaction || null,
       updatedAt: new Date().toISOString()
     };
     await setDoc(doc(db, 'playerView', currentUid), pvSnap);

@@ -33,6 +33,7 @@ var CONDITION_EFFECTS = {
   'Dodging':      { attackersDis: true },
   'Hastened':     { extraAction: 1, acMod: 2, speedFactor: 2 },
   'Slowed':       { acMod: -2, halfSpeed: true },
+  'Shielded':     { acMod: 5 }, // Shield spell — until the start of their next turn
   'Half Cover':   { acMod: 2, dexSaveMod: 2 },
   '3/4 Cover':    { acMod: 5, dexSaveMod: 5 },
   'Disengaged':   {}
@@ -99,7 +100,7 @@ function startTurnFor(c) {
   combatants.forEach(function(u) {
     if (u.owner && u.owner === c.name) { u.turnUsed = { actions: 0, bonus: false, movedFt: 0 }; u.reactionUsed = false; }
   });
-  var expiring = ['Reckless', 'Dodging', 'Disengaged'];
+  var expiring = ['Reckless', 'Dodging', 'Disengaged', 'Shielded'];
   if (c.conditions && c.conditions.some(function(x) { return expiring.indexOf(x) >= 0; })) {
     c.conditions = c.conditions.filter(function(x) { return expiring.indexOf(x) < 0; });
   }
@@ -323,6 +324,7 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
     showToast('🚫 ' + attacker.name + ' can\'t act — ' + can.reason, 'warn');
     return null;
   }
+  if (window.pendingReaction && window.pendingReaction.targetId !== attacker.id) clearPendingReaction();
 
   // Action economy: attacks/heals cost your Action (or Bonus if flagged)
   var cost = a.cost === 'bonus' ? 'bonus' : 'action';
@@ -449,10 +451,104 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
   }
 
   window.lastActionResult = result;
+  if (result.kind === 'attack' && target.type === 'ally') offerReaction(target, result, attacker);
   renderCombatants();
   if (typeof renderMap === 'function') renderMap();
   if (window.cloudSave) window.cloudSave();
   return result;
+}
+
+// ============================================================
+// REACTIONS — Shield & Hellish Rebuke pop on the victim's phone.
+// The offer dies when the next creature acts (too slow = too late).
+// ============================================================
+var REACTION_SPELLS = { 'Shield': 'hit', 'Hellish Rebuke': 'damaged' };
+
+function clearPendingReaction() { window.pendingReaction = null; }
+
+function offerReaction(target, result, attacker) {
+  if (!combatActive || target.reactionUsed) return;
+  var pc = party.find(function(p) { return p.name === target.name; });
+  if (!pc) return;
+  var offers = [];
+  (pc.spells || []).forEach(function(s) {
+    var trig = REACTION_SPELLS[s.name];
+    if (!trig) return;
+    var lvl = Math.max(1, s.level || 1);
+    var slotOk = (pc.spellSlots || []).some(function(sl, i) { return i + 1 >= lvl && sl.max > 0 && sl.used < sl.max; });
+    if (!slotOk) return;
+    if (s.name === 'Shield' && result.hit && result.roll !== 20 && result.total < result.targetAC + 5) {
+      offers.push({ spell: 'Shield', desc: '+5 AC — turns that ' + result.total + ' into a MISS (' + result.amount + ' damage undone) and shields you this round' });
+    }
+    if (s.name === 'Hellish Rebuke' && result.hit && result.amount > 0) {
+      offers.push({ spell: 'Hellish Rebuke', desc: 'hellfire engulfs ' + attacker.name + ' — DEX save or 2d10 fire' });
+    }
+  });
+  if (!offers.length) return;
+  window.pendingReaction = {
+    id: Date.now(), targetId: target.id, targetName: target.name,
+    attackerId: attacker.id, attackerName: attacker.name,
+    amount: result.amount || 0, offers: offers, ts: new Date().toISOString()
+  };
+}
+
+function burnLowestSlot(pc, minLevel) {
+  var slots = pc.spellSlots || [];
+  for (var i = Math.max(1, minLevel) - 1; i < slots.length; i++) {
+    if (slots[i].max > 0 && slots[i].used < slots[i].max) { slots[i].used++; return i + 1; }
+  }
+  return 0;
+}
+
+function processPlayerReaction(req) {
+  var pending = window.pendingReaction;
+  if (!pending || pending.id !== req.reactionId || pending.targetId !== req.combatantId) {
+    if (req.accept) showToast('⏳ Too late — the moment passed', 'info');
+    clearPendingReaction();
+    if (window.cloudSave) window.cloudSave();
+    return;
+  }
+  clearPendingReaction();
+  if (!req.accept) { if (window.cloudSave) window.cloudSave(); return; }
+  var target = combatants.find(function(x) { return x.id === pending.targetId; });
+  var attacker = combatants.find(function(x) { return x.id === pending.attackerId; });
+  var pc = party.find(function(p) { return target && p.name === target.name; });
+  if (!target || !pc || target.reactionUsed) return;
+  target.reactionUsed = true;
+  snapshotBeforeAction();
+
+  if (req.spell === 'Shield') {
+    burnLowestSlot(pc, 1);
+    target.hp = Math.min(target.maxHp, target.hp + pending.amount);
+    if (target.hp > 0) target.conditions = (target.conditions || []).filter(function(x) { return x !== 'Unconscious'; });
+    target.conditions = target.conditions || [];
+    if (target.conditions.indexOf('Shielded') < 0) target.conditions.push('Shielded');
+    logCombat('🛡✨ ' + target.name + ' casts SHIELD — the blow glances off! ' + pending.amount + ' damage undone, +5 AC until their next turn', 'heal');
+    showToast('🛡✨ ' + target.name + ' — SHIELD!', 'success');
+    window.lastActionResult = { id: Date.now(), kind: 'spell', caster: target.name, spellName: 'Shield', slotLevel: 1,
+      targets: [], notes: ['⚡ Reaction! The blow glances off — ' + pending.amount + ' damage undone', '+5 AC until their next turn'], ts: new Date().toISOString() };
+  } else if (req.spell === 'Hellish Rebuke') {
+    burnLowestSlot(pc, 1);
+    var dc = spellSaveDC(pc, { level: 1 });
+    var sb = saveBonusFor(attacker, 'dex');
+    logCombat('🔥 ' + target.name + ' casts HELLISH REBUKE at ' + attacker.name + '!', 'damage');
+    requestRolls('🔥 Hellish Rebuke — ' + attacker.name + ' saves', [{ id: 'r', label: attacker.name + ' — DEX save', sub: 'DC ' + dc + ' · bonus ' + (sb >= 0 ? '+' : '') + sb, adv: 0 }], function(results) {
+      var total = (results.r || 10) + sb;
+      var saved = total >= dc;
+      var dmg = rollDiceExpr('2d10').total;
+      var amt = saved ? Math.floor(dmg / 2) : dmg;
+      var def = applyDamageWithDefenses(attacker, amt, 'fire');
+      attacker.hp = Math.max(0, attacker.hp - def.taken);
+      logCombat('🔥 Hellish Rebuke: ' + attacker.name + ' ' + (saved ? 'saves (' + total + '), ' : 'FAILS (' + total + '), ') + def.taken + ' fire' + (def.notes.length ? ' · ' + def.notes.join(', ') : ''), 'damage');
+      window.lastActionResult = { id: Date.now(), kind: 'spell', caster: target.name, spellName: 'Hellish Rebuke', slotLevel: 1,
+        targets: [{ name: attacker.name, type: attacker.type, save: { ability: 'DEX', dc: dc, roll: results.r || 10, bonus: sb, total: total, saved: saved }, taken: def.taken, defNotes: def.notes }],
+        notes: ['⚡ Reaction!'], ts: new Date().toISOString() };
+      renderCombatants();
+      if (window.cloudSave) window.cloudSave();
+    });
+  }
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
 }
 
 // ─── Player request pipeline ─────────────────────────────────
@@ -469,6 +565,7 @@ function processPlayerAction(req) {
     else if (req.type === 'journal') processJournal(req);
     else if (req.type === 'castSpell') processCastSpell(req);
     else if (req.type === 'useItem') processUseItem(req);
+    else if (req.type === 'reaction') processPlayerReaction(req);
   } catch(e) {
     console.error('processPlayerAction', e);
   }

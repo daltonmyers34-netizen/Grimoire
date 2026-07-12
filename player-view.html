@@ -610,6 +610,13 @@ if (!dmUid) {
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 const AVATAR_COLORS = ['#7b3a14','#1e4d7a','#3a6b47','#6b2d5e','#7a5c10','#1d5e6b','#6b3a1e','#2d4e7a'];
+function avatarHTML(pc, sizePx, fontPx) {
+  if (pc.portrait) {
+    return '<img src="' + pc.portrait + '" style="width:' + sizePx + 'px;height:' + sizePx + 'px;border-radius:50%;object-fit:cover;border:3px solid rgba(212,175,55,0.45);flex-shrink:0;">';
+  }
+  return '<div class="select-avatar" style="width:' + sizePx + 'px;height:' + sizePx + 'px;font-size:' + fontPx + 'px;background:' + avatarColor(pc.name) + ';">' + initials(pc.name) + '</div>';
+}
+
 function avatarColor(name) {
   let h = 0;
   for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
@@ -1174,8 +1181,57 @@ function pvShapeHits(spell, origin, aim, d) {
   });
 }
 
+let pvCastHover = null; // cell under the finger/cursor while aiming a spell
+
+function drawCastGhost(ctx, m, d) {
+  if (!pendingCast || !pvCastHover) return;
+  const s = pendingCast.spell;
+  const me = activeUnit(d) || myCombatant(d);
+  const origin = me ? (m.tokens || {})[me.id] : null;
+  const shape = s.aoeShape || 'sphere';
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,140,40,0.18)';
+  ctx.strokeStyle = 'rgba(255,140,40,0.7)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 4]);
+  const rr = (s.aoeFt / 5) * m.cell;
+  if (shape === 'sphere' || !origin) {
+    const cx = (pvCastHover.x + 0.5) * m.cell, cy = (pvCastHover.y + 0.5) * m.cell;
+    ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  } else {
+    const ox = (origin.x + 0.5) * m.cell, oy = (origin.y + 0.5) * m.cell;
+    const ang = Math.atan2(pvCastHover.y - origin.y, pvCastHover.x - origin.x);
+    ctx.beginPath();
+    if (shape === 'cone') {
+      ctx.moveTo(ox, oy); ctx.arc(ox, oy, rr, ang - 0.49, ang + 0.49); ctx.closePath();
+    } else {
+      const ex = ox + Math.cos(ang) * rr, ey = oy + Math.sin(ang) * rr, w = m.cell * 0.5;
+      ctx.moveTo(ox + Math.cos(ang + Math.PI/2) * w, oy + Math.sin(ang + Math.PI/2) * w);
+      ctx.lineTo(ex + Math.cos(ang + Math.PI/2) * w, ey + Math.sin(ang + Math.PI/2) * w);
+      ctx.lineTo(ex + Math.cos(ang - Math.PI/2) * w, ey + Math.sin(ang - Math.PI/2) * w);
+      ctx.lineTo(ox + Math.cos(ang - Math.PI/2) * w, oy + Math.sin(ang - Math.PI/2) * w);
+      ctx.closePath();
+    }
+    ctx.fill(); ctx.stroke();
+  }
+  // live "who's in it" glow on affected tokens
+  const hits = pvShapeHits(s, origin, pvCastHover, d);
+  hits.forEach(c => {
+    const pos = (m.tokens || {})[c.id];
+    if (!pos) return;
+    ctx.beginPath();
+    ctx.arc((pos.x + 0.5) * m.cell, (pos.y + 0.5) * m.cell, m.cell * 0.5, 0, Math.PI * 2);
+    ctx.strokeStyle = c.type === 'ally' ? 'rgba(255,220,80,0.9)' : 'rgba(255,80,80,0.9)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([]);
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
 // Called from the map click handler when an AoE cast is pending
 function placeAoECast(center) {
+  pvCastHover = null;
   const cast = pendingCast;
   pendingCast = null;
   const d = latestData;
@@ -1380,6 +1436,17 @@ function bindMapInteraction() {
   const canvas = document.getElementById('pv-map-canvas');
   if (!canvas || canvas._bound) return;
   canvas._bound = true;
+  canvas.addEventListener('mousemove', e => {
+    if (!pendingCast || !latestData || !latestData.mapState) return;
+    const m = latestData.mapState;
+    const rect = canvas.getBoundingClientRect();
+    const hx = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / m.cell);
+    const hy = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / m.cell);
+    if (!pvCastHover || pvCastHover.x !== hx || pvCastHover.y !== hy) {
+      pvCastHover = { x: hx, y: hy };
+      drawPlayerMap(latestData);
+    }
+  });
   canvas.addEventListener('click', e => {
     const d = latestData;
     if (!d || !d.mapState) return;
@@ -1590,7 +1657,7 @@ function renderSelectionScreen(party) {
     party.map(pc => {
       const icon = classIcons[pc.cls] || '\u2694';
       return '<div class="select-card" onclick="_pvSelectChar(' + pc.id + ')">' +
-        '<div class="select-avatar" style="background:' + avatarColor(pc.name) + ';">' + initials(pc.name) + '</div>' +
+        '<div style="display:flex;justify-content:center;margin-bottom:12px;">' + avatarHTML(pc, 64, 22) + '</div>' +
         '<div class="select-card-name">' + esc(pc.name) + '</div>' +
         '<div class="select-card-info">' + icon + ' ' + esc(pc.race || '') + ' ' + esc(pc.cls) + ' Lv' + (pc.level || 1) + '</div>' +
         (pc.player ? '<div style="font-size:11px;color:#555;margin-top:4px;">played by ' + esc(pc.player) + '</div>' : '') +
@@ -1774,7 +1841,7 @@ function renderCharacterCard(d) {
 
   // Name + basic info
   html += '<div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:12px;">' +
-    '<div class="select-avatar" style="width:56px;height:56px;font-size:20px;background:' + avatarColor(pc.name) + ';">' + initials(pc.name) + '</div>' +
+    avatarHTML(pc, 56, 20) +
     '<div style="flex:1;">' +
       '<div style="font-family:Cinzel,serif;font-size:22px;font-weight:700;color:var(--gold);">' + esc(pc.name) + '</div>' +
       '<div style="font-size:14px;color:var(--text-dim);">' + (pc.race ? esc(pc.race) + ' ' : '') + esc(pc.cls) + ' &middot; Level ' + (pc.level || 1) + '</div>' +
@@ -2149,6 +2216,18 @@ function pvCellHash(x, y, seed) {
   return (h % 1000) / 1000;
 }
 
+let _pvFaceCache = {};
+function pvPortraitImg(src) {
+  if (!src) return null;
+  let img = _pvFaceCache[src];
+  if (img) return img.complete ? img : null;
+  img = new Image();
+  img.onload = () => { if (latestData) drawPlayerMap(latestData); };
+  img.src = src;
+  _pvFaceCache[src] = img;
+  return null;
+}
+
 let _pvBgCache = {};
 function pvBgImage(m) {
   if (!m.bgImage) return null;
@@ -2339,9 +2418,20 @@ function drawPlayerMap(d) {
       ctx.lineWidth = 2.5;
       ctx.stroke();
     }
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold ' + Math.floor(m.cell * 0.3) + 'px Cinzel, serif';
-    ctx.fillText(dead ? '💀' : initials(c.name), cx, cy);
+    const pcFace = (d.party || []).find(p => p.name === c.name && p.portrait);
+    const face = pcFace && !dead ? pvPortraitImg(pcFace.portrait) : null;
+    if (face) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r - 1, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(face, cx - r, cy - r, r * 2, r * 2);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold ' + Math.floor(m.cell * 0.3) + 'px Cinzel, serif';
+      ctx.fillText(dead ? '💀' : initials(c.name), cx, cy);
+    }
     ctx.font = Math.floor(m.cell * 0.22) + 'px Cinzel, serif';
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.strokeStyle = 'rgba(0,0,0,0.7)';
@@ -2381,6 +2471,9 @@ function drawPlayerMap(d) {
     const parts = key.split(',');
     ctx.fillRect(parseInt(parts[0]) * m.cell, parseInt(parts[1]) * m.cell, m.cell, m.cell);
   });
+
+  // Spell aiming ghost (drawn before the grid so lines stay crisp)
+  drawCastGhost(ctx, m, d);
 
   // Grid
   if (m.gridOn === false) return;
@@ -2512,6 +2605,43 @@ if (dmUid) {
       }
     }
     wasMyTurn = nowMyTurn;
+
+    // ⚡ Reaction offer: Shield / Hellish Rebuke on the victim's phone
+    if (!tableMode && d.pendingReaction && selectedPcId) {
+      const me2 = myCombatant(d);
+      if (me2 && d.pendingReaction.targetId === me2.id && String(d.pendingReaction.id) !== String(window._shownReactionId)) {
+        window._shownReactionId = d.pendingReaction.id;
+        pvSound('turn');
+        const pr = d.pendingReaction;
+        let rhtml = '<div style="text-align:center;font-family:Cinzel,serif;font-size:18px;color:#ffe066;margin-bottom:4px;">⚡ REACTION?</div>' +
+          '<div style="font-size:13px;color:var(--text-dim);text-align:center;margin-bottom:12px;">' + esc(pr.attackerName) + ' just hit you' + (pr.amount ? ' for ' + pr.amount : '') + '. Quick — before the next turn!</div>';
+        pr.offers.forEach(o => {
+          rhtml += '<button class="pv-target-btn" data-react="' + esc(o.spell) + '" style="border-color:rgba(255,224,102,0.4);">' +
+            '<span style="color:#ffe066;">✨ ' + esc(o.spell) + '</span>' +
+            '<span style="margin-left:auto;font-size:11px;color:var(--text-dim);max-width:60%;text-align:right;">' + esc(o.desc) + '</span></button>';
+        });
+        rhtml += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:8px;" id="pv-react-pass">Pass</button>';
+        showOverlay(rhtml);
+        document.querySelectorAll('[data-react]').forEach(btn => btn.addEventListener('click', () => {
+          closeOverlay();
+          sendPlayerRequest({ type: 'reaction', reactionId: pr.id, combatantId: me2.id, spell: btn.dataset.react, accept: true, ts: Date.now() });
+          showWaiting('⚡ ' + btn.dataset.react + '!');
+        }));
+        const pass = document.getElementById('pv-react-pass');
+        if (pass) pass.addEventListener('click', () => {
+          closeOverlay();
+          sendPlayerRequest({ type: 'reaction', reactionId: pr.id, combatantId: me2.id, accept: false, ts: Date.now() });
+        });
+      }
+    }
+    // Offer expired (someone else acted)? Close the popup — too late.
+    if (!d.pendingReaction && window._shownReactionId) {
+      const card = document.querySelector('.pv-overlay-card');
+      if (card && card.textContent.includes('REACTION?')) {
+        closeOverlay();
+        window._shownReactionId = null;
+      }
+    }
 
     // Action result feed → hit/miss/heal animation for everyone watching
     if (d.actionFeed && String(d.actionFeed.id) !== String(lastFeedId)) {

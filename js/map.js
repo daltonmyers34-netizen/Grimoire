@@ -26,6 +26,7 @@ function defaultMapState() {
 }
 
 var mapMeasure = null;       // {x0,y0,x1,y1} while dragging with the ruler
+var mapAoEHover = null;      // cell under the cursor while the AoE tool is armed
 var mapSelectedAoE = { r: 4, color: '255,120,30' }; // radius in cells (20ft fireball default)
 
 var MAP_PROPS = [
@@ -84,11 +85,19 @@ function mapBgImage(m) {
 
 function uploadBattleMapImage(file) {
   compressMapImage(file, function(dataUrl, kb) {
-    mapState.bgImage = dataUrl;
-    renderMap();
-    syncMapState();
-    showToast('🖼 Map image set (' + kb + ' KB)' + (kb > 600 ? ' — big! consider a smaller crop' : '') + '. Toggle the grid with ▦.', 'success');
-  });
+    showToast('🖼 Uploading map...', 'info');
+    var apply = function(src, viaCloud) {
+      mapState.bgImage = src;
+      renderMap();
+      syncMapState();
+      showToast('🖼 Map image set' + (viaCloud ? ' (cloud storage — full quality)' : ' (' + kb + ' KB inline)') + '. Toggle the grid with ▦.', 'success');
+    };
+    if (window.uploadToStorage) {
+      window.uploadToStorage(dataUrl, 'maps/battle-' + Date.now() + '.jpg').then(function(url) {
+        apply(url || dataUrl, !!url);
+      });
+    } else apply(dataUrl, false);
+  }, 2000); // Storage path can afford higher resolution
 }
 
 function clearBattleMapImage() {
@@ -97,12 +106,12 @@ function clearBattleMapImage() {
   syncMapState();
 }
 
-function compressMapImage(file, cb) {
+function compressMapImage(file, cb, maxDimOverride) {
   var reader = new FileReader();
   reader.onload = function(e) {
     var img = new Image();
     img.onload = function() {
-      var maxDim = 1400;
+      var maxDim = maxDimOverride || 1400;
       var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
       var cv = document.createElement('canvas');
       cv.width = Math.round(img.width * scale);
@@ -138,10 +147,18 @@ function toggleMapVisibility() {
 // World map: always available to players (town/region/continent)
 function uploadWorldMapImage(file) {
   compressMapImage(file, function(dataUrl, kb) {
-    worldMap.image = dataUrl;
-    syncMapState();
-    showToast('🌍 World map set (' + kb + ' KB) — players can view it any time', 'success');
-  });
+    showToast('🌍 Uploading world map...', 'info');
+    var apply = function(src, viaCloud) {
+      worldMap.image = src;
+      syncMapState();
+      showToast('🌍 World map set' + (viaCloud ? ' (cloud storage — full quality)' : ' (' + kb + ' KB inline)') + ' — players can view it any time', 'success');
+    };
+    if (window.uploadToStorage) {
+      window.uploadToStorage(dataUrl, 'maps/world-' + Date.now() + '.jpg').then(function(url) {
+        apply(url || dataUrl, !!url);
+      });
+    } else apply(dataUrl, false);
+  }, 2400);
 }
 
 function viewWorldMap() {
@@ -178,6 +195,19 @@ function renderMap() {
   drawMapFog(ctx, m, false);
   drawMapGrid(ctx, m);
   drawMapMeasure(ctx, m);
+  // Ghost preview: see the blast before you commit
+  if (mapTool === 'aoe' && mapAoEHover) {
+    var gx = (mapAoEHover.x + 0.5) * m.cell, gy = (mapAoEHover.y + 0.5) * m.cell;
+    ctx.beginPath();
+    ctx.arc(gx, gy, mapSelectedAoE.r * m.cell, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(' + mapSelectedAoE.color + ',0.14)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(' + mapSelectedAoE.color + ',0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 }
 
 function drawMapRoads(ctx, m) {
@@ -433,6 +463,18 @@ function mapTokenList(forPlayers) {
   return list;
 }
 
+var _portraitCache = {};
+function portraitImg(src) {
+  if (!src) return null;
+  var img = _portraitCache[src];
+  if (img) return img.complete ? img : null;
+  img = new Image();
+  img.onload = function() { if (typeof renderMap === 'function') renderMap(); };
+  img.src = src;
+  _portraitCache[src] = img;
+  return null;
+}
+
 function drawMapTokens(ctx, m, forPlayers) {
   var tokens = mapTokenList(forPlayers);
   tokens.forEach(function(t) {
@@ -455,13 +497,24 @@ function drawMapTokens(ctx, m, forPlayers) {
       ctx.lineWidth = 2.5;
       ctx.stroke();
     }
-    // initials
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold ' + Math.floor(m.cell * 0.3) + 'px Cinzel, serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    var initials = String(t.name).split(' ').map(function(w){ return w[0]; }).join('').toUpperCase().slice(0, 2);
-    ctx.fillText(t.dead ? '💀' : initials, cx, cy);
+    // portrait or initials
+    var pcFace = (typeof party !== 'undefined') && party.find(function(p) { return p.name === t.name && p.portrait; });
+    var face = pcFace && !t.dead ? portraitImg(pcFace.portrait) : null;
+    if (face) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r - 1, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(face, cx - r, cy - r, r * 2, r * 2);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold ' + Math.floor(m.cell * 0.3) + 'px Cinzel, serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      var initials = String(t.name).split(' ').map(function(w){ return w[0]; }).join('').toUpperCase().slice(0, 2);
+      ctx.fillText(t.dead ? '💀' : initials, cx, cy);
+    }
     ctx.globalAlpha = 1;
     // name label
     ctx.font = Math.floor(m.cell * 0.22) + 'px Cinzel, serif';
@@ -689,6 +742,12 @@ function mapPaintWall(pt) {
 
 function mapMouseMove(e) {
   var pt = mapEventCell(e);
+  if (mapTool === 'aoe') {
+    if (!mapAoEHover || mapAoEHover.x !== pt.x || mapAoEHover.y !== pt.y) {
+      mapAoEHover = { x: pt.x, y: pt.y };
+      renderMap();
+    }
+  } else if (mapAoEHover) { mapAoEHover = null; renderMap(); }
   if (mapDrag) {
     if (pt.x < 0 || pt.y < 0 || pt.x >= mapState.cols || pt.y >= mapState.rows) return;
     if (mapDrag.kind === 'token') {

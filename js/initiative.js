@@ -256,6 +256,7 @@ function nextTurn() {
   if (typeof endTurnProcessing === 'function' && combatants[currentTurn]) {
     endTurnProcessing(combatants[currentTurn]);
   }
+  if (typeof clearPendingReaction === 'function') clearPendingReaction(); // reaction window closes
 
   var safety = 0;
   var maxIter = combatants.length;
