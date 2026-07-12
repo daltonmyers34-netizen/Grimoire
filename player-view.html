@@ -574,6 +574,7 @@
 <div class="pv-header">
   <div class="pv-title">DM Grimoire</div>
   <div style="display:flex;align-items:center;gap:10px;">
+    <button id="pv-mute-btn" onclick="_pvToggleMute()" style="background:none;border:1px solid rgba(212,175,55,0.3);border-radius:5px;color:var(--gold);font-size:14px;padding:3px 8px;cursor:pointer;">🔊</button>
     <span class="pv-status" id="pv-status">Connecting...</span>
   </div>
 </div>
@@ -667,7 +668,42 @@ let latestData = null;
 let activeTab = 'character'; // 'character' | 'initiative' | 'map'
 let moveSelecting = false;   // tap-to-move: own token selected
 let lastFeedId = sessionStorage.getItem('pv_last_feed') || null;
+let wasMyTurn = false;
+let lastDeathPrompt = '';
 const MOVE_SPEED_FT = 30;
+
+// ── Sounds & haptics (WebAudio — no assets needed) ───────────
+let pvMuted = localStorage.getItem('pv_mute') === '1';
+setTimeout(() => { const b = document.getElementById('pv-mute-btn'); if (b && pvMuted) b.textContent = '🔇'; }, 100);
+let _audioCtx = null;
+function pvTone(freq, dur, delay, type, vol) {
+  try {
+    if (pvMuted) return;
+    _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = _audioCtx.createOscillator(), g = _audioCtx.createGain();
+    o.type = type || 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, _audioCtx.currentTime + delay);
+    g.gain.exponentialRampToValueAtTime(vol || 0.18, _audioCtx.currentTime + delay + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, _audioCtx.currentTime + delay + dur);
+    o.connect(g); g.connect(_audioCtx.destination);
+    o.start(_audioCtx.currentTime + delay); o.stop(_audioCtx.currentTime + delay + dur + 0.05);
+  } catch(e) {}
+}
+function pvSound(kind) {
+  if (kind === 'turn') { pvTone(660, 0.18, 0, 'sine'); pvTone(880, 0.28, 0.15, 'sine'); if (navigator.vibrate) navigator.vibrate([120, 60, 120]); }
+  else if (kind === 'hit') { pvTone(180, 0.16, 0, 'square', 0.12); if (navigator.vibrate) navigator.vibrate(80); }
+  else if (kind === 'crit') { pvTone(523, 0.12, 0), pvTone(659, 0.12, 0.1), pvTone(784, 0.12, 0.2), pvTone(1046, 0.3, 0.3); if (navigator.vibrate) navigator.vibrate([60, 40, 60, 40, 160]); }
+  else if (kind === 'miss') { pvTone(300, 0.1, 0, 'triangle', 0.1); pvTone(220, 0.16, 0.09, 'triangle', 0.1); }
+  else if (kind === 'heal') { pvTone(523, 0.14, 0), pvTone(784, 0.24, 0.12); }
+  else if (kind === 'death') { pvTone(220, 0.3, 0, 'sawtooth', 0.08); pvTone(196, 0.5, 0.28, 'sawtooth', 0.08); if (navigator.vibrate) navigator.vibrate([250, 100, 250]); }
+}
+function toggleMute() {
+  pvMuted = !pvMuted;
+  localStorage.setItem('pv_mute', pvMuted ? '1' : '0');
+  const btn = document.getElementById('pv-mute-btn');
+  if (btn) btn.textContent = pvMuted ? '🔇' : '🔊';
+}
+window._pvToggleMute = toggleMute;
 
 // ── Playable-turn helpers ────────────────────────────────────
 function myPC(d) {
@@ -677,6 +713,17 @@ function myCombatant(d) {
   const pc = myPC(d);
   if (!pc) return null;
   return (d.combatants || []).find(c => c.type === 'ally' && c.name === pc.name) || null;
+}
+// Everything you control: your character + your summons/minions
+function myUnits(d) {
+  const pc = myPC(d);
+  if (!pc) return [];
+  return (d.combatants || []).filter(c => c.type === 'ally' && (c.name === pc.name || c.owner === pc.name));
+}
+let activeUnitId = null; // which of your units the map commands (null = your character)
+function activeUnit(d) {
+  const units = myUnits(d);
+  return units.find(u => u.id === activeUnitId) || myCombatant(d);
 }
 function isMyTurn(d) {
   const me = myCombatant(d);
@@ -923,17 +970,27 @@ function showMonsterInfo(c) {
 // Tap an enemy on the map → pick which action to hit them with
 function openMapAttack(target) {
   const d = latestData;
-  const pc = myPC(d), me = myCombatant(d);
+  const pc = myPC(d);
+  const me = activeUnit(d) || myCombatant(d);
   const can = pvCanAct(me);
   if (!can.ok) {
     showOverlay('<div style="text-align:center;font-size:15px;color:#e05050;">You can\'t act — you are ' + esc(can.reason) + '.</div>' +
       '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCloseOverlay()">OK</button>');
     return;
   }
-  const allActs = pvEffectiveActions(pc);
+  const isSummon = me.name !== pc.name;
+  const allActs = isSummon ? (me.actions || []) : pvEffectiveActions(pc);
   const acts = allActs.filter(a => a.kind !== 'heal');
-  if (!acts.length) {
-    showOverlay('<div style="text-align:center;font-size:14px;color:var(--text-dim);">No attacks on your sheet yet — ask your DM to add Combat Actions to your character.</div>' +
+  // Castable offensive spells show here too — a fireball IS an attack option
+  const spellIdxs = [];
+  if (!isSummon) (pc.spells || []).forEach((s, i) => {
+    if (s.kind === 'heal' || s.kind === 'buff') return;
+    const lvl = s.level || 0;
+    const slotOk = lvl === 0 || (pc.spellSlots || []).some((sl, idx) => idx + 1 >= lvl && sl.max > 0 && sl.used < sl.max);
+    if (slotOk) spellIdxs.push(i);
+  });
+  if (!acts.length && !spellIdxs.length) {
+    showOverlay('<div style="text-align:center;font-size:14px;color:var(--text-dim);">No attacks or castable spells on ' + (isSummon ? esc(me.name) : 'your sheet') + ' yet — ask your DM to add some.</div>' +
       '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCloseOverlay()">OK</button>');
     return;
   }
@@ -946,7 +1003,7 @@ function openMapAttack(target) {
     '<div style="font-family:Cinzel,serif;font-size:17px;color:var(--gold);flex:1;">⚔ Attack ' + esc(target.name) + '</div>' +
     '<button class="btn-pv" style="font-size:11px;padding:3px 10px;" id="pv-info-btn">ℹ Info</button></div>' +
     '<div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;"><span style="color:' + hpD.color + ';">' + hpD.label + '</span>' + (ft !== null ? ' · ' + ft + ' ft away' : '') + '</div>';
-  acts.forEach((a, i) => {
+  acts.forEach((a) => {
     const idx = allActs.indexOf(a);
     const outOfRange = ft !== null && ft > (a.range || 5);
     html += '<button class="pv-target-btn" ' + (outOfRange ? 'disabled' : '') + ' data-mattack="' + idx + '">' +
@@ -954,13 +1011,27 @@ function openMapAttack(target) {
       '<span style="margin-left:auto;font-size:12px;color:' + (outOfRange ? '#e05050' : 'var(--text-dim)') + ';">' + (a.range || 5) + ' ft · ' + esc(a.dice || '') + (outOfRange ? ' — too far' : '') + '</span>' +
     '</button>';
   });
+  spellIdxs.forEach(i => {
+    const s = pc.spells[i];
+    const bits = [(s.level || 0) === 0 ? 'Cantrip' : 'L' + s.level, s.aoeFt ? s.aoeFt + ' ft ' + (s.aoeShape || 'blast') : (s.range || 60) + ' ft', esc(s.dice || '')].filter(Boolean);
+    html += '<button class="pv-target-btn" data-mspell="' + i + '" style="border-color:rgba(100,180,255,0.3);">' +
+      '<span style="color:#90c8ff;">✨ ' + esc(s.name) + '</span>' +
+      '<span style="margin-left:auto;font-size:12px;color:var(--text-dim);">' + bits.join(' · ') + '</span>' +
+    '</button>';
+  });
   html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:8px;" onclick="_pvCloseOverlay()">Cancel</button>';
   showOverlay(html);
+  document.querySelectorAll('[data-mspell]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      closeOverlay();
+      castSpell(parseInt(btn.dataset.mspell));
+    });
+  });
   const infoBtn = document.getElementById('pv-info-btn');
   if (infoBtn) infoBtn.addEventListener('click', () => { closeOverlay(); showMonsterInfo(target); });
   document.querySelectorAll('[data-mattack]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const a = pvEffectiveActions(pc)[parseInt(btn.dataset.mattack)];
+      const a = allActs[parseInt(btn.dataset.mattack)];
       closeOverlay();
       askForRoll(a, me.id, target.id, pvAttackContext(me, target, a));
     });
@@ -1039,7 +1110,8 @@ function chooseCastTargets(s, slotLevel) {
     pendingCast = { spell: s, slotLevel };
     activeTab = 'map';
     renderRoot(d);
-    showOverlay('<div style="text-align:center;font-size:15px;color:var(--gold-light);">🎯 Tap the map where you want the center of your ' + s.aoeFt + ' ft ' + esc(s.name) + '.</div>' +
+    const shapeWord = s.aoeShape === 'cone' ? 'Tap where your ' + s.aoeFt + ' ft cone should POINT' : s.aoeShape === 'line' ? 'Tap where your ' + s.aoeFt + ' ft line should AIM' : 'Tap the map where you want the center of your ' + s.aoeFt + ' ft blast';
+    showOverlay('<div style="text-align:center;font-size:15px;color:var(--gold-light);">🎯 ' + shapeWord + ' — ' + esc(s.name) + '.</div>' +
       '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCancelCast()">Cancel</button>');
     setTimeout(closeOverlay, 2200);
     return;
@@ -1077,17 +1149,38 @@ function chooseCastTargets(s, slotLevel) {
 function cancelCast() { pendingCast = null; closeOverlay(); if (latestData) renderRoot(latestData); }
 window._pvCancelCast = cancelCast;
 
+// Shape geometry mirror (sphere / cone / line — same math as the DM engine)
+function pvShapeHits(spell, origin, aim, d) {
+  const lenFt = spell.aoeFt || 0;
+  const shape = spell.aoeShape || 'sphere';
+  return (d.combatants || []).filter(c => {
+    if (c.hidden && c.type !== 'ally') return false;
+    const pos = (d.mapState.tokens || {})[c.id];
+    if (!pos) return false;
+    if (shape === 'sphere') return distFt(pos, aim) <= lenFt;
+    if (!origin) return false;
+    const vx = pos.x - origin.x, vy = pos.y - origin.y;
+    const dx = aim.x - origin.x, dy = aim.y - origin.y;
+    const dlen = Math.sqrt(dx * dx + dy * dy);
+    if (dlen === 0) return false;
+    const ux = dx / dlen, uy = dy / dlen;
+    const dFt = Math.sqrt(vx * vx + vy * vy) * 5;
+    if (dFt === 0) return false;
+    if (shape === 'cone') return dFt <= lenFt && ((vx * ux + vy * uy) / (dFt / 5)) >= 0.883;
+    const t = (vx * ux + vy * uy) * 5;
+    const perp = Math.abs(vx * uy - vy * ux) * 5;
+    return t > 0 && t <= lenFt && perp <= 4;
+  });
+}
+
 // Called from the map click handler when an AoE cast is pending
 function placeAoECast(center) {
   const cast = pendingCast;
   pendingCast = null;
   const d = latestData;
-  // Preview who's inside
-  const inside = (d.combatants || []).filter(c => {
-    if (c.hidden && c.type !== 'ally') return false;
-    const pos = (d.mapState.tokens || {})[c.id];
-    return pos && distFt(pos, center) <= cast.spell.aoeFt;
-  });
+  const me = activeUnit(d) || myCombatant(d);
+  const origin = me ? (d.mapState.tokens || {})[me.id] : null;
+  const inside = pvShapeHits(cast.spell, origin, center, d);
   let html = '<div style="font-family:Cinzel,serif;font-size:16px;color:var(--gold);margin-bottom:8px;">💥 ' + esc(cast.spell.name) + ' will hit:</div>';
   html += inside.length
     ? inside.map(c => '<div style="font-size:14px;padding:3px 0;color:' + (c.type === 'ally' ? '#90c8ff' : '#ff9090') + ';">• ' + esc(c.name) + (c.type === 'ally' ? ' ⚠' : '') + '</div>').join('')
@@ -1218,6 +1311,11 @@ function showWaiting(msg) {
 // ── Action result animation (fires from the Firebase feed) ──
 function showActionResult(r) {
   closeOverlay();
+  if (r.kind === 'spell') pvSound('hit');
+  else if (r.kind === 'heal') pvSound('heal');
+  else if (r.crit) pvSound('crit');
+  else if (r.hit) pvSound('hit');
+  else pvSound('miss');
   const wrap = document.createElement('div');
   wrap.className = 'pv-result-overlay';
   let inner = '';
@@ -1235,10 +1333,13 @@ function showActionResult(r) {
     });
     if (!(r.targets || []).length) inner += '<div style="font-size:13px;color:var(--text-dim);margin-top:8px;">...and hits nothing at all.</div>';
     if (r.notes && r.notes.length) inner += '<div style="font-size:11px;color:var(--text-secondary);margin-top:8px;">' + r.notes.map(esc).join(' · ') + '</div>';
+    inner += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:14px;border-color:#64b4ff;color:#90c8ff;" onclick="this.closest(\'.pv-result-overlay\').remove()">✓ Close</button>';
     inner += '</div>';
     wrap.innerHTML = inner;
+    wrap.style.pointerEvents = 'auto';
+    wrap.addEventListener('click', ev => { if (ev.target === wrap) wrap.remove(); });
     document.body.appendChild(wrap);
-    setTimeout(() => wrap.remove(), 4500 + (r.targets || []).length * 250);
+    setTimeout(() => { if (wrap.parentNode) wrap.remove(); }, 120000); // failsafe only — read at your own pace
     return;
   }
   const cls = r.kind === 'heal' ? 'heal' : (r.hit ? 'hit' : 'miss');
@@ -1295,8 +1396,22 @@ function bindMapInteraction() {
       if (insp) showMonsterInfo(insp);
       return;
     }
-    const me = myCombatant(d);
     const m = d.mapState;
+    // Tap any unit you control (your character or a summon) to command it
+    {
+      const rectS = canvas.getBoundingClientRect();
+      const sx = Math.floor((e.clientX - rectS.left) * (canvas.width / rectS.width) / m.cell);
+      const sy = Math.floor((e.clientY - rectS.top) * (canvas.height / rectS.height) / m.cell);
+      const tappedUnit = myUnits(d).find(u => {
+        const pos = (m.tokens || {})[u.id];
+        return pos && pos.x === sx && pos.y === sy;
+      });
+      if (tappedUnit && !moveSelecting && !pendingCast) {
+        activeUnitId = tappedUnit.id;
+      }
+    }
+    const me = activeUnit(d);
+    if (!me) return;
     const myPos = (m.tokens || {})[me.id];
     if (!myPos) return;
     const rect = canvas.getBoundingClientRect();
@@ -1305,8 +1420,8 @@ function bindMapInteraction() {
 
     const pc = myPC(d);
     const usedFt = (me.turnUsed && me.turnUsed.movedFt) || 0;
-    let baseSpd = (pc && pc.speed) || 30;
-    ((pc && pc.inventory) || []).forEach(it => { if (it.equipped && it.speedBonus) baseSpd += it.speedBonus; });
+    let baseSpd = me.owner ? 30 : ((pc && pc.speed) || 30);
+    if (!me.owner) ((pc && pc.inventory) || []).forEach(it => { if (it.equipped && it.speedBonus) baseSpd += it.speedBonus; });
     const speed = Math.max(0, pvSpeedFt(me, baseSpd) - usedFt);
 
     // A pending AoE spell placement takes priority over everything
@@ -1344,6 +1459,17 @@ function bindMapInteraction() {
     // Second tap: destination
     moveSelecting = false;
     if (x === myPos.x && y === myPos.y) { drawPlayerMap(d); return; }
+    const taken = (d.combatants || []).some(o => {
+      if (o.id === me.id || o.hp <= 0 || (o.hidden && o.type !== 'ally')) return false;
+      const op = (m.tokens || {})[o.id];
+      return op && op.x === x && op.y === y;
+    });
+    if (taken) {
+      drawPlayerMap(d);
+      showOverlay('<div style="text-align:center;font-size:15px;color:#e05050;">That square is occupied.</div>' +
+        '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;" onclick="_pvCloseOverlay()">OK</button>');
+      return;
+    }
     const ft = distFt(myPos, { x, y });
     if (ft > speed) {
       drawPlayerMap(d);
@@ -1553,6 +1679,8 @@ function renderTwoColumnView(d) {
 
   // YOUR TURN banner + economy meters + End Turn
   if (isMyTurn(d)) {
+    const extraUnits = myUnits(d).filter(u => u.owner);
+    var summonNote = extraUnits.length ? '<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">You also command: ' + extraUnits.map(u => esc(u.name)).join(', ') + ' — tap their token on the map</div>' : '';
     const me = myCombatant(d);
     const tu = (me && me.turnUsed) || { actions: 0, bonus: false, movedFt: 0 };
     const spd = pvSpeedFt(me, (pc && pc.speed) || 30);
@@ -1567,7 +1695,7 @@ function renderTwoColumnView(d) {
         chip('ACTION' + (aMax > 1 ? ' ' + Math.max(0, aMax - aUsed) + '/' + aMax : ''), aUsed >= aMax) + chip('BONUS', tu.bonus) +
         chip('MOVE ' + Math.max(0, spd - (tu.movedFt || 0)) + ' ft', (tu.movedFt || 0) >= spd) +
         '<button class="btn-pv" style="font-size:11px;padding:3px 12px;border-color:var(--gold);" onclick="_pvEndTurn()">⏭ End Turn</button>' +
-      '</div>' +
+      '</div>' + summonNote +
     '</div>';
   }
 
@@ -1829,19 +1957,21 @@ function renderCharacterCard(d) {
     if (!myInv.length) {
       html += '<div style="font-size:12px;color:#555;font-style:italic;">Empty pockets. Ask your DM for loot!</div>';
     }
-    const slotIcons = { weapon: '⚔', armor: '🛡', shield: '🛡', light: '🕯', gear: '🎒' };
+    const slotIcons = { weapon: '⚔', armor: '🛡', shield: '🛡', light: '🕯', gear: '🎒', potion: '🧪', ammo: '🏹' };
     myInv.forEach(it => {
       const extra = [];
       if (it.dice) extra.push(it.dice + (it.damageType ? ' ' + it.damageType : ''));
       if (it.acBonus) extra.push('+' + it.acBonus + ' AC');
       if (it.lightFt) extra.push('💡 ' + it.lightFt + ' ft');
+      if (it.healDice) extra.push('heals ' + it.healDice);
       html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid ' + (it.equipped ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.07)') + ';border-radius:5px;margin-bottom:4px;background:' + (it.equipped ? 'rgba(212,175,55,0.05)' : 'rgba(0,0,0,0.15)') + ';">' +
         '<span>' + (slotIcons[it.slot] || '🎒') + '</span>' +
         '<div style="flex:1;min-width:0;">' +
           '<span style="font-size:13px;color:var(--parchment);">' + esc(it.name) + (it.qty > 1 ? ' ×' + it.qty : '') + '</span>' +
           (extra.length ? '<span style="font-size:10px;color:var(--text-dim);margin-left:6px;">' + extra.join(' · ') + '</span>' : '') +
         '</div>' +
-        (it.slot !== 'gear' ? '<button class="btn-pv" style="font-size:10px;padding:3px 10px;' + (it.equipped ? 'border-color:var(--gold);color:var(--gold-light);' : '') + '" onclick="_pvEquip(' + it.id + ',' + (it.equipped ? 'false' : 'true') + ')">' + (it.equipped ? '✓ Equipped' : 'Equip') + '</button>' : '') +
+        (it.slot === 'potion' ? '<button class="btn-pv" style="font-size:10px;padding:3px 10px;border-color:#64b4ff;color:#90c8ff;" onclick="_pvUseItem(' + it.id + ')">🧪 Drink</button>' :
+         it.slot !== 'gear' && it.slot !== 'ammo' ? '<button class="btn-pv" style="font-size:10px;padding:3px 10px;' + (it.equipped ? 'border-color:var(--gold);color:var(--gold-light);' : '') + '" onclick="_pvEquip(' + it.id + ',' + (it.equipped ? 'false' : 'true') + ')">' + (it.equipped ? '✓ Equipped' : 'Equip') + '</button>' : '') +
       '</div>';
     });
     html += '</div>';
@@ -1952,6 +2082,15 @@ async function saveJournal() {
   if (st) { st.textContent = ok ? '✓ Saved' : '⚠ failed'; st.style.color = ok ? '#8fd050' : '#e05050'; setTimeout(() => { if (st) st.textContent = ''; }, 2500); }
 }
 window._pvSaveJournal = saveJournal;
+
+function useItemReq(itemId) {
+  const d = latestData;
+  const pc = myPC(d);
+  if (!pc) return;
+  sendPlayerRequest({ type: 'useItem', pcId: pc.id, itemId, ts: Date.now() });
+  showWaiting('🧪 Using item...');
+}
+window._pvUseItem = useItemReq;
 
 function sendEquip(itemId, equipped) {
   const d = latestData;
@@ -2066,10 +2205,36 @@ function drawPlayerMap(d) {
     }
   });
 
-  // AoE templates (spell areas the DM dropped)
+  // AoE templates (spell areas — spheres, cones, lines)
   (m.props || []).forEach(p => {
     if (p.kind !== 'aoe') return;
     const acx = (p.x + 0.5) * m.cell, acy = (p.y + 0.5) * m.cell;
+    if (p.shape === 'cone' || p.shape === 'line') {
+      const rr = p.r * m.cell;
+      const ang = Math.atan2((p.ty - p.y), (p.tx - p.x));
+      ctx.beginPath();
+      if (p.shape === 'cone') {
+        ctx.moveTo(acx, acy);
+        ctx.arc(acx, acy, rr, ang - 0.49, ang + 0.49);
+        ctx.closePath();
+      } else {
+        const ex = acx + Math.cos(ang) * rr, ey = acy + Math.sin(ang) * rr;
+        const w = m.cell * 0.5;
+        ctx.moveTo(acx + Math.cos(ang + Math.PI/2) * w, acy + Math.sin(ang + Math.PI/2) * w);
+        ctx.lineTo(ex + Math.cos(ang + Math.PI/2) * w, ey + Math.sin(ang + Math.PI/2) * w);
+        ctx.lineTo(ex + Math.cos(ang - Math.PI/2) * w, ey + Math.sin(ang - Math.PI/2) * w);
+        ctx.lineTo(acx + Math.cos(ang - Math.PI/2) * w, acy + Math.sin(ang - Math.PI/2) * w);
+        ctx.closePath();
+      }
+      ctx.fillStyle = 'rgba(' + (p.color || '255,120,30') + ',0.22)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(' + (p.color || '255,120,30') + ',0.75)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      return;
+    }
     ctx.beginPath();
     ctx.arc(acx, acy, p.r * m.cell, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(' + (p.color || '255,120,30') + ',0.22)';
@@ -2145,9 +2310,9 @@ function drawPlayerMap(d) {
 
   // Movement mode: highlight reachable squares + ring your token
   if (moveSelecting && isMyTurn(d)) {
-    const me = myCombatant(d);
+    const me = activeUnit(d) || myCombatant(d);
     const myPos = me ? (m.tokens || {})[me.id] : null;
-    const pcSpd = Math.max(0, pvSpeedFt(me, (myPC(d) || {}).speed || 30) - ((me && me.turnUsed && me.turnUsed.movedFt) || 0));
+    const pcSpd = Math.max(0, pvSpeedFt(me, me.owner ? 30 : ((myPC(d) || {}).speed || 30)) - ((me && me.turnUsed && me.turnUsed.movedFt) || 0));
     if (myPos) {
       for (let yy = 0; yy < m.rows; yy++) {
         for (let xx = 0; xx < m.cols; xx++) {
@@ -2275,6 +2440,34 @@ if (dmUid) {
 
     const d = snap.data();
     renderRoot(d);
+
+    // Turn chime + death-save popup, exactly when they matter
+    const nowMyTurn = selectedPcId ? isMyTurn(d) : false;
+    if (nowMyTurn && !wasMyTurn) {
+      pvSound('turn');
+      const meNow = myCombatant(d);
+      if (meNow && meNow.hp <= 0 && !meNow.isDead && !(meNow.conditions || []).includes('Stable')) {
+        const key = (d.currentRound || 0) + ':' + (d.currentTurn || 0);
+        if (lastDeathPrompt !== key) {
+          lastDeathPrompt = key;
+          pvSound('death');
+          const ds = meNow.deathSuccess || 0, df = meNow.deathFail || 0;
+          let pips = '<span style="color:#8fd050;letter-spacing:3px;">';
+          for (let i = 0; i < 3; i++) pips += i < ds ? '●' : '○';
+          pips += '</span> <span style="color:#e05050;letter-spacing:3px;">';
+          for (let i = 0; i < 3; i++) pips += i < df ? '●' : '○';
+          pips += '</span>';
+          showOverlay('<div style="text-align:center;">' +
+            '<div style="font-family:Cinzel,serif;font-size:20px;color:#ff8080;margin-bottom:6px;">💀 DEATH SAVE</div>' +
+            '<div style="font-size:13px;color:var(--text-dim);margin-bottom:8px;">You\'re dying. Roll a d20 — only you and the DM see this.</div>' +
+            '<div style="font-size:22px;margin-bottom:12px;">' + pips + '</div>' +
+            '<input id="pv-ds-roll" type="number" min="1" max="20" placeholder="d20" style="width:90px;font-size:22px;text-align:center;padding:8px;background:rgba(0,0,0,0.4);border:2px solid rgba(224,80,80,0.5);border-radius:8px;color:var(--parchment);margin-bottom:12px;">' +
+            '<div><button class="btn-pv" style="border-color:#e05050;color:#ff8080;" onclick="_pvDeathSave();_pvCloseOverlay()">🎲 Roll Death Save</button></div>' +
+          '</div>');
+        }
+      }
+    }
+    wasMyTurn = nowMyTurn;
 
     // Action result feed → hit/miss/heal animation for everyone watching
     if (d.actionFeed && String(d.actionFeed.id) !== String(lastFeedId)) {

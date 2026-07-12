@@ -48,6 +48,7 @@ onAuthStateChanged(auth, user => {
     showUserBadge(user);
     loadCloudState(user.uid);
     listenForPlayerActions(user.uid);
+    loadHomebrew(user.uid);
   } else {
     currentUid = null;
     window.__fbUid = null;
@@ -109,6 +110,35 @@ async function loadCloudState(uid) {
     showToast('\u26a0 Could not load cloud data: ' + e.message, 'warn');
   }
 }
+
+// -- Homebrew spellbook: account-level, survives New Campaign ----------
+async function loadHomebrew(uid) {
+  try {
+    const snap = await getDoc(doc(db, 'users', uid, 'data', 'homebrew'));
+    if (snap.exists() && Array.isArray(snap.data().spells)) {
+      const cloud = snap.data().spells;
+      // merge: cloud wins by name, keep local-only extras
+      const names = new Set(cloud.map(s => s.name.toLowerCase()));
+      (typeof homebrewSpells !== 'undefined' ? homebrewSpells : []).forEach(s => {
+        if (!names.has(s.name.toLowerCase())) cloud.push(s);
+      });
+      homebrewSpells = cloud;
+      try { localStorage.setItem('dm_homebrew_spells', JSON.stringify(homebrewSpells)); } catch(e) {}
+      const dl = document.getElementById('spell-db-names');
+      if (dl) dl.remove();
+    }
+  } catch(e) { console.warn('homebrew load:', e.message); }
+}
+
+window.cloudSaveHomebrew = async () => {
+  if (!currentUid) return;
+  try {
+    await setDoc(doc(db, 'users', currentUid, 'data', 'homebrew'), {
+      spells: typeof homebrewSpells !== 'undefined' ? homebrewSpells : [],
+      updatedAt: new Date().toISOString()
+    });
+  } catch(e) { console.warn('homebrew save:', e.message); }
+};
 
 // -- Immediate save (no debounce) — for campaign resets/loads ----------
 async function doCloudWrite() {
