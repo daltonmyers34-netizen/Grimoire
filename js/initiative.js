@@ -260,9 +260,17 @@ function nextTurn() {
   var safety = 0;
   var maxIter = combatants.length;
 
+  function skipInTurnOrder(c) {
+    if (!c) return false;
+    if (c.hidden) return true;
+    if (c.hp > 0) return false;
+    // At 0 HP: dying ALLIES still take turns (death saves!) — dead/stable don't
+    if (c.type === 'ally' && !c.isDead && (c.conditions || []).indexOf('Stable') < 0) return false;
+    return true;
+  }
   currentTurn++;
   if (currentTurn >= combatants.length) { currentTurn = 0; round++; }
-  while (combatants[currentTurn] && (combatants[currentTurn].hp <= 0 || combatants[currentTurn].hidden)) {
+  while (skipInTurnOrder(combatants[currentTurn])) {
     currentTurn++;
     if (currentTurn >= combatants.length) { currentTurn = 0; round++; }
     safety++;
@@ -272,6 +280,24 @@ function nextTurn() {
   updateRoundDisplay();
   renderCombatants();
   syncCombatState();
+
+  // Downed ally's turn: prompt the DM for their death save
+  // (skippable — they might be rolling on their own phone)
+  var nowUp = combatants[currentTurn];
+  if (nowUp && nowUp.type === 'ally' && nowUp.hp <= 0 && !nowUp.isDead &&
+      (nowUp.conditions || []).indexOf('Stable') < 0 &&
+      typeof requestRolls === 'function' && typeof applyDeathSaveRoll === 'function') {
+    (function(dying) {
+      requestRolls('💀 ' + dying.name + ' is dying — death save',
+        [{ id: 'r', label: dying.name + ' — death save (raw d20)', sub: '✕ skip if they\'re rolling on their own phone', adv: 0, skippable: true }],
+        function(results) {
+          if (results.r === undefined) return; // skipped
+          applyDeathSaveRoll(dying, results.r);
+          renderCombatants();
+          syncCombatState();
+        });
+    })(nowUp);
+  }
 
   // Reset turn timer if active
   if (typeof turnTimerActive !== 'undefined' && turnTimerActive) {

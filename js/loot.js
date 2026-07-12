@@ -203,12 +203,28 @@ function updateGiveBtn() {
   if (!btn) return;
   const anyChecked = document.querySelectorAll('#loot-result input[type=checkbox]:checked').length > 0;
   btn.style.display = anyChecked ? 'block' : 'none';
+  // "Give to..." target dropdown: party stash or a specific character
+  let sel = document.getElementById('loot-give-target');
+  if (!sel) {
+    sel = document.createElement('select');
+    sel.id = 'loot-give-target';
+    sel.style.cssText = 'width:100%;margin-bottom:6px;font-size:12px;padding:6px;';
+    btn.parentNode.insertBefore(sel, btn);
+  }
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">🎒 Party stash</option>' +
+    (typeof party !== 'undefined' ? party : []).map(p => '<option value="' + p.id + '">🧝 ' + esc(p.name) + ' (their inventory)</option>').join('');
+  if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+  sel.style.display = anyChecked ? 'block' : 'none';
 }
 
 function giveLootToParty() {
   const checks = document.querySelectorAll('#loot-result input[type=checkbox]:checked');
   if (!checks.length) return;
+  const targetSel = document.getElementById('loot-give-target');
+  const targetPc = targetSel && targetSel.value ? party.find(p => p.id === parseInt(targetSel.value)) : null;
   const date = new Date().toLocaleDateString();
+  let goldGiven = 0;
   checks.forEach(cb => {
     const idx = parseInt(cb.getAttribute('data-loot-idx'));
     const entry = pendingLootEntries[idx];
@@ -216,13 +232,41 @@ function giveLootToParty() {
     const label = entry.rarity && entry.rarity !== 'gem'
       ? `${entry.name} (${entry.rarity.replace('_',' ')})`
       : entry.name;
-    partyInventory.push({ id: Date.now(), icon: entry.icon||'\ud83d\udce6', name: label, desc: entry.desc||'', value: entry.value||'', date });
+    if (targetPc) {
+      // Coins go straight to their gold pouch
+      if (entry.name === 'Coin') {
+        const gp = parseInt(String(entry.value || entry.desc || '').replace(/[^\d]/g, '')) || 0;
+        targetPc.gold = (targetPc.gold || 0) + gp;
+        goldGiven += gp;
+      } else {
+        // Items land in THEIR inventory with combat stats attached and ready to equip
+        const item = { id: typeof uniqueId === 'function' ? uniqueId() : Date.now(), name: entry.name, qty: 1, slot: 'gear', equipped: false, desc: entry.desc || '' };
+        const preset = typeof itemPresetFor === 'function' ? itemPresetFor(entry.name) : null;
+        if (preset) Object.assign(item, preset);
+        else if (typeof inferDamageType === 'function') {
+          const dt = inferDamageType(entry.name);
+          if (dt && /sword|axe|bow|dagger|mace|hammer|spear|blade|staff|whip|flail|crossbow/i.test(entry.name)) {
+            item.slot = 'weapon'; item.dice = '1d6'; item.range = /bow|crossbow/i.test(entry.name) ? 80 : 5; item.damageType = dt;
+          }
+        }
+        targetPc.inventory = targetPc.inventory || [];
+        targetPc.inventory.push(item);
+      }
+    } else {
+      partyInventory.push({ id: Date.now(), icon: entry.icon||'\ud83d\udce6', name: label, desc: entry.desc||'', value: entry.value||'', date });
+    }
     cb.closest('label').style.opacity = '0.35';
     cb.disabled = true;
   });
-  savePartyInventory();
-  renderPartyInventory();
-  showToast(`\u2705 ${checks.length} item(s) added to party inventory`, 'success');
+  if (targetPc) {
+    savePartyStorage();
+    renderParty();
+    showToast('✅ ' + checks.length + ' item(s) → ' + targetPc.name + (goldGiven ? ' (+' + goldGiven + ' gold)' : '') + ' — they can equip from their phone', 'success');
+  } else {
+    savePartyInventory();
+    renderPartyInventory();
+    showToast(`\u2705 ${checks.length} item(s) added to party inventory`, 'success');
+  }
   updateGiveBtn();
 }
 

@@ -916,6 +916,10 @@ function dmToggleEquip(pcId, itemId) {
   var it = pc && (pc.inventory || []).find(function(i) { return i.id === itemId; });
   if (!it) return;
   it.equipped = !it.equipped;
+  if (typeof enforceSlotLimits === 'function') {
+    var swapped = enforceSlotLimits(pc, it);
+    if (swapped.length) showToast('🎒 Swapped out: ' + swapped.join(', '), 'info');
+  }
   if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
   savePartyStorage();
   renderParty();
