@@ -45,7 +45,8 @@ function addCombatantFromDB(m) {
     maxHp: parseInt(m.hp) || 10,
     ac: parseInt(m.ac) || 10,
     type: m.type || 'enemy',
-    conditions: []
+    conditions: [],
+    actions: m.actions || (typeof improvisedAttackFor === 'function' ? [improvisedAttackFor(m.name, m.cr)] : [])
   });
   combatants.sort(function(a,b) { return b.init - a.init; });
   renderCombatants();
@@ -535,7 +536,22 @@ function renderDefenseChips() {
         return '<button onclick="toggleDefense(\'' + row.key + '\',\'' + t + '\')" style="font-size:10px;padding:2px 7px;border-radius:3px;cursor:pointer;border:1px solid ' + (on ? row.color : 'rgba(255,255,255,0.12)') + ';background:' + (on ? row.color + '22' : 'rgba(0,0,0,0.25)') + ';color:' + (on ? row.color : '#666') + ';">' + t.slice(0, 5) + '</button>';
       }).join('') +
     '</div>';
-  }).join('');
+  }).join('') + renderRevealRow(c);
+}
+
+function renderRevealRow(c) {
+  var opts = [
+    { key: 'acKnown',   label: 'AC',        on: !!c.acKnown },
+    { key: 'defsKnown', label: 'Defenses',  on: !!c.defsKnown },
+    { key: 'allKnown',  label: 'Everything', on: !!c.allKnown }
+  ];
+  return '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);">' +
+    '<span style="font-size:9px;font-family:Cinzel,serif;letter-spacing:0.08em;color:var(--gold);width:52px;flex-shrink:0;" title="What players can see when they inspect this creature">👁 SEEN</span>' +
+    opts.map(function(o) {
+      return '<button onclick="toggleReveal(\'' + o.key + '\')" style="font-size:10px;padding:2px 8px;border-radius:3px;cursor:pointer;border:1px solid ' + (o.on ? 'var(--gold)' : 'rgba(255,255,255,0.12)') + ';background:' + (o.on ? 'rgba(212,175,55,0.15)' : 'rgba(0,0,0,0.25)') + ';color:' + (o.on ? 'var(--gold)' : '#666') + ';">' + o.label + '</button>';
+    }).join('') +
+    '<span style="font-size:9px;color:#555;margin-left:4px;">players also auto-learn AC + defenses by fighting</span>' +
+  '</div>';
 }
 
 function toggleDefense(key, type) {

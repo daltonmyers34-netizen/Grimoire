@@ -207,6 +207,7 @@ function snapshotBeforeAction() {
     lastActionSnapshot = {
       combatants: JSON.parse(JSON.stringify(combatants)),
       tokens: typeof mapState !== 'undefined' ? JSON.parse(JSON.stringify(mapState.tokens || {})) : null,
+      partySlots: party.map(function(p) { return { id: p.id, slots: JSON.parse(JSON.stringify(p.spellSlots || [])) }; }),
       round: round, currentTurn: currentTurn
     };
     var btn = document.getElementById('undo-action-btn');
@@ -220,6 +221,14 @@ function undoLastAction() {
   round = lastActionSnapshot.round;
   currentTurn = lastActionSnapshot.currentTurn;
   if (lastActionSnapshot.tokens && typeof mapState !== 'undefined') mapState.tokens = lastActionSnapshot.tokens;
+  if (lastActionSnapshot.partySlots) {
+    lastActionSnapshot.partySlots.forEach(function(ps) {
+      var pc = party.find(function(p) { return p.id === ps.id; });
+      if (pc) pc.spellSlots = ps.slots;
+    });
+    if (typeof savePartyStorage === 'function') savePartyStorage();
+    if (typeof renderParty === 'function') renderParty();
+  }
   lastActionSnapshot = null;
   var btn = document.getElementById('undo-action-btn');
   if (btn) btn.style.display = 'none';
@@ -283,6 +292,7 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
     var hit = roll === 20 ? true : roll === 1 ? false : total >= (target.ac || 10);
     result.roll = roll; result.bonus = bonus; result.total = total;
     result.targetAC = target.ac || 10; result.hit = hit; result.crit = hit && crit;
+    learnFromAttack(target);
 
     if (hit) {
       var dmg = rollDiceExpr(a.dice);
@@ -298,6 +308,7 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
       var def = applyDamageWithDefenses(target, amount, dmgType);
       result.rawAmount = amount;
       result.amount = def.taken;
+      learnDefense(target, dmgType, def.notes);
       result.damageType = dmgType || '';
       result.notes = result.notes.concat(def.notes);
       var prevHp = target.hp;
@@ -412,6 +423,7 @@ function processPlayerMove(req) {
   }
   snapshotBeforeAction();
   mapState.tokens[c.id] = { x: x, y: y };
+  carveFogAroundParty();
   if (typeof renderMap === 'function') renderMap();
   logCombat('🥾 ' + c.name + ' moved', 'info');
   showToast('🥾 ' + c.name + ' moved', 'info');
@@ -781,28 +793,30 @@ function processCastSpell(req) {
   var can = combatantCanAct(caster);
   if (!can.ok) { showToast('🚫 ' + caster.name + ' can\'t cast — ' + can.reason, 'warn'); return; }
 
-  // Action economy
-  if (combatActive) {
-    var tu = ensureTurnUsed(caster);
-    var cost = spell.cost === 'bonus' ? 'bonus' : 'action';
-    if (tu[cost]) { showToast('🚫 ' + caster.name + ' already used their ' + cost, 'warn'); return; }
-    tu[cost] = true;
-  }
-
-  // Burn the slot (cantrips are free)
+  // Validate the slot BEFORE mutating anything (so we can snapshot cleanly)
   var slotLevel = parseInt(req.slotLevel) || spell.level || 0;
+  var slot = null;
   if ((spell.level || 0) > 0) {
-    var slot = (pc.spellSlots || [])[slotLevel - 1];
+    slot = (pc.spellSlots || [])[slotLevel - 1];
     if (!slot || slot.used >= slot.max) {
       showToast('🚫 ' + pc.name + ' has no level ' + slotLevel + ' slots left', 'warn');
       return;
     }
+  }
+  if (combatActive) {
+    var tu = ensureTurnUsed(caster);
+    var cost = spell.cost === 'bonus' ? 'bonus' : 'action';
+    if (tu[cost]) { showToast('🚫 ' + caster.name + ' already used their ' + cost, 'warn'); return; }
+  }
+
+  // Snapshot the pre-cast world, THEN spend resources
+  snapshotBeforeAction();
+  if (combatActive) ensureTurnUsed(caster)[spell.cost === 'bonus' ? 'bonus' : 'action'] = true;
+  if (slot) {
     slot.used++;
     if (typeof savePartyStorage === 'function') savePartyStorage();
     if (typeof renderParty === 'function') renderParty();
   }
-
-  snapshotBeforeAction();
 
   // Concentration: casting a new concentration spell drops the old one
   if (spell.concentration) {
@@ -888,6 +902,7 @@ function processCastSpell(req) {
       t.hp = Math.max(0, t.hp - def2.taken);
       entry.taken = def2.taken;
       entry.defNotes = def2.notes;
+      learnDefense(t, spell.damageType, def2.notes);
       if (def2.taken > 0 && typeof checkConcentration === 'function') checkConcentration(t, def2.taken);
       logCombat('✨ ' + spell.name + ' → ' + t.name + ': ' + entry.save.ability + ' save ' + sTotal + ' vs DC ' + dc + ' — ' + (saved ? 'SAVED, ' : 'FAILED, ') + def2.taken + ' dmg' + (def2.notes.length ? ' · ' + def2.notes.join(' · ') : ''), saved ? 'info' : 'damage');
     }
@@ -898,4 +913,105 @@ function processCastSpell(req) {
   showToast('✨ ' + caster.name + ' casts ' + spell.name + (slotLevel > (spell.level||0) ? ' (level ' + slotLevel + ')' : '') + ' — ' + targets.length + ' target' + (targets.length !== 1 ? 's' : ''), 'success');
   renderCombatants();
   if (window.cloudSave) window.cloudSave();
+}
+
+// ============================================================
+// MONSTER KNOWLEDGE — players learn stats by fighting
+// ============================================================
+// Attack rolls against a creature teach its AC (after 2 rolls).
+// Triggered defenses (halved/immune/doubled) teach that damage type.
+function learnFromAttack(target) {
+  if (target.type === 'ally') return;
+  target._atkRolls = (target._atkRolls || 0) + 1;
+  if (target._atkRolls >= 2 && !target.acKnown) {
+    target.acKnown = true;
+    showToast('👁 The party has learned ' + target.name + '\'s AC (' + target.ac + ')', 'info');
+  }
+}
+
+function learnDefense(target, dmgType, notes) {
+  if (target.type === 'ally' || !dmgType || !notes || !notes.length) return;
+  target.knownDefs = target.knownDefs || [];
+  if (target.knownDefs.indexOf(dmgType) < 0) {
+    target.knownDefs.push(dmgType);
+    showToast('👁 The party learned how ' + target.name + ' handles ' + dmgType, 'info');
+  }
+}
+
+// DM reveal controls (used from the condition modal)
+function toggleReveal(key) {
+  var c = combatants.find(function(x) { return x.id === condTargetId; });
+  if (!c) return;
+  c[key] = !c[key];
+  renderCombatants();
+  if (typeof renderDefenseChips === 'function') renderDefenseChips();
+  if (window.cloudSave) window.cloudSave();
+  showToast('👁 ' + c.name + ': ' + key.replace('Known', ' now ') + (c[key] ? ' visible to players' : ' hidden again'), 'info');
+}
+
+// ============================================================
+// LIGHT-DRIVEN FOG REVEAL — party light sources melt the fog
+// ============================================================
+function partyLightFor(c) {
+  var pc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === c.name; });
+  var best = 10; // everyone senses their immediate surroundings
+  if (pc) (pc.inventory || []).forEach(function(it) {
+    if (it.equipped && it.lightFt && it.lightFt > best) best = it.lightFt;
+  });
+  return best;
+}
+
+function carveFogAroundParty() {
+  if (typeof mapState === 'undefined' || !mapState.autoReveal || !mapState.fog || !mapState.fog.length) return false;
+  var carved = false;
+  combatants.forEach(function(c) {
+    if (c.type !== 'ally' || c.hp <= 0) return;
+    var pos = (mapState.tokens || {})[c.id];
+    if (!pos) return;
+    var ft = partyLightFor(c);
+    mapState.fog = mapState.fog.filter(function(key) {
+      var p = key.split(',');
+      var keep = dmDistFt(pos, { x: parseInt(p[0]), y: parseInt(p[1]) }) > ft;
+      if (!keep) carved = true;
+      return keep;
+    });
+  });
+  return carved;
+}
+
+function toggleAutoReveal() {
+  if (typeof mapState === 'undefined') return;
+  mapState.autoReveal = !mapState.autoReveal;
+  var btn = document.getElementById('auto-reveal-btn');
+  if (btn) {
+    btn.style.borderColor = mapState.autoReveal ? 'var(--gold)' : '';
+    btn.style.color = mapState.autoReveal ? 'var(--gold)' : '';
+  }
+  if (mapState.autoReveal) {
+    carveFogAroundParty();
+    showToast('💡 Auto-reveal ON — party light sources melt the fog as they move', 'success');
+  } else {
+    showToast('💡 Auto-reveal off', 'info');
+  }
+  if (typeof renderMap === 'function') renderMap();
+  if (window.cloudSave) window.cloudSave();
+}
+
+
+// ─── Improvised attacks for bare stat-block monsters ─────────
+// The monster database has hp/ac/cr only; give them a credible
+// CR-scaled strike so the DM act button always works.
+function crToNumber(cr) {
+  if (typeof cr === 'number') return cr;
+  var s = String(cr || '0');
+  if (s.indexOf('/') > 0) { var p = s.split('/'); return (parseInt(p[0]) || 0) / (parseInt(p[1]) || 1); }
+  return parseFloat(s) || 0;
+}
+
+function improvisedAttackFor(name, cr) {
+  var n = crToNumber(cr);
+  var bonus = Math.max(3, Math.min(12, Math.round(3 + n * 0.6)));
+  var dice = n < 1 ? '1d6+2' : n < 4 ? '1d8+3' : n < 8 ? '2d8+4' : n < 13 ? '2d10+5' : '3d10+7';
+  var dmgType = inferDamageType(name) || 'slashing';
+  return { name: 'Strike', kind: 'attack', range: 5, bonus: bonus, dice: dice, damageType: dmgType, improvised: true };
 }

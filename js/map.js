@@ -586,9 +586,11 @@ function mapMouseMove(e) {
 
 function mapMouseUp() {
   if (mapDrag || mapFogPainting || mapNeedsSync) {
+    var wasTokenDrag = mapDrag && mapDrag.kind === 'token';
     mapDrag = null;
     mapFogPainting = false;
     if (mapMeasure) { mapMeasure = null; renderMap(); }
+    if (wasTokenDrag && typeof carveFogAroundParty === 'function' && carveFogAroundParty()) renderMap();
     if (mapNeedsSync) { mapNeedsSync = false; syncMapState(); }
   }
 }
