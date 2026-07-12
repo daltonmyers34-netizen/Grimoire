@@ -948,8 +948,20 @@ function destroyEquipped(pcId) {
 // ══════════════════════════════════════════════════════════════
 // SPELL ROWS (character modal)
 // ══════════════════════════════════════════════════════════════
+function ensureSpellDatalist() {
+  if (document.getElementById('spell-db-names')) return;
+  if (typeof SPELL_DB === 'undefined') return;
+  var dl = document.createElement('datalist');
+  dl.id = 'spell-db-names';
+  dl.innerHTML = SPELL_DB.map(function(s) {
+    return '<option value="' + s.name.replace(/"/g, '&quot;') + '">' + (s.level === 0 ? 'Cantrip' : 'L' + s.level) + '</option>';
+  }).join('');
+  document.body.appendChild(dl);
+}
+
 function addSpellRow(s) {
   s = s || {};
+  ensureSpellDatalist();
   var list = document.getElementById('pc-spells-list');
   if (!list) return;
   var row = document.createElement('div');
@@ -965,7 +977,7 @@ function addSpellRow(s) {
   }).join('');
   row.innerHTML =
     '<div style="display:grid;grid-template-columns:2fr 78px 1fr 58px 26px;gap:5px;align-items:center;margin-bottom:4px;">' +
-      '<input class="ps-name" placeholder="Fireball" value="' + (s.name || '').replace(/"/g, '&quot;') + '" style="font-size:13px;padding:5px;" oninput="autoInferSpellType(this)">' +
+      '<input class="ps-name" list="spell-db-names" placeholder="Fireball" value="' + (s.name || '').replace(/"/g, '&quot;') + '" style="font-size:13px;padding:5px;" oninput="autoInferSpellType(this)">' +
       '<select class="ps-level" style="font-size:11px;padding:5px;">' + lvlOptions + '</select>' +
       '<select class="ps-kind" style="font-size:11px;padding:5px;">' +
         '<option value="save"' + (s.kind === 'save' || !s.kind ? ' selected' : '') + '>💾 Save-based</option>' +
