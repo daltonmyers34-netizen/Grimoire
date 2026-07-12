@@ -319,6 +319,17 @@ var SHEET_PARSE_PROMPT =
   'For spells: kind is save/attack/heal, level 0 = cantrip, aoeFt is blast radius in feet (omit for single-target), upcastDice = extra dice per slot level above base. ' +
   'Omit fields you cannot find rather than guessing wildly.';
 
+// Models sometimes wrap JSON in prose — dig the object out
+function extractJSON(raw) {
+  try { return JSON.parse(raw); } catch(e) {}
+  var start = raw.indexOf('{');
+  var end = raw.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(raw.slice(start, end + 1)); } catch(e2) {}
+  }
+  throw new Error('The AI reply was not valid JSON — try a clearer photo or paste the text instead');
+}
+
 function importSheetImage(file) {
   var status = document.getElementById('sheet-import-status');
   if (status) { status.textContent = '⏳ Reading image...'; status.style.color = 'var(--text-dim)'; }
@@ -336,12 +347,14 @@ function importSheetImage(file) {
       var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
       try {
         if (status) status.textContent = '🤖 AI is reading the sheet...';
-        var raw = await callClaudeVisionAPI(SHEET_PARSE_PROMPT, dataUrl, 1500);
-        var parsed = JSON.parse(raw);
+        var raw = await callClaudeVisionAPI(SHEET_PARSE_PROMPT, dataUrl, 3000);
+        console.log('Sheet import raw response:', raw);
+        var parsed = extractJSON(raw);
         prefillCharacterForm(parsed);
         if (status) { status.textContent = '✅ Sheet imported! Review the fields below, then Save.'; status.style.color = '#8fd050'; }
       } catch(err) {
-        if (status) { status.textContent = '⚠ ' + err.message; status.style.color = 'var(--blood-light)'; }
+        console.error('Sheet import failed:', err);
+        if (status) { status.textContent = '⚠ ' + err.message + ' — needs an OpenRouter key (sk-or-) with credit'; status.style.color = 'var(--blood-light)'; }
       }
     };
     img.src = e.target.result;
@@ -356,8 +369,9 @@ async function importSheetText() {
   if (!text) { if (status) status.textContent = 'Paste your character sheet text first'; return; }
   try {
     if (status) { status.textContent = '🤖 AI is parsing...'; status.style.color = 'var(--text-dim)'; }
-    var raw = await callClaudeAPI(SHEET_PARSE_PROMPT + '\n\nSHEET TEXT:\n' + text.slice(0, 8000), 1500);
-    var parsed = JSON.parse(raw);
+    var raw = await callClaudeAPI(SHEET_PARSE_PROMPT + '\n\nSHEET TEXT:\n' + text.slice(0, 8000), 3000);
+    console.log('Sheet import raw response:', raw);
+    var parsed = extractJSON(raw);
     prefillCharacterForm(parsed);
     if (status) { status.textContent = '✅ Sheet imported! Review the fields below, then Save.'; status.style.color = '#8fd050'; }
   } catch(err) {

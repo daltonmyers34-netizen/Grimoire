@@ -632,7 +632,13 @@ function savePlayer() {
     cha: parseInt(document.getElementById('pc-cha').value) || 10,
     moves: document.getElementById('pc-moves').value,
     actions: collectActions(),
-    spells: collectSpells(),
+    spells: (function() {
+      var sp = collectSpells();
+      var added = 0;
+      sp.forEach(function(s) { if (typeof upsertHomebrewSpell === 'function' && upsertHomebrewSpell(s)) added++; });
+      if (added) showToast('📖 ' + added + ' homebrew spell' + (added > 1 ? 's' : '') + ' saved to your spellbook — forever, in every campaign', 'success');
+      return sp;
+    })(),
     features: (function() {
       var f = [];
       if (document.getElementById('pc-feat-rage') && document.getElementById('pc-feat-rage').checked) f.push('Rage');
@@ -817,7 +823,7 @@ function renderInventoryModal(pcId) {
   var ov = document.getElementById('inv-modal');
   if (!pc || !ov) return;
   var esc = function(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
-  var slotIcons = { weapon: '⚔', armor: '🛡', shield: '🛡', light: '🕯', gear: '🎒' };
+  var slotIcons = { weapon: '⚔', armor: '🛡', shield: '🛡', light: '🕯', gear: '🎒', potion: '🧪', ammo: '🏹' };
   var html = '<div class="modal" style="max-width:520px;width:95%;max-height:88vh;overflow-y:auto;">' +
     '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:4px;">🎒 ' + esc(pc.name) + ' — Inventory</h3>' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">' +
@@ -832,7 +838,7 @@ function renderInventoryModal(pcId) {
       '<div class="field-group" style="margin:0;"><label>Item <span style="color:#666;font-weight:normal;">(known names auto-fill stats)</span></label><input id="inv-new-name" placeholder="Longsword, Torch, Shield, Rope..."></div>' +
       '<div class="field-group" style="margin:0;"><label>Qty</label><input id="inv-new-qty" type="number" value="1" style="text-align:center;"></div>' +
       '<div class="field-group" style="margin:0;"><label>Slot</label><select id="inv-new-slot">' +
-        '<option value="gear">Gear</option><option value="weapon">Weapon</option><option value="armor">Armor</option><option value="shield">Shield</option><option value="light">Light</option>' +
+        '<option value="gear">Gear</option><option value="weapon">Weapon</option><option value="armor">Armor</option><option value="shield">Shield</option><option value="light">Light</option><option value="potion">Potion</option><option value="ammo">Ammo</option>' +
       '</select></div>' +
       '<button class="btn btn-gold btn-sm" onclick="addInventoryItem(' + pcId + ')">+ Add</button>' +
     '</div></div>';
@@ -846,6 +852,7 @@ function renderInventoryModal(pcId) {
       if (it.dice) extra.push(it.dice + (it.damageType ? ' ' + it.damageType : ''));
       if (it.acBonus) extra.push('+' + it.acBonus + ' AC');
       if (it.lightFt) extra.push('💡 ' + it.lightFt + ' ft');
+      if (it.healDice) extra.push('heals ' + it.healDice);
       if (it.range && it.slot === 'weapon') extra.push(it.range + ' ft');
       html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid ' + (it.equipped ? 'rgba(212,175,55,0.45)' : 'rgba(255,255,255,0.08)') + ';border-radius:6px;margin-bottom:5px;background:' + (it.equipped ? 'rgba(212,175,55,0.06)' : 'rgba(0,0,0,0.2)') + ';">' +
         '<span>' + (slotIcons[it.slot] || '🎒') + '</span>' +
@@ -879,6 +886,8 @@ function addInventoryItem(pcId) {
   var preset = typeof itemPresetFor === 'function' ? itemPresetFor(name) : null;
   if (preset) {
     item.slot = preset.slot;
+    if (preset.healDice) item.healDice = preset.healDice;
+    if (preset.slot === 'ammo' && qty === 1) item.qty = 20;
     if (preset.acBonus) item.acBonus = preset.acBonus;
     if (preset.dice) item.dice = preset.dice;
     if (preset.range) item.range = preset.range;
@@ -953,8 +962,9 @@ function ensureSpellDatalist() {
   if (typeof SPELL_DB === 'undefined') return;
   var dl = document.createElement('datalist');
   dl.id = 'spell-db-names';
-  dl.innerHTML = SPELL_DB.map(function(s) {
-    return '<option value="' + s.name.replace(/"/g, '&quot;') + '">' + (s.level === 0 ? 'Cantrip' : 'L' + s.level) + '</option>';
+  var all = SPELL_DB.concat(typeof homebrewSpells !== 'undefined' ? homebrewSpells : []);
+  dl.innerHTML = all.map(function(s) {
+    return '<option value="' + s.name.replace(/"/g, '&quot;') + '">' + (s.level === 0 ? 'Cantrip' : 'L' + s.level) + (SPELL_DB.indexOf(s) < 0 ? ' · homebrew' : '') + '</option>';
   }).join('');
   document.body.appendChild(dl);
 }
@@ -1053,9 +1063,23 @@ function collectSpells() {
       dice: row.querySelector('.ps-dice').value.trim(),
       range: parseInt(row.querySelector('.ps-range').value) || 60
     };
+    // Known spell? Backfill anything left blank straight from the database.
+    if (typeof findSpell === 'function') {
+      var kn = findSpell(name);
+      if (kn) {
+        if (!s.dice) s.dice = kn.dice || '';
+        if (!s.damageType && kn.damageType) s.damageType = kn.damageType;
+        if (kn.saveAbility && s.kind === 'save') s.saveAbility = s.saveAbility || kn.saveAbility;
+        if (kn.aoeFt && !parseInt(row.querySelector('.ps-aoe').value)) s.aoeFt = kn.aoeFt;
+        if (kn.aoeShape) s.aoeShape = kn.aoeShape;
+        if (kn.upcastDice && !s.upcastDice) s.upcastDice = kn.upcastDice;
+        if (kn.concentration) s.concentration = true;
+        if (kn.applyCondition) s.applyCondition = kn.applyCondition;
+        if (kn.kind === 'buff') s.kind = 'buff';
+      }
+    }
     if (!s.dice && s.kind !== 'buff') s.dice = '1d6';
-    if (row.dataset.applyCondition) s.applyCondition = row.dataset.applyCondition;
-    else if (typeof findSpell === 'function') { var kn = findSpell(name); if (kn && kn.applyCondition) s.applyCondition = kn.applyCondition; }
+    if (row.dataset.applyCondition && !s.applyCondition) s.applyCondition = row.dataset.applyCondition;
     var dt = row.querySelector('.ps-dmgtype'); if (dt && dt.value) s.damageType = dt.value;
     else if (s.kind !== 'heal' && typeof inferDamageType === 'function') { var inf = inferDamageType(name); if (inf) s.damageType = inf; }
     if (s.kind === 'save') s.saveAbility = row.querySelector('.ps-save').value;

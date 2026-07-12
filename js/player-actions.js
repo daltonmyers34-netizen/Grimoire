@@ -32,7 +32,10 @@ var CONDITION_EFFECTS = {
   'Reckless':     { selfAdv: true, attackersAdv: true },
   'Dodging':      { attackersDis: true },
   'Hastened':     { extraAction: 1, acMod: 2, speedFactor: 2 },
-  'Slowed':       { acMod: -2, halfSpeed: true }
+  'Slowed':       { acMod: -2, halfSpeed: true },
+  'Half Cover':   { acMod: 2, dexSaveMod: 2 },
+  '3/4 Cover':    { acMod: 5, dexSaveMod: 5 },
+  'Disengaged':   {}
 };
 
 // Toggleable class features → the stance condition they apply + action cost
@@ -40,7 +43,8 @@ var FEATURE_TOGGLES = {
   'Rage':            { condition: 'Raging',   cost: 'bonus'  },
   'Reckless Attack': { condition: 'Reckless', cost: 'free'   },
   'Dodge':           { condition: 'Dodging',  cost: 'action' },
-  'Action Surge':    { instant: 'extraAction', cost: 'free'  } // fighter: one more action, once per rest
+  'Action Surge':    { instant: 'extraAction', cost: 'free'  }, // fighter: one more action, once per rest
+  'Disengage':       { condition: 'Disengaged', cost: 'action' } // no opportunity attacks until your next turn
 };
 
 // ─── Action economy ──────────────────────────────────────────
@@ -89,8 +93,13 @@ function startTurnFor(c) {
   if (!c) return;
   c.turnUsed = { actions: 0, bonus: false, movedFt: 0 };
   c._surgeExtra = 0;
+  c.reactionUsed = false;
   if (c.legendary) c.legendary.used = 0; // legendary pool refreshes on its own turn
-  var expiring = ['Reckless', 'Dodging'];
+  // Summons/minions share their owner's turn — fresh economy for them too
+  combatants.forEach(function(u) {
+    if (u.owner && u.owner === c.name) { u.turnUsed = { actions: 0, bonus: false, movedFt: 0 }; u.reactionUsed = false; }
+  });
+  var expiring = ['Reckless', 'Dodging', 'Disengaged'];
   if (c.conditions && c.conditions.some(function(x) { return expiring.indexOf(x) >= 0; })) {
     c.conditions = c.conditions.filter(function(x) { return expiring.indexOf(x) < 0; });
   }
@@ -234,12 +243,19 @@ function computeAttackContext(attacker, target, action) {
 
 // Ability mod for saves: PCs use their sheet; monsters estimate +1
 function saveBonusFor(combatant, ability) {
+  var bonus = 1;
   var pc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === combatant.name; });
   if (pc && pc[ability]) {
     var score = typeof effectiveAbility === 'function' ? effectiveAbility(pc, ability) : pc[ability];
-    return Math.floor((score - 10) / 2);
+    bonus = Math.floor((score - 10) / 2);
   }
-  return 1;
+  if (ability === 'dex') {
+    (combatant.conditions || []).forEach(function(cn) {
+      var eff = CONDITION_EFFECTS[cn];
+      if (eff && eff.dexSaveMod) bonus += eff.dexSaveMod;
+    });
+  }
+  return bonus;
 }
 
 function pvLogTime() {
@@ -310,7 +326,7 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
 
   // Action economy: attacks/heals cost your Action (or Bonus if flagged)
   var cost = a.cost === 'bonus' ? 'bonus' : 'action';
-  if (combatActive && a.cost !== 'legendary') {
+  if (combatActive && a.cost !== 'legendary' && a.cost !== 'reaction') {
     if (!actionAvailable(attacker, cost) && opts.source === 'player') {
       showToast('🚫 ' + attacker.name + ' already used their ' + cost + ' this turn', 'warn');
       return null;
@@ -352,6 +368,7 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
     result.roll = roll; result.bonus = bonus; result.total = total;
     result.targetAC = effAC; result.hit = hit; result.crit = hit && crit;
     learnFromAttack(target);
+    if (attacker.type === 'ally') consumeAmmoFor(attacker, a);
 
     if (hit) {
       var dmg = rollDiceExpr(a.dice);
@@ -451,17 +468,19 @@ function processPlayerAction(req) {
     else if (req.type === 'equipItem') processEquipItem(req);
     else if (req.type === 'journal') processJournal(req);
     else if (req.type === 'castSpell') processCastSpell(req);
+    else if (req.type === 'useItem') processUseItem(req);
   } catch(e) {
     console.error('processPlayerAction', e);
   }
 }
 
 function requireTurn(c) {
-  if (combatActive && combatants[currentTurn] && combatants[currentTurn].id !== c.id) {
-    showToast('🚫 ' + c.name + ' tried to act out of turn', 'warn');
-    return false;
-  }
-  return true;
+  if (!combatActive || !combatants[currentTurn]) return true;
+  var cur = combatants[currentTurn];
+  if (cur.id === c.id) return true;
+  if (c.owner && cur.name === c.owner) return true; // summons share their owner's turn
+  showToast('🚫 ' + c.name + ' tried to act out of turn', 'warn');
+  return false;
 }
 
 function processPlayerMove(req) {
@@ -477,6 +496,16 @@ function processPlayerMove(req) {
   if (typeof mapState === 'undefined') return;
   var x = Math.max(0, Math.min(mapState.cols - 1, parseInt(req.x) || 0));
   var y = Math.max(0, Math.min(mapState.rows - 1, parseInt(req.y) || 0));
+  // No two creatures in the same square
+  var occupied = combatants.some(function(o) {
+    if (o.id === c.id || o.hp <= 0) return false;
+    var op = mapState.tokens[o.id];
+    return op && op.x === x && op.y === y;
+  });
+  if (occupied) {
+    showToast('🚫 That square is occupied', 'warn');
+    return;
+  }
   // Movement budget: distance walked accumulates across the whole turn
   var from = mapState.tokens[c.id];
   var dist = from ? dmDistFt(from, { x: x, y: y }) : 0;
@@ -490,6 +519,7 @@ function processPlayerMove(req) {
   }
   snapshotBeforeAction();
   mapState.tokens[c.id] = { x: x, y: y };
+  if (from) checkOpportunityAttacks(c, from, { x: x, y: y });
   carveFogAroundParty();
   if (typeof renderMap === 'function') renderMap();
   logCombat('🥾 ' + c.name + ' moved', 'info');
@@ -562,11 +592,19 @@ function dmPickTarget(attackerId, actionIdx) {
   });
   var inner = '<div class="modal" style="max-width:420px;width:95%;">' +
     '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:12px;">' + a.name + ' → target?</h3>';
+  var aPos = (typeof mapState !== 'undefined' && mapState.tokens) ? mapState.tokens[attackerId] : null;
   targets.forEach(function(t) {
+    var tPos = (typeof mapState !== 'undefined' && mapState.tokens) ? mapState.tokens[t.id] : null;
+    var distLbl = '';
+    if (aPos && tPos) {
+      var ft = dmDistFt(aPos, tPos);
+      var far = ft > (a.range || 5);
+      distLbl = ' · <span style="color:' + (far ? '#e05050' : '#8fd050') + ';">' + ft + ' ft' + (far ? ' ⚠ out of range' : '') + '</span>';
+    }
     inner += '<button style="display:flex;width:100%;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:rgba(0,0,0,0.25);color:var(--parchment);cursor:pointer;font-size:14px;" ' +
       'onclick="dmExecuteAction(' + attackerId + ',' + t.id + ',' + actionIdx + ')">' +
       '<span style="color:' + (t.type === 'ally' ? '#90c8ff' : '#ff9090') + ';">' + t.name + '</span>' +
-      '<span style="margin-left:auto;font-size:12px;color:var(--text-dim);">' + t.hp + '/' + t.maxHp + ' HP · AC ' + t.ac + '</span>' +
+      '<span style="margin-left:auto;font-size:12px;color:var(--text-dim);">' + t.hp + '/' + t.maxHp + ' HP · AC ' + t.ac + distLbl + '</span>' +
     '</button>';
   });
   inner += '<div class="modal-btns"><button class="btn btn-ghost" onclick="document.getElementById(\'dm-act-modal\').remove()">Cancel</button></div></div>';
@@ -767,6 +805,16 @@ var ITEM_PRESETS = {
   'chain mail':     { slot: 'armor',  acBonus: 6 },
   'plate':          { slot: 'armor',  acBonus: 8 },
   'plate armor':    { slot: 'armor',  acBonus: 8 },
+  'potion of healing':          { slot: 'potion', healDice: '2d4+2' },
+  'potion of greater healing':  { slot: 'potion', healDice: '4d4+4' },
+  'potion of superior healing': { slot: 'potion', healDice: '8d4+8' },
+  'potion of supreme healing':  { slot: 'potion', healDice: '10d4+20' },
+  'healing potion':             { slot: 'potion', healDice: '2d4+2' },
+  'arrows':         { slot: 'ammo' },
+  'arrow':          { slot: 'ammo' },
+  'bolts':          { slot: 'ammo' },
+  'crossbow bolts': { slot: 'ammo' },
+  'sling bullets':  { slot: 'ammo' },
   'dagger':         { slot: 'weapon', dice: '1d4', range: 20, damageType: 'piercing' },
   'shortsword':     { slot: 'weapon', dice: '1d6', range: 5,  damageType: 'piercing' },
   'longsword':      { slot: 'weapon', dice: '1d8', range: 5,  damageType: 'slashing' },
@@ -883,6 +931,17 @@ function processCastSpell(req) {
   var pc = party.find(function(p) { return p.id === req.pcId; });
   var spell = req.spell || {};
   if (!caster || !pc || !spell.name) return;
+  // Safety net: spells saved before the database existed get their blanks filled now
+  if (typeof findSpell === 'function') {
+    var known = findSpell(spell.name);
+    if (known) {
+      var merged = Object.assign({}, known);
+      Object.keys(spell).forEach(function(k) {
+        if (spell[k] !== undefined && spell[k] !== null && spell[k] !== '') merged[k] = spell[k];
+      });
+      spell = merged;
+    }
+  }
   if (!requireTurn(caster)) return;
   var can = combatantCanAct(caster);
   if (!can.ok) { showToast('🚫 ' + caster.name + ' can\'t cast — ' + can.reason, 'warn'); return; }
@@ -921,15 +980,17 @@ function processCastSpell(req) {
   // Resolve targets
   var targets = [];
   if (spell.aoeFt && req.center) {
-    var rCells = Math.max(1, Math.round(spell.aoeFt / 5));
-    combatants.forEach(function(c) {
-      if (c.hp <= 0 && c.type === 'enemy') return;
-      var pos = (typeof mapState !== 'undefined' && mapState.tokens) ? mapState.tokens[c.id] : null;
-      if (pos && dmDistFt(pos, req.center) <= spell.aoeFt) targets.push(c);
-    });
-    // Drop a visible AoE ring on the map for the table
+    var casterPos = (typeof mapState !== 'undefined' && mapState.tokens) ? mapState.tokens[caster.id] : null;
+    targets = aoeTargetsFor(spell, casterPos, req.center);
+    // Drop the visible blast shape on the map for the table
     if (typeof mapState !== 'undefined') {
-      mapState.props.push({ id: Date.now(), kind: 'aoe', x: req.center.x, y: req.center.y, r: rCells, color: '255,120,30' });
+      var rCells = Math.max(1, Math.round(spell.aoeFt / 5));
+      var shape = spell.aoeShape || 'sphere';
+      if (shape === 'sphere' || !casterPos) {
+        mapState.props.push({ id: Date.now(), kind: 'aoe', x: req.center.x, y: req.center.y, r: rCells, color: '255,120,30' });
+      } else {
+        mapState.props.push({ id: Date.now(), kind: 'aoe', shape: shape, x: casterPos.x, y: casterPos.y, tx: req.center.x, ty: req.center.y, r: rCells, color: shape === 'line' ? '120,180,255' : '255,120,30' });
+      }
       if (typeof renderMap === 'function') renderMap();
     }
   } else if (req.targetId) {
@@ -1311,10 +1372,15 @@ function dmEditActions(combatantId) {
     '<div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">⭐ Legendary actions can be used at the END of other creatures\' turns and draw from the legendary pool below.</div>' +
     '<div id="ae-rows">' + rowsHtml() + '</div>' +
     '<button class="btn btn-ghost btn-sm" onclick="dmAddActionRow()" style="margin:6px 0 12px;">+ Add action</button>' +
-    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
       '<span style="font-size:12px;color:var(--text-dim);">⭐ Legendary actions per round:</span>' +
       '<input id="ae-legmax" type="number" min="0" max="5" value="' + ((c.legendary && c.legendary.max) || 0) + '" style="width:56px;font-size:14px;padding:4px;text-align:center;">' +
       '<span style="font-size:10px;color:#555;">(0 = none)</span>' +
+    '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">' +
+      '<span style="font-size:12px;color:var(--text-dim);">🧝 Controlled by (summons/minions):</span>' +
+      '<input id="ae-owner" value="' + (c.owner || '').replace(/"/g, '&quot;') + '" placeholder="character name" style="width:150px;font-size:13px;padding:4px;">' +
+      '<span style="font-size:10px;color:#555;">that player moves & runs it on their turn</span>' +
     '</div>' +
     '<div class="modal-btns">' +
       '<button class="btn btn-gold" onclick="dmSaveActions(' + combatantId + ')">💾 Save</button>' +
@@ -1363,9 +1429,179 @@ function dmSaveActions(combatantId) {
   c.actions = acts;
   var legMax = parseInt(document.getElementById('ae-legmax').value) || 0;
   c.legendary = legMax > 0 ? { max: legMax, used: (c.legendary && c.legendary.used) || 0 } : undefined;
+  var ownerEl = document.getElementById('ae-owner');
+  c.owner = (ownerEl && ownerEl.value.trim()) || undefined;
   var m = document.getElementById('dm-actedit-modal');
   if (m) m.remove();
   renderCombatants();
   if (window.cloudSave) window.cloudSave();
   showToast('💾 ' + c.name + ': ' + acts.length + ' action' + (acts.length !== 1 ? 's' : '') + (legMax ? ' · ' + legMax + ' legendary/round' : ''), 'success');
+}
+
+// ============================================================
+// AOE SHAPES — spheres, cones, and lines
+// ============================================================
+// origin: caster cell (cones/lines) · aim: tapped cell (sphere center, or direction)
+function aoeTargetsFor(spell, origin, aim, allCombatants) {
+  var lenFt = spell.aoeFt || 0;
+  var shape = spell.aoeShape || 'sphere';
+  var hits = [];
+  (allCombatants || combatants).forEach(function(c) {
+    if (c.hp <= 0 && c.type === 'enemy') return;
+    var pos = (typeof mapState !== 'undefined' && mapState.tokens) ? mapState.tokens[c.id] : null;
+    if (!pos) return;
+    if (shape === 'sphere') {
+      if (dmDistFt(pos, aim) <= lenFt) hits.push(c);
+      return;
+    }
+    if (!origin) return;
+    var vx = pos.x - origin.x, vy = pos.y - origin.y;
+    var dx = aim.x - origin.x, dy = aim.y - origin.y;
+    var dlen = Math.sqrt(dx * dx + dy * dy);
+    if (dlen === 0) return;
+    var ux = dx / dlen, uy = dy / dlen;
+    var distFt = Math.sqrt(vx * vx + vy * vy) * 5;
+    if (distFt === 0) return; // the caster isn't inside their own cone/line
+    if (shape === 'cone') {
+      var cos = (vx * ux + vy * uy) / (distFt / 5);
+      if (distFt <= lenFt && cos >= 0.883) hits.push(c); // ~28° half-angle: width ≈ distance
+    } else if (shape === 'line') {
+      var t = (vx * ux + vy * uy) * 5;             // distance along the line, ft
+      var perp = Math.abs(vx * uy - vy * ux) * 5;  // distance off the line, ft
+      if (t > 0 && t <= lenFt && perp <= 4) hits.push(c);
+    }
+  });
+  return hits;
+}
+
+// ============================================================
+// OPPORTUNITY ATTACKS — leaving melee reach provokes
+// ============================================================
+function checkOpportunityAttacks(mover, fromPos, toPos) {
+  if (!combatActive || !fromPos || !toPos) return;
+  if ((mover.conditions || []).indexOf('Disengaged') >= 0) return;
+  var threats = combatants.filter(function(c) {
+    if (c.id === mover.id || c.hp <= 0 || c.hidden) return false;
+    if (c.type === mover.type) return false;
+    if (c.type !== 'enemy' && c.type !== 'ally') return false;
+    if (c.reactionUsed) return false;
+    var pos = mapState.tokens[c.id];
+    if (!pos) return false;
+    return dmDistFt(pos, fromPos) <= 5 && dmDistFt(pos, toPos) > 5;
+  });
+  if (!threats.length) return;
+
+  var existing = document.getElementById('oa-modal');
+  if (existing) existing.remove();
+  var ov = document.createElement('div');
+  ov.id = 'oa-modal';
+  ov.className = 'modal-overlay show';
+  ov.style.zIndex = '2680';
+  var inner = '<div class="modal" style="max-width:420px;width:95%;">' +
+    '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:4px;">⚡ Opportunity Attacks!</h3>' +
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">' + mover.name + ' left melee reach. Each attacker spends their reaction.</div>';
+  threats.forEach(function(t) {
+    inner += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:rgba(0,0,0,0.25);" id="oa-row-' + t.id + '">' +
+      '<span style="flex:1;font-size:14px;color:' + (t.type === 'ally' ? '#90c8ff' : '#ff9090') + ';">' + t.name + '</span>' +
+      '<button class="btn btn-blood btn-sm" onclick="takeOpportunityAttack(' + t.id + ',' + mover.id + ')">⚔ Attack</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'oa-row-' + t.id + '\').remove()">Skip</button>' +
+    '</div>';
+  });
+  inner += '<div class="modal-btns"><button class="btn btn-ghost" onclick="document.getElementById(\'oa-modal\').remove()">Done</button></div></div>';
+  ov.innerHTML = inner;
+  ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+
+function takeOpportunityAttack(attackerId, targetId) {
+  var attacker = combatants.find(function(x) { return x.id === attackerId; });
+  var target = combatants.find(function(x) { return x.id === targetId; });
+  if (!attacker || !target) return;
+  var row = document.getElementById('oa-row-' + attackerId);
+  if (row) row.remove();
+  var acts = (attacker.actions && attacker.actions.length) ? attacker.actions
+    : (function() { var pc = party.find(function(p) { return p.name === attacker.name; }); return pc ? effectiveActions(pc) : []; })();
+  var melee = acts.find(function(a) { return a.kind !== 'heal' && (parseInt(a.range) || 5) <= 5; }) || improvisedAttackFor(attacker.name, '1/2');
+  attacker.reactionUsed = true;
+  var oaAction = Object.assign({}, melee, { cost: 'reaction' });
+  var ctx = computeAttackContext(attacker, target, oaAction);
+  requestRolls('⚡ Opportunity attack: ' + attacker.name + ' → ' + target.name,
+    [{ id: 'r', label: melee.name + ' (+' + (melee.bonus || 0) + ')', sub: ctx.notes.join(', '), adv: ctx.net }],
+    function(results) { resolveCombatAction(attackerId, targetId, oaAction, { roll: results.r, source: 'dm' }); });
+}
+
+// ============================================================
+// CONSUMABLES — potions heal, ammo counts down
+// ============================================================
+function processUseItem(req) {
+  var pc = party.find(function(p) { return p.id === req.pcId; });
+  if (!pc) return;
+  var item = (pc.inventory || []).find(function(i) { return i.id === req.itemId; });
+  if (!item || (item.qty || 0) < 1) return;
+  var c = combatants.find(function(x) { return x.name === pc.name && x.type === 'ally'; });
+
+  if (item.slot === 'potion') {
+    // Your table rule: costs a bonus action only during combat
+    if (combatActive && c) {
+      if (!requireTurn(c)) return;
+      if (!actionAvailable(c, 'bonus')) { showToast('🚫 ' + pc.name + ' already used their bonus action', 'warn'); return; }
+      spendActionFor(c, 'bonus');
+    }
+    var heal = rollDiceExpr(item.healDice || '2d4+2');
+    if (c) {
+      var prev = c.hp;
+      c.hp = Math.min(c.maxHp, c.hp + heal.total);
+      if (prev === 0 && c.hp > 0) c.conditions = (c.conditions || []).filter(function(x) { return x !== 'Unconscious'; });
+      logCombat('🧪 ' + pc.name + ' drinks ' + item.name + ' — heals ' + (c.hp - prev) + ' (' + prev + '→' + c.hp + ' HP)', 'heal');
+      window.lastActionResult = { id: Date.now(), kind: 'heal', attacker: pc.name, target: pc.name, actionName: item.name, amount: c.hp - prev, hit: true, notes: [], ts: new Date().toISOString() };
+    } else {
+      logCombat('🧪 ' + pc.name + ' drinks ' + item.name + ' (' + heal.total + ' HP — not in combat, DM adjust as needed)', 'heal');
+    }
+    showToast('🧪 ' + pc.name + ' drinks ' + item.name + ' — +' + heal.total, 'success');
+  } else {
+    showToast('🎒 ' + pc.name + ' uses ' + item.name, 'info');
+    logCombat('🎒 ' + pc.name + ' uses ' + item.name, 'info');
+  }
+
+  item.qty = (item.qty || 1) - 1;
+  if (item.qty <= 0) pc.inventory = pc.inventory.filter(function(i) { return i.id !== item.id; });
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+  if (typeof renderParty === 'function') renderParty();
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+}
+
+// Ranged weapon shots consume equipped ammo
+function consumeAmmoFor(attacker, action) {
+  if (!action.fromItem || (parseInt(action.range) || 5) <= 20) return;
+  var pc = party.find(function(p) { return p.name === attacker.name; });
+  if (!pc) return;
+  var ammo = (pc.inventory || []).find(function(i) { return i.slot === 'ammo' && (i.qty || 0) > 0 && i.equipped; }) ||
+             (pc.inventory || []).find(function(i) { return i.slot === 'ammo' && (i.qty || 0) > 0; });
+  if (!ammo) { showToast('🏹 ' + pc.name + ' has no ammo tracked — add arrows to their inventory', 'warn'); return; }
+  ammo.qty--;
+  if (ammo.qty <= 0) {
+    pc.inventory = pc.inventory.filter(function(i) { return i.id !== ammo.id; });
+    showToast('🏹 ' + pc.name + ' fires their LAST ' + ammo.name.replace(/s$/, '') + '!', 'warn');
+  } else if (ammo.qty <= 5) {
+    showToast('🏹 ' + pc.name + ': ' + ammo.qty + ' ' + ammo.name + ' left', 'info');
+  }
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+}
+
+// ============================================================
+// HOMEBREW SPELLBOOK — yours forever, across every campaign
+// ============================================================
+function upsertHomebrewSpell(spell) {
+  if (typeof homebrewSpells === 'undefined') return false;
+  if (typeof SPELL_DB !== 'undefined' && SPELL_DB.some(function(s) { return s.name.toLowerCase() === spell.name.toLowerCase(); })) return false;
+  var idx = homebrewSpells.findIndex(function(s) { return s.name.toLowerCase() === spell.name.toLowerCase(); });
+  var isNew = idx < 0;
+  if (isNew) homebrewSpells.push(spell);
+  else homebrewSpells[idx] = spell;
+  try { localStorage.setItem('dm_homebrew_spells', JSON.stringify(homebrewSpells)); } catch(e) {}
+  if (window.cloudSaveHomebrew) window.cloudSaveHomebrew();
+  var dl = document.getElementById('spell-db-names');
+  if (dl) dl.remove(); // rebuilt with homebrew on next open
+  return isNew;
 }

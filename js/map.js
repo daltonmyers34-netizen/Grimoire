@@ -162,6 +162,31 @@ function drawMapAoE(ctx, m) {
     if (p.kind !== 'aoe') return;
     var cx = (p.x + 0.5) * m.cell, cy = (p.y + 0.5) * m.cell;
     var r = p.r * m.cell;
+    if (p.shape === 'cone' || p.shape === 'line') {
+      var ang = Math.atan2((p.ty - p.y), (p.tx - p.x));
+      ctx.beginPath();
+      if (p.shape === 'cone') {
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, ang - 0.49, ang + 0.49);
+        ctx.closePath();
+      } else {
+        var ex = cx + Math.cos(ang) * r, ey = cy + Math.sin(ang) * r;
+        var w = m.cell * 0.5;
+        ctx.moveTo(cx + Math.cos(ang + Math.PI/2) * w, cy + Math.sin(ang + Math.PI/2) * w);
+        ctx.lineTo(ex + Math.cos(ang + Math.PI/2) * w, ey + Math.sin(ang + Math.PI/2) * w);
+        ctx.lineTo(ex + Math.cos(ang - Math.PI/2) * w, ey + Math.sin(ang - Math.PI/2) * w);
+        ctx.lineTo(cx + Math.cos(ang - Math.PI/2) * w, cy + Math.sin(ang - Math.PI/2) * w);
+        ctx.closePath();
+      }
+      ctx.fillStyle = 'rgba(' + (p.color || '255,120,30') + ',0.22)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(' + (p.color || '255,120,30') + ',0.75)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      return;
+    }
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(' + (p.color || '255,120,30') + ',0.22)';
@@ -493,7 +518,7 @@ function mapMouseDown(e) {
 
   if (mapTool === 'move') {
     var t = mapHitToken(pt);
-    if (t) { mapDrag = { kind: 'token', id: t.id }; return; }
+    if (t) { mapDrag = { kind: 'token', id: t.id, fromX: t.x, fromY: t.y }; return; }
     var p = mapHitProp(pt);
     if (p) { mapDrag = { kind: 'prop', id: p.id }; return; }
     var b = mapHitBuilding(pt);
@@ -587,6 +612,30 @@ function mapMouseMove(e) {
 function mapMouseUp() {
   if (mapDrag || mapFogPainting || mapNeedsSync) {
     var wasTokenDrag = mapDrag && mapDrag.kind === 'token';
+    // Occupied square? Snap back.
+    if (wasTokenDrag) {
+      var np = mapState.tokens[mapDrag.id];
+      var clash = np && combatants.some(function(o) {
+        if (o.id === mapDrag.id || o.hp <= 0) return false;
+        var op = mapState.tokens[o.id];
+        return op && op !== np && op.x === np.x && op.y === np.y;
+      });
+      if (clash) {
+        mapState.tokens[mapDrag.id] = { x: mapDrag.fromX, y: mapDrag.fromY };
+        renderMap();
+        showToast('🚫 Square occupied — token snapped back', 'warn');
+        mapDrag = null; mapFogPainting = false; mapNeedsSync = false;
+        return;
+      }
+    }
+    // Opportunity attacks when the DM drags someone out of melee reach
+    if (wasTokenDrag && typeof checkOpportunityAttacks === 'function') {
+      var moved = combatants.find(function(c) { return c.id === mapDrag.id; });
+      var newPos = mapState.tokens[mapDrag.id];
+      if (moved && newPos && (newPos.x !== mapDrag.fromX || newPos.y !== mapDrag.fromY)) {
+        checkOpportunityAttacks(moved, { x: mapDrag.fromX, y: mapDrag.fromY }, newPos);
+      }
+    }
     mapDrag = null;
     mapFogPainting = false;
     if (mapMeasure) { mapMeasure = null; renderMap(); }
@@ -630,9 +679,14 @@ function initMapTab() {
       e.preventDefault();
       mapResizeProp(hit, e.deltaY < 0 ? 1 : -1);
     }, { passive: false });
-    // Double-click: cycle prop size, or rename a building
+    // Double-click: act as a token, cycle prop size, or rename a building
     canvas.addEventListener('dblclick', function(e) {
       var pt = mapEventCell(e);
+      var tok = mapHitToken(pt);
+      if (tok && typeof dmOpenActMenu === 'function') {
+        dmOpenActMenu(tok.id);
+        return;
+      }
       var hit = mapHitProp(pt);
       if (hit && hit.kind !== 'aoe') {
         var next = (hit.cells || 1) >= 4 ? 1 : (hit.cells || 1) + 1;
