@@ -829,7 +829,7 @@ function useAction(actionIdx) {
     const hpPctV = Math.max(0, Math.min(100, (c.hp / (c.maxHp || 1)) * 100));
     html += '<button class="pv-target-btn" ' + (outOfRange ? 'disabled' : '') + ' data-target="' + c.id + '">' +
       '<span style="color:' + (c.type === 'ally' ? '#90c8ff' : '#ff9090') + ';">' + esc(c.name) + '</span>' +
-      '<span style="font-size:12px;color:var(--text-dim);">' + c.hp + '/' + c.maxHp + ' HP</span>' +
+      '<span style="font-size:12px;color:' + (c.type === 'ally' ? 'var(--text-dim)' : pvHpDescriptor(c).color) + ';">' + (c.type === 'ally' ? c.hp + '/' + c.maxHp + ' HP' : pvHpDescriptor(c).label) + '</span>' +
       distLabel +
     '</button>';
   });
@@ -852,6 +852,58 @@ function useAction(actionIdx) {
 }
 window._pvUseAction = useAction;
 
+// ── Monster knowledge: what the party has EARNED about a creature ──
+function pvHpDescriptor(c) {
+  const pct = (c.hp / (c.maxHp || 1)) * 100;
+  if (c.hp <= 0) return { label: 'Down', color: '#777' };
+  if (pct > 75) return { label: 'Healthy', color: '#8fd050' };
+  if (pct > 50) return { label: 'Wounded', color: '#ffe066' };
+  if (pct > 25) return { label: 'Bloodied', color: '#ff9800' };
+  return { label: 'Near Death', color: '#e05050' };
+}
+
+function showMonsterInfo(c) {
+  const knowAll = !!c.allKnown;
+  const hpDesc = pvHpDescriptor(c);
+  let html = '<div style="font-family:Cinzel,serif;font-size:18px;color:#ff9090;margin-bottom:2px;">' + esc(c.name) + '</div>' +
+    '<div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">What your party knows</div>';
+  // Health — always as words, never numbers (unless the DM reveals everything)
+  html += '<div style="font-size:14px;margin-bottom:6px;">Condition: <strong style="color:' + hpDesc.color + ';">' + hpDesc.label + '</strong>' +
+    (knowAll ? ' <span style="color:var(--text-dim);font-size:12px;">(' + c.hp + '/' + c.maxHp + ' HP)</span>' : '') + '</div>';
+  // AC — earned by trading blows, or revealed by the DM
+  if (c.acKnown || knowAll) {
+    html += '<div style="font-size:14px;margin-bottom:6px;">Armor Class: <strong style="color:var(--parchment);">' + c.ac + '</strong></div>';
+  } else {
+    html += '<div style="font-size:13px;color:#555;margin-bottom:6px;">Armor Class: unknown — trade a few blows to size it up</div>';
+  }
+  // Defenses — learned per damage type, or revealed
+  const defs = [];
+  if (c.defsKnown || knowAll) {
+    (c.resist || []).forEach(t => defs.push({ t, label: 'resists ' + t, color: '#90c8ff' }));
+    (c.immune || []).forEach(t => defs.push({ t, label: 'IMMUNE to ' + t, color: '#8fd050' }));
+    (c.vuln || []).forEach(t => defs.push({ t, label: 'vulnerable to ' + t + '!', color: '#ff9090' }));
+  } else {
+    (c.knownDefs || []).forEach(t => {
+      if ((c.immune || []).includes(t)) defs.push({ t, label: 'IMMUNE to ' + t, color: '#8fd050' });
+      else if ((c.resist || []).includes(t)) defs.push({ t, label: 'resists ' + t, color: '#90c8ff' });
+      else if ((c.vuln || []).includes(t)) defs.push({ t, label: 'vulnerable to ' + t + '!', color: '#ff9090' });
+    });
+  }
+  if (defs.length) {
+    html += '<div style="font-size:12px;color:var(--text-dim);margin:8px 0 4px;">Defenses you\'ve discovered:</div>';
+    defs.forEach(dd => { html += '<div style="font-size:13px;color:' + dd.color + ';">• ' + esc(dd.label) + '</div>'; });
+  } else if (!(c.defsKnown || knowAll)) {
+    html += '<div style="font-size:12px;color:#555;margin-top:6px;">No defenses discovered yet — hit it with different damage types to learn.</div>';
+  }
+  // Visible conditions
+  const conds = (c.conditions || []).filter(x => x !== 'Stable');
+  if (conds.length) {
+    html += '<div style="margin-top:8px;">' + conds.map(cn => '<span class="cond-tag">' + esc(cn) + '</span>').join('') + '</div>';
+  }
+  html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:14px;" onclick="_pvCloseOverlay()">Close</button>';
+  showOverlay(html);
+}
+
 // Tap an enemy on the map → pick which action to hit them with
 function openMapAttack(target) {
   const d = latestData;
@@ -873,8 +925,11 @@ function openMapAttack(target) {
   const myPos = (m.tokens || {})[me.id];
   const tPos = (m.tokens || {})[target.id];
   const ft = (myPos && tPos) ? distFt(myPos, tPos) : null;
-  let html = '<div style="font-family:Cinzel,serif;font-size:17px;color:var(--gold);margin-bottom:4px;">⚔ Attack ' + esc(target.name) + '</div>' +
-    '<div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">' + target.hp + '/' + target.maxHp + ' HP' + (ft !== null ? ' · ' + ft + ' ft away' : '') + '</div>';
+  const hpD = pvHpDescriptor(target);
+  let html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' +
+    '<div style="font-family:Cinzel,serif;font-size:17px;color:var(--gold);flex:1;">⚔ Attack ' + esc(target.name) + '</div>' +
+    '<button class="btn-pv" style="font-size:11px;padding:3px 10px;" id="pv-info-btn">ℹ Info</button></div>' +
+    '<div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;"><span style="color:' + hpD.color + ';">' + hpD.label + '</span>' + (ft !== null ? ' · ' + ft + ' ft away' : '') + '</div>';
   acts.forEach((a, i) => {
     const idx = allActs.indexOf(a);
     const outOfRange = ft !== null && ft > (a.range || 5);
@@ -885,6 +940,8 @@ function openMapAttack(target) {
   });
   html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:8px;" onclick="_pvCloseOverlay()">Cancel</button>';
   showOverlay(html);
+  const infoBtn = document.getElementById('pv-info-btn');
+  if (infoBtn) infoBtn.addEventListener('click', () => { closeOverlay(); showMonsterInfo(target); });
   document.querySelectorAll('[data-mattack]').forEach(btn => {
     btn.addEventListener('click', () => {
       const a = pvEffectiveActions(pc)[parseInt(btn.dataset.mattack)];
@@ -1207,7 +1264,21 @@ function bindMapInteraction() {
   canvas._bound = true;
   canvas.addEventListener('click', e => {
     const d = latestData;
-    if (!d || !isMyTurn(d) || !d.mapState) return;
+    if (!d || !d.mapState) return;
+    const m0 = d.mapState;
+    // Anyone can inspect: tapping an enemy outside your turn shows what you know
+    if (!isMyTurn(d)) {
+      const rect0 = canvas.getBoundingClientRect();
+      const ix = Math.floor((e.clientX - rect0.left) * (canvas.width / rect0.width) / m0.cell);
+      const iy = Math.floor((e.clientY - rect0.top) * (canvas.height / rect0.height) / m0.cell);
+      const insp = (d.combatants || []).find(c => {
+        if (c.hidden || c.type === 'ally') return false;
+        const pos = (m0.tokens || {})[c.id];
+        return pos && pos.x === ix && pos.y === iy;
+      });
+      if (insp) showMonsterInfo(insp);
+      return;
+    }
     const me = myCombatant(d);
     const m = d.mapState;
     const myPos = (m.tokens || {})[me.id];
@@ -1812,11 +1883,16 @@ function renderInitiativePanel(d) {
     }
     html += '</div>';
 
-    // HP bar + numbers
-    html += '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
-      '<div style="width:60px;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;"><div style="height:100%;width:' + cHpPct + '%;background:' + cHc + ';border-radius:3px;"></div></div>' +
-      '<span style="font-size:13px;font-weight:600;color:' + cHc + ';min-width:50px;text-align:right;">' + c.hp + '/' + c.maxHp + '</span>' +
-    '</div>';
+    // HP: allies see numbers, enemies show only how hurt they LOOK
+    if (isAlly || c.allKnown) {
+      html += '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
+        '<div style="width:60px;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;"><div style="height:100%;width:' + cHpPct + '%;background:' + cHc + ';border-radius:3px;"></div></div>' +
+        '<span style="font-size:13px;font-weight:600;color:' + cHc + ';min-width:50px;text-align:right;">' + c.hp + '/' + c.maxHp + '</span>' +
+      '</div>';
+    } else {
+      const hd = pvHpDescriptor(c);
+      html += '<span style="font-size:12px;font-family:Cinzel,serif;color:' + hd.color + ';flex-shrink:0;">' + hd.label + '</span>';
+    }
 
     html += '</div>'; // close init-row
   });
