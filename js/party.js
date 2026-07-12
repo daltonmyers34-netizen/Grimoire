@@ -410,6 +410,7 @@ function openAddPlayerModal() {
   populateSpellRows([]);
   var fr0 = document.getElementById('pc-feat-rage'); if (fr0) fr0.checked = false;
   var fk0 = document.getElementById('pc-feat-reckless'); if (fk0) fk0.checked = false;
+  var fs0 = document.getElementById('pc-feat-surge'); if (fs0) fs0.checked = false;
   document.getElementById('player-modal').classList.add('show');
 }
 
@@ -594,6 +595,7 @@ function editPlayer(id) {
   populateSpellRows(pc.spells || []);
   var fr = document.getElementById('pc-feat-rage'); if (fr) fr.checked = (pc.features || []).indexOf('Rage') >= 0;
   var fk = document.getElementById('pc-feat-reckless'); if (fk) fk.checked = (pc.features || []).indexOf('Reckless Attack') >= 0;
+  var fs = document.getElementById('pc-feat-surge'); if (fs) fs.checked = (pc.features || []).indexOf('Action Surge') >= 0;
   var existingSlots = pc.spellSlots || getDefaultSlots(pc.cls, pc.level) || [];
   for (var i = 1; i <= 9; i++) {
     var el = document.getElementById('pc-ss-' + i);
@@ -635,6 +637,7 @@ function savePlayer() {
       var f = [];
       if (document.getElementById('pc-feat-rage') && document.getElementById('pc-feat-rage').checked) f.push('Rage');
       if (document.getElementById('pc-feat-reckless') && document.getElementById('pc-feat-reckless').checked) f.push('Reckless Attack');
+      if (document.getElementById('pc-feat-surge') && document.getElementById('pc-feat-surge').checked) f.push('Action Surge');
       return f;
     })(),
     resist: (window._importedDefenses && window._importedDefenses.resist) || (existingPC && existingPC.resist) || [],
@@ -850,6 +853,7 @@ function renderInventoryModal(pcId) {
           '<span style="font-size:14px;color:var(--parchment);">' + esc(it.name) + (it.qty > 1 ? ' ×' + it.qty : '') + '</span>' +
           (extra.length ? '<span style="font-size:11px;color:var(--text-dim);margin-left:8px;">' + extra.join(' · ') + '</span>' : '') +
         '</div>' +
+        '<button class="btn btn-ghost btn-sm" title="Edit magical effects (+stats, resistances, special attacks...)" onclick="editItemEffects(' + pcId + ',' + it.id + ')">✨</button>' +
         (it.slot !== 'gear' ? '<button class="btn btn-ghost btn-sm" style="' + (it.equipped ? 'border-color:var(--gold);color:var(--gold);' : '') + '" onclick="dmToggleEquip(' + pcId + ',' + it.id + ')">' + (it.equipped ? '✓ Equipped' : 'Equip') + '</button>' : '') +
         '<button onclick="deleteInventoryItem(' + pcId + ',' + it.id + ')" style="background:none;border:1px solid var(--border);color:var(--blood-light);border-radius:3px;cursor:pointer;width:24px;height:24px;font-size:11px;">✕</button>' +
       '</div>';
@@ -901,7 +905,7 @@ function dmToggleEquip(pcId, itemId) {
   var it = pc && (pc.inventory || []).find(function(i) { return i.id === itemId; });
   if (!it) return;
   it.equipped = !it.equipped;
-  if (typeof recomputePcAC === 'function' && it.acBonus) recomputePcAC(pc);
+  if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
   savePartyStorage();
   renderParty();
   renderCombatants();
@@ -912,7 +916,7 @@ function deleteInventoryItem(pcId, itemId) {
   var pc = party.find(function(p) { return p.id === pcId; });
   if (!pc) return;
   pc.inventory = (pc.inventory || []).filter(function(i) { return i.id !== itemId; });
-  if (typeof recomputePcAC === 'function') recomputePcAC(pc);
+  if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
   savePartyStorage();
   renderParty();
   renderInventoryModal(pcId);
@@ -932,7 +936,7 @@ function destroyEquipped(pcId) {
   if (!equipped.length) { showToast('Nothing equipped to destroy', 'info'); return; }
   if (!confirm('Destroy ' + pc.name + '\'s equipped items (' + equipped.map(function(i){return i.name;}).join(', ') + ')? The lava shows no mercy.')) return;
   pc.inventory = pc.inventory.filter(function(i) { return !i.equipped; });
-  if (typeof recomputePcAC === 'function') recomputePcAC(pc);
+  if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
   savePartyStorage();
   renderParty();
   renderCombatants();
@@ -990,6 +994,27 @@ function addSpellRow(s) {
 function autoInferSpellType(nameInput) {
   var row = nameInput.closest('.pc-spell-row');
   if (!row) return;
+  // Known spell? Auto-fill EVERYTHING from the 86-spell SRD database
+  if (typeof findSpell === 'function') {
+    var known = findSpell(nameInput.value);
+    if (known) {
+      var set = function(cls, val) { var el = row.querySelector(cls); if (el && val !== undefined && val !== null) el.value = val; };
+      set('.ps-level', known.level || 0);
+      set('.ps-kind', known.kind === 'buff' ? 'save' : known.kind);
+      if (known.kind === 'buff') { var kEl = row.querySelector('.ps-kind'); if (kEl) { if (![].some.call(kEl.options, function(o){return o.value==='buff';})) { var op = document.createElement('option'); op.value='buff'; op.textContent='✨ Buff'; kEl.appendChild(op); } kEl.value = 'buff'; } }
+      set('.ps-dice', known.dice || '');
+      set('.ps-range', known.range || 60);
+      set('.ps-aoe', known.aoeFt || '');
+      set('.ps-upcast', known.upcastDice || '');
+      if (known.saveAbility) set('.ps-save', known.saveAbility);
+      if (known.damageType) set('.ps-dmgtype', known.damageType);
+      var conc = row.querySelector('.ps-conc'); if (conc) conc.checked = !!known.concentration;
+      row.style.borderColor = 'rgba(143,208,80,0.5)';
+      setTimeout(function() { row.style.borderColor = 'rgba(100,180,255,0.15)'; }, 900);
+      row.dataset.applyCondition = known.applyCondition || '';
+      return;
+    }
+  }
   var sel = row.querySelector('.ps-dmgtype');
   if (!sel || sel.value) return;
   if (typeof inferDamageType !== 'function') return;
@@ -1013,9 +1038,12 @@ function collectSpells() {
       name: name,
       level: parseInt(row.querySelector('.ps-level').value) || 0,
       kind: row.querySelector('.ps-kind').value,
-      dice: row.querySelector('.ps-dice').value.trim() || '1d6',
+      dice: row.querySelector('.ps-dice').value.trim(),
       range: parseInt(row.querySelector('.ps-range').value) || 60
     };
+    if (!s.dice && s.kind !== 'buff') s.dice = '1d6';
+    if (row.dataset.applyCondition) s.applyCondition = row.dataset.applyCondition;
+    else if (typeof findSpell === 'function') { var kn = findSpell(name); if (kn && kn.applyCondition) s.applyCondition = kn.applyCondition; }
     var dt = row.querySelector('.ps-dmgtype'); if (dt && dt.value) s.damageType = dt.value;
     else if (s.kind !== 'heal' && typeof inferDamageType === 'function') { var inf = inferDamageType(name); if (inf) s.damageType = inf; }
     if (s.kind === 'save') s.saveAbility = row.querySelector('.ps-save').value;
@@ -1025,4 +1053,90 @@ function collectSpells() {
     out.push(s);
   });
   return out;
+}
+
+// ══════════════════════════════════════════════════════════════
+// ITEM EFFECTS EDITOR — make any item magical
+// ══════════════════════════════════════════════════════════════
+function editItemEffects(pcId, itemId) {
+  var pc = party.find(function(p) { return p.id === pcId; });
+  var it = pc && (pc.inventory || []).find(function(i) { return i.id === itemId; });
+  if (!it) return;
+  var existing = document.getElementById('item-fx-modal');
+  if (existing) existing.remove();
+  var ov = document.createElement('div');
+  ov.id = 'item-fx-modal';
+  ov.className = 'modal-overlay show';
+  ov.style.zIndex = '2700';
+  var st = it.statBonuses || {};
+  var ga = it.grantAction || {};
+  var esc2 = function(s) { return String(s || '').replace(/"/g, '&quot;'); };
+  ov.innerHTML = '<div class="modal" style="max-width:480px;width:95%;max-height:85vh;overflow-y:auto;">' +
+    '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:4px;">✨ ' + esc2(it.name) + ' — effects</h3>' +
+    '<div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">Everything here applies automatically while the item is equipped.</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">' +
+      '<div class="field-group" style="margin:0;"><label>+ AC</label><input id="fx-ac" type="number" value="' + (it.acBonus || 0) + '" style="text-align:center;"></div>' +
+      '<div class="field-group" style="margin:0;"><label>+ Speed ft</label><input id="fx-speed" type="number" value="' + (it.speedBonus || 0) + '" style="text-align:center;"></div>' +
+      '<div class="field-group" style="margin:0;"><label>Light ft</label><input id="fx-light" type="number" value="' + (it.lightFt || 0) + '" style="text-align:center;"></div>' +
+    '</div>' +
+    '<label style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.08em;color:var(--text-dim);">STAT BONUSES</label>' +
+    '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin:5px 0 10px;">' +
+      ['str','dex','con','int','wis','cha'].map(function(s) {
+        return '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);">' + s.toUpperCase() + '</div><input id="fx-' + s + '" type="number" value="' + (st[s] || 0) + '" style="width:100%;text-align:center;font-size:12px;padding:4px 2px;"></div>';
+      }).join('') +
+    '</div>' +
+    '<div class="field-group" style="margin-bottom:8px;"><label>Grants resistance to <span style="color:#666;font-weight:normal;">(comma-separated: fire, cold...)</span></label><input id="fx-resist" value="' + esc2((it.grantResist || []).join(', ')) + '"></div>' +
+    '<div class="field-group" style="margin-bottom:8px;"><label>Grants immunity to</label><input id="fx-immune" value="' + esc2((it.grantImmune || []).join(', ')) + '"></div>' +
+    '<div class="field-group" style="margin-bottom:10px;"><label>Inflicts vulnerability to <span style="color:#666;font-weight:normal;">(cursed!)</span></label><input id="fx-vuln" value="' + esc2((it.grantVuln || []).join(', ')) + '"></div>' +
+    '<label style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.08em;color:var(--text-dim);">SPECIAL ATTACK GRANTED</label>' +
+    '<div style="display:grid;grid-template-columns:2fr 60px 60px 1fr 1fr;gap:5px;margin:5px 0 12px;">' +
+      '<input id="fx-aname" placeholder="Flame Tongue Blast" value="' + esc2(ga.name) + '" style="font-size:12px;padding:5px;">' +
+      '<input id="fx-arange" type="number" placeholder="ft" value="' + (ga.range || '') + '" style="font-size:12px;padding:5px;text-align:center;">' +
+      '<input id="fx-abonus" type="number" placeholder="+hit" value="' + (ga.bonus !== undefined ? ga.bonus : '') + '" style="font-size:12px;padding:5px;text-align:center;">' +
+      '<input id="fx-adice" placeholder="2d6" value="' + esc2(ga.dice) + '" style="font-size:12px;padding:5px;">' +
+      '<select id="fx-atype" style="font-size:11px;padding:5px;"><option value="">type</option>' + ACTION_DMG_TYPES.map(function(t) { return '<option value="' + t + '"' + (ga.damageType === t ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select>' +
+    '</div>' +
+    '<div class="modal-btns">' +
+      '<button class="btn btn-gold" onclick="saveItemEffects(' + pcId + ',' + itemId + ')">💾 Save Effects</button>' +
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'item-fx-modal\').remove()">Cancel</button>' +
+    '</div></div>';
+  ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+
+function saveItemEffects(pcId, itemId) {
+  var pc = party.find(function(p) { return p.id === pcId; });
+  var it = pc && (pc.inventory || []).find(function(i) { return i.id === itemId; });
+  if (!it) return;
+  var num = function(id) { return parseInt(document.getElementById(id).value) || 0; };
+  var csv = function(id) {
+    var valid = ['slashing','piercing','bludgeoning','fire','cold','lightning','thunder','poison','acid','necrotic','radiant','force','psychic'];
+    return document.getElementById(id).value.split(',').map(function(s) { return s.trim().toLowerCase(); }).filter(function(s) { return valid.indexOf(s) >= 0; });
+  };
+  it.acBonus = num('fx-ac') || undefined;
+  it.speedBonus = num('fx-speed') || undefined;
+  it.lightFt = num('fx-light') || undefined;
+  var stats = {};
+  var any = false;
+  ['str','dex','con','int','wis','cha'].forEach(function(s) { var v = num('fx-' + s); if (v) { stats[s] = v; any = true; } });
+  it.statBonuses = any ? stats : undefined;
+  it.grantResist = csv('fx-resist'); if (!it.grantResist.length) delete it.grantResist;
+  it.grantImmune = csv('fx-immune'); if (!it.grantImmune.length) delete it.grantImmune;
+  it.grantVuln = csv('fx-vuln'); if (!it.grantVuln.length) delete it.grantVuln;
+  var an = document.getElementById('fx-aname').value.trim();
+  it.grantAction = an ? {
+    name: an, kind: 'attack',
+    range: num('fx-arange') || 5,
+    bonus: num('fx-abonus') || 0,
+    dice: document.getElementById('fx-adice').value.trim() || '1d6',
+    damageType: document.getElementById('fx-atype').value || (typeof inferDamageType === 'function' ? inferDamageType(an) : '')
+  } : undefined;
+  if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
+  savePartyStorage();
+  renderParty();
+  renderCombatants();
+  var m = document.getElementById('item-fx-modal');
+  if (m) m.remove();
+  renderInventoryModal(pcId);
+  showToast('✨ ' + it.name + ' enchanted', 'success');
 }
