@@ -886,12 +886,33 @@ function recomputePcAC(pc) {
   if (c) c.ac = effectiveAC(pc);
 }
 
+// You only have one body: equipping enforces slot limits
+// (1 armor, 1 shield, 1 light source, up to 2 weapons)
+function enforceSlotLimits(pc, item) {
+  if (!item.equipped) return [];
+  var limits = { armor: 1, shield: 1, light: 1, weapon: 2 };
+  var limit = limits[item.slot];
+  if (!limit) return [];
+  var unequipped = [];
+  var equippedSame = (pc.inventory || []).filter(function(i) { return i.slot === item.slot && i.equipped; });
+  while (equippedSame.length > limit) {
+    var other = equippedSame.find(function(i) { return i.id !== item.id; });
+    if (!other) break;
+    other.equipped = false;
+    unequipped.push(other.name);
+    equippedSame = equippedSame.filter(function(i) { return i.id !== other.id; });
+  }
+  return unequipped;
+}
+
 function processEquipItem(req) {
   var pc = party.find(function(p) { return p.id === req.pcId; });
   if (!pc) return;
   var item = (pc.inventory || []).find(function(i) { return i.id === req.itemId; });
   if (!item) return;
   item.equipped = !!req.equipped;
+  var swapped = enforceSlotLimits(pc, item);
+  if (swapped.length) showToast('🎒 ' + pc.name + ' swapped out: ' + swapped.join(', '), 'info');
   if (typeof recomputePcCombat === 'function') recomputePcCombat(pc); else recomputePcAC(pc);
   if (typeof savePartyStorage === 'function') savePartyStorage();
   if (typeof renderParty === 'function') renderParty();
@@ -1256,7 +1277,8 @@ function requestRolls(title, entries, onDone) {
         (en.sub ? '<div style="font-size:11px;color:var(--text-dim);">' + en.sub + '</div>' : '') +
       '</div>' +
       '<input type="number" min="1" max="20" placeholder="d20" class="dm-roll-input" style="width:62px;font-size:16px;text-align:center;padding:5px;background:rgba(0,0,0,0.4);border:1px solid rgba(212,175,55,0.35);border-radius:5px;color:var(--parchment);">' +
-      '<button class="btn btn-ghost btn-sm" onclick="dmRollAutoRow(this)">🎲</button>';
+      '<button class="btn btn-ghost btn-sm" onclick="dmRollAutoRow(this)">🎲</button>' +
+      (en.skippable ? '<button class="btn btn-ghost btn-sm" title="Skip — no roll happens" onclick="this.closest(\'.dm-roll-row\').dataset.skipped=\'1\';this.closest(\'.dm-roll-row\').style.opacity=\'0.35\'">✕</button>' : '');
     rows.appendChild(row);
   });
   var firstInput = rows.querySelector('.dm-roll-row input');
@@ -1285,6 +1307,7 @@ function dmRollApply() {
   var rows = document.querySelectorAll('#dm-roll-rows .dm-roll-row');
   rows.forEach(function(row) {
     var gid = row.dataset.gid, eid = row.dataset.eid;
+    if (row.dataset.skipped === '1') return; // deliberately skipped — caller sees no result
     var inp = row.querySelector('input');
     var v = parseInt(inp.value);
     if (!v || v < 1 || v > 20) v = rollD20WithAdvState(parseInt(row.dataset.adv) || 0); // empty/invalid → auto
