@@ -370,6 +370,7 @@ if (typeof renderCombatants === 'function') {
     cvCheckEnemyXP();
     cvCheckEnemyDrops();
     if (typeof checkBossPhases === 'function') checkBossPhases();
+    if (typeof checkBossLowSound === 'function') checkBossLowSound();
     if (combatViewOpen) {
       cvUpdateHeader();
       if (cvActivePanel === 'loot') renderCvLoot();

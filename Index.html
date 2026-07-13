@@ -901,6 +901,23 @@
 <!-- ============================================================ -->
 <div id="tab-sounds" class="section">
 
+  <div class="panel" style="background:rgba(120,90,200,0.08);border-color:rgba(150,110,230,0.35);margin-bottom:16px;">
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:220px;">
+        <div style="font-family:'Cinzel',serif;font-size:15px;color:#c8a8ff;margin-bottom:4px;">🔔 Ambient Auto-Sound</div>
+        <div style="font-size:12px;color:var(--text-dim);">Cinematic stings fire on their own — a <strong>war horn</strong> when combat starts, an <strong>ominous heartbeat</strong> when a boss drops below 25% HP, a <strong>stinger</strong> on phase changes, and a <strong>victory fanfare</strong> when the last enemy falls. Synthesized live, so nothing to download.</div>
+      </div>
+      <button id="ambient-toggle-btn" class="btn btn-gold" onclick="toggleAmbientSound()">🔔 Auto-Sound: ON</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;align-items:center;">
+      <span style="font-size:11px;color:var(--text-dim);font-family:Cinzel,serif;letter-spacing:0.05em;">PREVIEW:</span>
+      <button class="btn btn-ghost btn-sm" onclick="dmSound('combatStart')">⚔ Combat</button>
+      <button class="btn btn-ghost btn-sm" onclick="dmSound('bossLow')">🩸 Boss Low</button>
+      <button class="btn btn-ghost btn-sm" onclick="dmSound('bossPhase')">🔥 Phase</button>
+      <button class="btn btn-ghost btn-sm" onclick="dmSound('victory')">🏆 Victory</button>
+    </div>
+  </div>
+
   <div class="panel" style="background:rgba(212,85,10,0.08);border-color:rgba(212,85,10,0.3);margin-bottom:20px;">
     <p style="font-size:14px;color:var(--parchment);text-align:center;margin:0 0 6px;">
       🎵 <strong style="color:var(--gold)">Tabletop Audio SoundPads</strong>
@@ -1573,6 +1590,7 @@ Use this space freely during your session. Notes auto-save in your browser."></t
 <script src="js/player-actions.js"></script>
 <script src="js/combat-view.js"></script>
 <script src="js/boss.js"></script>
+<script src="js/sound.js"></script>
 
 <!-- Firebase (module - loads after regular scripts) -->
 <script type="module" src="js/firebase.js"></script>

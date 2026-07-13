@@ -69,6 +69,7 @@ function switchTab(name) {
   if (tab) tab.classList.add('active');
   if (name === 'map' && typeof initMapTab === 'function') initMapTab();
   if (name === 'worldmap' && typeof renderWorldMapTab === 'function') renderWorldMapTab();
+  if (name === 'sounds' && typeof renderAmbientToggle === 'function') renderAmbientToggle();
 }
 
 // ============================================================
