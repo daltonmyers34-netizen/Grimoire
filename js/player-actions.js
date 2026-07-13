@@ -482,7 +482,9 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
               [{ id: 'r', label: tgt.name + ' — ' + act.saveAbility.toUpperCase() + ' save', sub: 'DC ' + act.saveDC + ' · their bonus ' + (sb >= 0 ? '+' : '') + sb, adv: 0 }],
               function(results) {
                 var total = (results.r || 10) + sb;
-                if (total >= act.saveDC) {
+                var passed = total >= act.saveDC;
+                if (!passed && typeof maybeLegendaryResist === 'function' && maybeLegendaryResist(tgt, act.saveAbility)) passed = true;
+                if (passed) {
                   logCombat('✓ ' + tgt.name + ' saves vs ' + act.applyCondition + ' (' + total + ' vs DC ' + act.saveDC + ')', 'info');
                   showToast('✓ ' + tgt.name + ' resists ' + act.applyCondition, 'info');
                 } else {
@@ -1337,6 +1339,7 @@ function processCastSpell(req) {
         var sRoll = results[String(t.id)] || 10;
         var sTotal = sRoll + sb;
         var saved = sTotal >= dc;
+        if (!saved && typeof maybeLegendaryResist === 'function' && maybeLegendaryResist(t, ability)) saved = true;
         entry.save = { ability: ability, dc: dc, roll: sRoll, bonus: sb, total: sTotal, saved: saved };
         var amt2 = saved && spell.halfOnSave !== false ? Math.floor(sp.baseDamage / 2) : (saved ? 0 : sp.baseDamage);
         var def2 = applyDamageWithDefenses(t, amt2, spell.damageType);
@@ -1642,6 +1645,23 @@ function dmEditActions(combatantId) {
       '<input id="ae-owner" value="' + (c.owner || '').replace(/"/g, '&quot;') + '" placeholder="character name" style="width:150px;font-size:13px;padding:4px;">' +
       '<span style="font-size:10px;color:#555;">that player moves & runs it on their turn</span>' +
     '</div>' +
+    // ── Boss mechanics ─────────────────────────────────────
+    '<details style="border:1px solid rgba(200,150,255,0.25);border-radius:6px;padding:8px 10px;margin-bottom:12px;">' +
+      '<summary style="cursor:pointer;font-family:Cinzel,serif;font-size:13px;color:#c896ff;">🐉 Boss Mechanics</summary>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin:10px 0 8px;">' +
+        '<span style="font-size:12px;color:var(--text-dim);">🛡 Legendary Resistances / day:</span>' +
+        '<input id="ae-legres" type="number" min="0" max="9" value="' + ((c.legendaryResist && c.legendaryResist.max) || 0) + '" style="width:56px;font-size:14px;padding:4px;text-align:center;">' +
+        '<span style="font-size:10px;color:#555;">spend to turn a failed save into a success</span>' +
+      '</div>' +
+      '<div style="margin-bottom:8px;">' +
+        '<div style="font-size:12px;color:var(--text-dim);margin-bottom:3px;">🌋 Lair Actions <span style="color:#555;">(one per line — offered on initiative 20)</span></div>' +
+        '<textarea id="ae-lair" placeholder="Grasping roots: each creature within 15 ft makes a DC 15 STR save or is restrained&#10;A wall of fire erupts along a chosen line" style="width:100%;height:52px;font-size:12px;">' + esc((c.lairActions || []).join('\n')) + '</textarea>' +
+      '</div>' +
+      '<div>' +
+        '<div style="font-size:12px;color:var(--text-dim);margin-bottom:3px;">🔥 Phase Triggers <span style="color:#555;">(HP% : what happens — fires when it drops past)</span></div>' +
+        '<textarea id="ae-phases" placeholder="50: The dragon takes flight and breathes fire&#10;25: Enraged — all attacks at advantage" style="width:100%;height:52px;font-size:12px;">' + esc((c.phases || []).map(function(p) { return p.pct + ': ' + p.note; }).join('\n')) + '</textarea>' +
+      '</div>' +
+    '</details>' +
     '<div class="modal-btns">' +
       '<button class="btn btn-gold" onclick="dmSaveActions(' + combatantId + ')">💾 Save</button>' +
       '<button class="btn btn-ghost" onclick="document.getElementById(\'dm-actedit-modal\').remove()">Cancel</button>' +
@@ -1694,6 +1714,24 @@ function dmSaveActions(combatantId) {
   var multiEl = document.getElementById('ae-multi');
   var multi = multiEl ? parseInt(multiEl.value) || 1 : 1;
   c.multiattack = multi > 1 ? multi : undefined;
+  // Boss mechanics
+  var legResMax = parseInt((document.getElementById('ae-legres') || {}).value) || 0;
+  c.legendaryResist = legResMax > 0
+    ? { max: legResMax, left: (c.legendaryResist && c.legendaryResist.max === legResMax) ? c.legendaryResist.left : legResMax }
+    : undefined;
+  var lairEl = document.getElementById('ae-lair');
+  var lair = (lairEl && typeof parseLairActions === 'function') ? parseLairActions(lairEl.value) : [];
+  c.lairActions = lair.length ? lair : undefined;
+  var phasesEl = document.getElementById('ae-phases');
+  var phases = (phasesEl && typeof parsePhases === 'function') ? parsePhases(phasesEl.value) : [];
+  // Preserve already-fired flags for unchanged thresholds so re-editing mid-fight doesn't refire
+  if (phases.length && c.phases) {
+    phases.forEach(function(p) {
+      var prev = c.phases.find(function(o) { return o.pct === p.pct; });
+      if (prev && prev.fired) p.fired = true;
+    });
+  }
+  c.phases = phases.length ? phases : undefined;
   var m = document.getElementById('dm-actedit-modal');
   if (m) m.remove();
   renderCombatants();

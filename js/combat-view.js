@@ -369,6 +369,7 @@ if (typeof renderCombatants === 'function') {
     _cvOrigRenderCombatants.apply(this, arguments);
     cvCheckEnemyXP();
     cvCheckEnemyDrops();
+    if (typeof checkBossPhases === 'function') checkBossPhases();
     if (combatViewOpen) {
       cvUpdateHeader();
       if (cvActivePanel === 'loot') renderCvLoot();

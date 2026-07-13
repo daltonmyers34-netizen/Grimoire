@@ -241,10 +241,12 @@ function startCombat() {
   combatActive = true;
   round = 1;
   currentTurn = 0;
+  if (typeof resetBossState === 'function') resetBossState();
   if (typeof startTurnFor === 'function') startTurnFor(combatants[0]);
   updateRoundDisplay();
   renderCombatants();
   syncCombatState();
+  if (typeof checkLairActions === 'function') checkLairActions(); // initiative 20, round 1
   // Offer full-screen combat mode (unless it's already open)
   if (typeof combatViewOpen === 'undefined' || !combatViewOpen) {
     var bar = document.createElement('div');
@@ -281,6 +283,7 @@ function nextTurn() {
     if (c.type === 'ally' && !c.isDead && (c.conditions || []).indexOf('Stable') < 0) return false;
     return true;
   }
+  var prevRound = round;
   currentTurn++;
   if (currentTurn >= combatants.length) { currentTurn = 0; round++; }
   while (skipInTurnOrder(combatants[currentTurn])) {
@@ -289,10 +292,14 @@ function nextTurn() {
     safety++;
     if (safety > maxIter) break; // prevent infinite loop
   }
+  var roundAdvanced = round > prevRound;
   if (typeof startTurnFor === 'function') startTurnFor(combatants[currentTurn]);
   updateRoundDisplay();
   renderCombatants();
   syncCombatState();
+
+  // New round → the lair stirs on initiative 20
+  if (roundAdvanced && typeof checkLairActions === 'function') checkLairActions();
 
   // Downed ally's turn: prompt the DM for their death save
   // (skippable — they might be rolling on their own phone)
