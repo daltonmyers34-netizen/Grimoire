@@ -242,8 +242,19 @@ function startCombat() {
   combatActive = true;
   round = 1;
   currentTurn = 0;
+  // Skip past anyone surprised (or otherwise unable to take a turn) at the top
+  var guard = 0;
+  while (combatants[currentTurn] && guard < combatants.length) {
+    var first = combatants[currentTurn];
+    if (round === 1 && first.surprised) {
+      first.surprised = false;
+      logCombat('😲 ' + first.name + ' is surprised — skips their first turn', 'info');
+      currentTurn++; guard++;
+      if (currentTurn >= combatants.length) { currentTurn = 0; round++; }
+    } else break;
+  }
   if (typeof resetBossState === 'function') resetBossState();
-  if (typeof startTurnFor === 'function') startTurnFor(combatants[0]);
+  if (typeof startTurnFor === 'function') startTurnFor(combatants[currentTurn]);
   updateRoundDisplay();
   renderCombatants();
   syncCombatState();
@@ -280,6 +291,12 @@ function nextTurn() {
   function skipInTurnOrder(c) {
     if (!c) return false;
     if (c.hidden) return true;
+    // Surprised creatures lose their whole first turn (round 1 only)
+    if (round === 1 && c.surprised) {
+      c.surprised = false;
+      logCombat('😲 ' + c.name + ' is surprised — skips their first turn', 'info');
+      return true;
+    }
     if (c.hp > 0) return false;
     // At 0 HP: dying ALLIES still take turns (death saves!) — dead/stable don't
     if (c.type === 'ally' && !c.isDead && (c.conditions || []).indexOf('Stable') < 0) return false;
@@ -443,13 +460,14 @@ function renderCombatants() {
     var hiddenBadge = c.hidden ? '<span style="color:#888;font-size:10px;margin-left:4px;" title="Hidden from players">👁</span>' : '';
     var exLvl = (typeof exhaustionLevel === 'function') ? exhaustionLevel(c) : (c.exhaustion || 0);
     var exBadge = exLvl > 0 ? '<span style="background:rgba(180,120,40,0.2);border:1px solid rgba(210,150,60,0.5);color:#e0a860;font-size:9px;font-family:Cinzel,serif;border-radius:3px;padding:1px 5px;margin-left:4px;" title="Exhaustion — ' + ((typeof EXHAUSTION_TEXT !== "undefined") ? EXHAUSTION_TEXT[exLvl] : "") + '">😫 ' + exLvl + '</span>' : '';
+    var surpriseBadge = c.surprised ? '<span style="background:rgba(255,180,80,0.2);border:1px solid rgba(255,180,80,0.5);color:#ffb450;font-size:9px;font-family:Cinzel,serif;border-radius:3px;padding:1px 5px;margin-left:4px;" title="Surprised — skips their first turn">😲 surprised</span>' : '';
     var hiddenStyle = c.hidden ? 'opacity:0.5;' : '';
     return '<li class="combatant ' + (isActive ? 'active-turn' : '') + ' ' + (isDead ? 'dead' : '') + '" data-id="' + c.id + '" style="border-left:3px solid ' + typeColor + '33;' + hiddenStyle + '">' +
       '<div class="combatant-init" onclick="editInit(' + c.id + ')" title="Tap to edit initiative" style="cursor:pointer;border-radius:4px;padding:3px;text-align:center;"><span id="init-disp-' + c.id + '">' + c.init + '</span></div>' +
       '<div>' +
         '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px;margin-bottom:3px;">' +
           '<span class="combatant-name ' + nameClass + '" style="font-size:16px;">' + c.name + (isActive ? ' ◀' : '') + '</span>' +
-          inspBadge + concBadge + hiddenBadge + exBadge +
+          inspBadge + concBadge + hiddenBadge + exBadge + surpriseBadge +
           '<span style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.04em;color:' + typeColor + ';margin-left:4px;opacity:0.8;">' + c.type.toUpperCase() + '</span>' +
         '</div>' +
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
@@ -473,6 +491,7 @@ function renderCombatants() {
           '<button onclick="toggleCombatantInspiration(' + c.id + ')" title="Toggle Inspiration" style="background:none;border:1px solid var(--border);color:' + (c.inspiration ? '#ffe066' : 'var(--text-dim)') + ';width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">★</button>' +
           '<button onclick="setCombatantConc(' + c.id + ')" title="Set Concentration" style="background:none;border:1px solid var(--border);color:' + (c.concentrating ? '#b080ff' : 'var(--text-dim)') + ';width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;">C</button>' +
           '<button onclick="toggleCombatantVisibility(' + c.id + ')" title="Toggle Visibility" style="background:none;border:1px solid var(--border);color:' + (c.hidden ? '#e74c3c' : 'var(--text-dim)') + ';width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">👁</button>' +
+          '<button onclick="toggleSurprise(' + c.id + ')" title="Mark surprised — skips their first turn" style="background:none;border:1px solid var(--border);color:' + (c.surprised ? '#ffb450' : 'var(--text-dim)') + ';width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">😲</button>' +
           '<button class="del" onclick="removeCombatant(' + c.id + ')" title="Remove" style="background:none;border:1px solid var(--border);color:var(--text-dim);width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>' +
         '</div>' +
       '</div>' +
@@ -814,6 +833,16 @@ function toggleCombatantVisibility(id) {
   renderCombatants();
   syncCombatState();
   showToast(c.hidden ? c.name + ' hidden from players' : c.name + ' visible to players', 'info');
+}
+
+// Surprise: a marked creature loses its first turn (round 1). Mark before Start Combat.
+function toggleSurprise(id) {
+  var c = combatants.find(function(x) { return x.id === id; });
+  if (!c) return;
+  c.surprised = !c.surprised;
+  renderCombatants();
+  syncCombatState();
+  showToast(c.surprised ? c.name + ' is surprised — will skip their first turn' : c.name + ' no longer surprised', 'info');
 }
 
 // Roll initiative for all combatants that don't have a manual initiative set

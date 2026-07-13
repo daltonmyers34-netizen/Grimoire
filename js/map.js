@@ -658,7 +658,7 @@ function mapTokenList(forPlayers) {
       mapNeedsSync = true;
     }
     if (c.type === 'ally') placedAllies++; else placedEnemies++;
-    list.push({ id: c.id, x: pos.x, y: pos.y, name: c.name, type: c.type, hp: c.hp, maxHp: c.maxHp, hidden: !!c.hidden, dead: c.hp <= 0 });
+    list.push({ id: c.id, x: pos.x, y: pos.y, name: c.name, type: c.type, hp: c.hp, maxHp: c.maxHp, hidden: !!c.hidden, dead: c.hp <= 0, tempHp: c.tempHp || 0, concentrating: !!c.concentrating });
   });
   return list;
 }
@@ -696,6 +696,27 @@ function drawMapTokens(ctx, m, forPlayers) {
       ctx.strokeStyle = pct > 0.5 ? '#4caf50' : pct > 0.25 ? '#ff9800' : '#f44336';
       ctx.lineWidth = 2.5;
       ctx.stroke();
+      // temp HP: a cyan ring just outside (proportional, capped at a full loop)
+      if (t.tempHp > 0) {
+        var tpct = Math.max(0, Math.min(1, t.tempHp / t.maxHp));
+        ctx.beginPath();
+        ctx.arc(cx, cy, r + 6, -Math.PI/2, -Math.PI/2 + tpct * Math.PI * 2);
+        ctx.strokeStyle = '#64c8ff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+    // concentration marker (purple dot, top-right)
+    if (!t.dead && t.concentrating) {
+      ctx.beginPath();
+      ctx.arc(cx + r * 0.72, cy - r * 0.72, m.cell * 0.11, 0, Math.PI * 2);
+      ctx.fillStyle = '#b080ff';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold ' + Math.floor(m.cell * 0.15) + 'px Cinzel, serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('C', cx + r * 0.72, cy - r * 0.72 + 0.5);
     }
     // portrait or initials
     var pcFace = (typeof party !== 'undefined') && party.find(function(p) { return p.name === t.name && p.portrait; });

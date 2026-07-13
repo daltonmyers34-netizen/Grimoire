@@ -50,7 +50,9 @@ Key globals (js/app.js): `party`, `combatants`, `currentTurn`, `round` (NOT `cur
 
 - Economy per turn: `c.turnUsed = { actions: <count>, bonus: bool, movedFt, attacksMade, sneakUsed }`; `maxActionsFor(c) = 1 + c._surgeExtra + condition extraAction`; `attacksPerActionFor(c)` = 2 with the `Extra Attack` feature, or `c.multiattack` for mobs. An Action is only *spent* when `attacksMade` reaches the per-action count.
 - `FEATURE_TOGGLES` (Rage/Reckless/Dodge/Action Surge/Second Wind/Disengage) — stances add a condition; costs go through `actionAvailable`/`spendActionFor` (never set `turnUsed` flags directly).
-- `CONDITION_EFFECTS` drives everything (attackersAdv, selfDis, autoCritMelee, cantAct, speed mods, acMod, saveMod, resistAll, extraAction, ...). Add new mechanics as conditions where possible.
+- `CONDITION_EFFECTS` drives everything (attackersAdv, selfDis, autoCritMelee, cantAct, speed mods, acMod, saveMod, resistAll, extraAction, ...). Add new mechanics as conditions where possible. Includes `Hidden`/`Helped` (selfAdv, consumed on attack in resolveCombatAction).
+- **All combat damage flows through `applyHpDamage(target, taken, opts)`** (player-actions.js) — temp HP soak (`target.tempHp`), downed-target auto death-save fails (crit → 2), and massive-damage instant death. Call it at every new damage site; pass `{crit}` from attacks, `{riderDamage:true}` for same-hit add-ons (Smite). `grantTempHp` for temp HP (no stack).
+- Exhaustion: `c.exhaustion` 0–6 via `exhaustionLevel(c)` (L2 half speed, L3 attack+save disadvantage, L4 `effectiveMaxHp` halved, L5 speed 0, L6 death). Long rest removes one level. Timed conditions: `condMeta[cond].rounds` ticks down in `endTurnProcessing`. Surprise: `c.surprised` (skipped round 1 in `skipInTurnOrder`/startCombat).
 - Movement: 5-10-5 diagonals. AoE: sphere/cone(~28° half-angle)/line(5ft wide) via `aoeTargetsFor`/`pvShapeHits` (duplicated logic in player-view.html — change both).
 - DM act menu z-indexes: base modals 1000, combat view 950, act menus 2600–2700, roll modal 2700, toasts 9999. New DM popups that must appear over the combat view: use ≥2600.
 
