@@ -172,6 +172,16 @@ function rollDiceExpr(str) {
   return { total: Math.max(0, total), rolls: rolls, mod: mod, text: str };
 }
 
+// Average result of a dice expression — used by the tactics hint to weigh
+// which attack lands the biggest (or killing) blow.
+function avgDiceExpr(str) {
+  var m = String(str || '').trim().match(/^(\d*)d(\d+)\s*([+-]\s*\d+)?$/i);
+  if (!m) return 0;
+  var count = parseInt(m[1]) || 1, sides = parseInt(m[2]);
+  var mod = m[3] ? parseInt(m[3].replace(/\s/g, '')) : 0;
+  return count * (sides + 1) / 2 + mod;
+}
+
 function rollD20WithAdvState(advState) {
   var a = Math.floor(Math.random() * 20) + 1;
   if (advState === 0) return a;
@@ -769,13 +779,15 @@ function dmOpenActMenu(combatantId) {
   var inner = '<div class="modal" style="max-width:420px;width:95%;">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' +
       '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin:0;flex:1;">⚔ ' + c.name + ' acts</h3>' +
+      (c.type === 'enemy' ? '<button class="btn btn-ghost btn-sm" style="border-color:rgba(150,110,230,0.4);color:#c8a8ff;" onclick="dmSuggestTactics(' + combatantId + ')" title="Suggest a sensible action and target">🧠 Suggest</button>' : '') +
       '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'dm-act-modal\').remove();dmEditActions(' + combatantId + ')">✎ Edit</button>' +
     '</div>' +
     '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">Pick an action, then a target. You enter the rolls (or auto)' + legInfo + '.</div>' +
     (econInfo ? '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;color:var(--text-dim);">' + econInfo +
       '<button class="btn btn-ghost btn-sm" onclick="dmGrantAction(' + combatantId + ')" title="House-rule an extra action for this turn">+1 action</button>' +
       '<button class="btn btn-ghost btn-sm" onclick="dmResetEconomy(' + combatantId + ')" title="Fresh action/bonus/movement — as if their turn just started">↺ Refresh turn</button>' +
-    '</div>' : '');
+    '</div>' : '') +
+    '<div id="dm-tactics-box" style="margin-bottom:10px;"></div>';
   actions.forEach(function(a, i) {
     inner += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:rgba(0,0,0,0.25);">' +
       '<span>' + (a.kind === 'heal' ? '❤' : '⚔') + '</span>' +
@@ -840,6 +852,104 @@ function dmExecuteAction(attackerId, targetId, actionIdx) {
     function(results) {
       resolveCombatAction(attackerId, targetId, a, { roll: results.r, source: 'dm' });
     });
+}
+
+// ─── Monster tactics hint ────────────────────────────────────
+// Picks a sensible action + target for the enemy so a DM running six
+// goblins isn't paralyzed: focus-fire the lowest-HP PC in reach, finish
+// off anyone in kill range, stay ranged when they're being kited, and
+// fall back to healing a badly hurt ally. The DM still confirms the roll.
+function dmSuggestTactics(combatantId) {
+  var attacker = combatants.find(function(x) { return x.id === combatantId; });
+  var box = document.getElementById('dm-tactics-box');
+  if (!attacker || !box) return;
+  var actions = window.__dmActActions || [];
+  var mult = Math.max(1, attacker.multiattack || 1);
+  var aPos = (typeof mapState !== 'undefined' && mapState.tokens) ? mapState.tokens[combatantId] : null;
+  var foes = combatants.filter(function(c) { return c.type === 'ally' && c.hp > 0 && !c.hidden; });
+
+  var best = null;
+  actions.forEach(function(a, idx) {
+    if (a.kind === 'heal' || !a.dice) return;
+    var range = a.range || 5;
+    var isMelee = range <= 5;
+    var exp = avgDiceExpr(a.dice) * (isMelee ? mult : 1); // multiattack matters most in melee
+    foes.forEach(function(t) {
+      var tPos = (typeof mapState !== 'undefined' && mapState.tokens) ? mapState.tokens[t.id] : null;
+      var haveDist = !!(aPos && tPos);
+      var dist = haveDist ? dmDistFt(aPos, tPos) : 0;
+      var inRange = !haveDist || dist <= range;
+      var ctx = (typeof computeAttackContext === 'function') ? computeAttackContext(attacker, t, a) : { net: 0, notes: [] };
+      var score = 0;
+      if (inRange) score += 1000; else score -= (dist - range); // out of range: closer is better
+      score += (t.maxHp - t.hp) * 0.5;   // focus the wounded
+      score -= t.hp * 0.4;               // finish the low
+      if (t.hp <= exp) score += 500;     // likely a kill
+      score += exp;                      // bigger hits
+      score += (ctx.net || 0) * 25;      // reward advantage, dodge disadvantage
+      if (score > (best ? best.score : -Infinity)) {
+        best = { score: score, idx: idx, action: a, target: t, dist: haveDist ? dist : null, inRange: inRange, exp: exp, ctx: ctx, isMelee: isMelee };
+      }
+    });
+  });
+
+  // No attack landed? Maybe patch up a badly hurt ally.
+  var healAct = null, healTgt = null;
+  actions.forEach(function(a, idx) {
+    if (a.kind !== 'heal') return;
+    var hurt = combatants.filter(function(c) { return c.type === attacker.type && c.hp > 0 && c.hp < c.maxHp * 0.5; })
+      .sort(function(a2, b2) { return (a2.hp / a2.maxHp) - (b2.hp / b2.maxHp); })[0];
+    if (hurt && (!healTgt)) { healAct = { a: a, idx: idx }; healTgt = hurt; }
+  });
+
+  if (!best && !healTgt) {
+    box.innerHTML = '<div style="padding:8px 10px;border:1px dashed rgba(255,255,255,0.15);border-radius:6px;font-size:12px;color:var(--text-dim);">🧠 No obvious play — no living targets in sight.</div>';
+    return;
+  }
+
+  // Prefer a strong attack; only default to healing when there's no attack option at all.
+  var useHeal = !best && healTgt;
+  if (useHeal) {
+    box.innerHTML = tacticsCard('❤ Heal ' + esc(healTgt.name), '<span style="color:#8fd050;">' + esc(healTgt.name) + '</span> is badly hurt (' + healTgt.hp + '/' + healTgt.maxHp + ') — patch them up with ' + esc(healAct.a.name) + '.', combatantId, healTgt.id, healAct.idx);
+    return;
+  }
+
+  // Build the reasoning for the chosen attack
+  var t = best.target;
+  var reasons = [];
+  var inRangeFoes = foes.filter(function(f) {
+    var fp = (typeof mapState !== 'undefined' && mapState.tokens) ? mapState.tokens[f.id] : null;
+    return !(aPos && fp) || dmDistFt(aPos, fp) <= (best.action.range || 5);
+  });
+  var lowestInReach = inRangeFoes.slice().sort(function(a2, b2) { return a2.hp - b2.hp; })[0];
+  if (best.inRange) {
+    reasons.push(lowestInReach && lowestInReach.id === t.id ? 'lowest HP in reach' : 'best target in reach');
+  } else {
+    reasons.push('nearest foe — close the distance first');
+  }
+  if (t.hp <= best.exp) reasons.push('likely a kill (≈' + Math.round(best.exp) + ' dmg vs ' + t.hp + ' HP)');
+  if ((best.ctx.net || 0) > 0) reasons.push('you have advantage');
+  else if ((best.ctx.net || 0) < 0) reasons.push('at disadvantage, but still your best shot');
+  if (!best.isMelee) {
+    var meleeExists = actions.some(function(a) { return a.kind !== 'heal' && (a.range || 5) <= 5; });
+    var meleeReaches = meleeExists && aPos && foes.some(function(f) { var fp = mapState.tokens[f.id]; return fp && dmDistFt(aPos, fp) <= 5; });
+    if (meleeExists && !meleeReaches) reasons.push('staying ranged — they\'re kiting you');
+  }
+  var distNote = best.dist != null ? ' · ' + best.dist + ' ft' + (best.inRange ? '' : ' ⚠ out of range') : '';
+  box.innerHTML = tacticsCard(
+    '⚔ ' + esc(best.action.name) + ' → ' + esc(t.name),
+    '<span style="color:#ff9090;">' + esc(t.name) + '</span> (' + t.hp + '/' + t.maxHp + ' HP · AC ' + t.ac + distNote + ') — ' + reasons.join(' · ') + '.',
+    combatantId, t.id, best.idx);
+}
+
+function tacticsCard(title, body, attackerId, targetId, actionIdx) {
+  return '<div style="padding:10px 12px;border:1px solid rgba(150,110,230,0.5);border-radius:6px;background:rgba(120,90,200,0.1);margin-bottom:4px;">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' +
+      '<span style="font-family:Cinzel,serif;font-size:13px;color:#c8a8ff;flex:1;">🧠 ' + title + '</span>' +
+      '<button class="btn btn-gold btn-sm" onclick="dmExecuteAction(' + attackerId + ',' + targetId + ',' + actionIdx + ')">Do it</button>' +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--text-dim);line-height:1.5;">' + body + '</div>' +
+  '</div>';
 }
 
 // ─── Damage type inference from action names ─────────────────

@@ -100,6 +100,6 @@ git checkout <branch>
 4. ~~**Ambient auto-sound**~~ ✅ DONE — `js/sound.js`: WebAudio-synthesized stings (`dmSound`) auto-fire on combat start / boss <25% HP (`checkBossLowSound`) / phase change / victory. Toggle + previews on the Sound tab.
 5. **Clickable towns on generated world map** — tap a town → create/open Location entry; generate its battle map on demand.
 6. ~~**Death-save drama on Table Mode**~~ ✅ DONE — `renderTableDeathDrama(d)` in player-view.html shows dying allies' portraits + ●●○ save/fail pips on the shared table screen (`?table=1`); private per-phone death card suppressed in table mode.
-7. **Monster tactics hint** — "🧠 suggest" in the enemy act menu picks a sensible action/target (lowest-HP PC in reach, ranged if kited).
+7. ~~**Monster tactics hint**~~ ✅ DONE — `dmSuggestTactics` (player-actions.js): "🧠 Suggest" in the enemy act menu scores actions×targets (focus-fire lowest-HP in reach, finish kills, stay ranged when kited, heal a hurt ally) and offers a one-click "Do it" that still routes through the DM roll modal.
 
 Test each with the Playwright pattern above and ship via branch → main.
