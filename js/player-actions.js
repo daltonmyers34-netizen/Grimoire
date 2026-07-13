@@ -34,6 +34,9 @@ var CONDITION_EFFECTS = {
   'Hastened':     { extraAction: 1, acMod: 2, speedFactor: 2 },
   'Slowed':       { acMod: -2, halfSpeed: true },
   'Shielded':     { acMod: 5 }, // Shield spell — until the start of their next turn
+  'Blessed':      { attackMod: 2, saveMod: 2 },   // Bless (≈ +1d4)
+  'Baned':        { attackMod: -2, saveMod: -2 }, // Bane (≈ -1d4)
+  'Bardic Die':   {},                             // spend it at the table, DM removes
   'Half Cover':   { acMod: 2, dexSaveMod: 2 },
   '3/4 Cover':    { acMod: 5, dexSaveMod: 5 },
   'Disengaged':   {}
@@ -45,6 +48,7 @@ var FEATURE_TOGGLES = {
   'Reckless Attack': { condition: 'Reckless', cost: 'free'   },
   'Dodge':           { condition: 'Dodging',  cost: 'action' },
   'Action Surge':    { instant: 'extraAction', cost: 'free'  }, // fighter: one more action, once per rest
+  'Second Wind':     { instant: 'secondWind',  cost: 'bonus' }, // fighter: self-heal 1d10+level, once per rest
   'Disengage':       { condition: 'Disengaged', cost: 'action' } // no opportunity attacks until your next turn
 };
 
@@ -224,6 +228,18 @@ function computeAttackContext(attacker, target, action) {
   var isMelee = (parseInt(action.range) || 5) <= 5;
   var adv = false, dis = false, autoCrit = false;
   var notes = [];
+  // Firing a bow with a sword in your face: disadvantage
+  if (!isMelee && typeof mapState !== 'undefined' && mapState.tokens) {
+    var aPos = mapState.tokens[attacker.id];
+    if (aPos) {
+      var crowded = combatants.some(function(en) {
+        if (en.id === attacker.id || en.hp <= 0 || en.type === attacker.type) return false;
+        var ep = mapState.tokens[en.id];
+        return ep && dmDistFt(aPos, ep) <= 5;
+      });
+      if (crowded) { dis = true; notes.push('enemy within melee reach — ranged attack (disadvantage)'); }
+    }
+  }
   (attacker.conditions || []).forEach(function(cn) {
     var eff = CONDITION_EFFECTS[cn]; if (!eff) return;
     if (eff.selfDis) { dis = true; notes.push('you are ' + cn.toLowerCase() + ' (disadvantage)'); }
@@ -242,21 +258,42 @@ function computeAttackContext(attacker, target, action) {
   return { net: net, autoCrit: autoCrit, isMelee: isMelee, notes: notes };
 }
 
-// Ability mod for saves: PCs use their sheet; monsters estimate +1
+// Class saving-throw proficiencies (PHB) — every plus that should apply, applies
+var SAVE_PROFICIENCIES = {
+  Barbarian: ['str','con'], Bard: ['dex','cha'], Cleric: ['wis','cha'], Druid: ['int','wis'],
+  Fighter: ['str','con'], Monk: ['str','dex'], Paladin: ['wis','cha'], Ranger: ['str','dex'],
+  Rogue: ['dex','int'], Sorcerer: ['con','cha'], Warlock: ['wis','cha'], Wizard: ['int','wis']
+};
+
+// Ability mod for saves: PCs use their sheet + save proficiency; monsters estimate +1
 function saveBonusFor(combatant, ability) {
   var bonus = 1;
   var pc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === combatant.name; });
   if (pc && pc[ability]) {
     var score = typeof effectiveAbility === 'function' ? effectiveAbility(pc, ability) : pc[ability];
     bonus = Math.floor((score - 10) / 2);
+    var profs = SAVE_PROFICIENCIES[pc.cls] || [];
+    if (profs.indexOf(ability) >= 0) {
+      bonus += typeof getProfBonus === 'function' ? getProfBonus(pc.level || 1) : 2;
+    }
   }
-  if (ability === 'dex') {
-    (combatant.conditions || []).forEach(function(cn) {
-      var eff = CONDITION_EFFECTS[cn];
-      if (eff && eff.dexSaveMod) bonus += eff.dexSaveMod;
-    });
-  }
+  (combatant.conditions || []).forEach(function(cn) {
+    var eff = CONDITION_EFFECTS[cn];
+    if (!eff) return;
+    if (ability === 'dex' && eff.dexSaveMod) bonus += eff.dexSaveMod;
+    if (eff.saveMod) bonus += eff.saveMod;
+  });
   return bonus;
+}
+
+// Attack roll modifier from conditions (Bless +2, Bane -2)
+function conditionAttackMod(c) {
+  var m = 0;
+  (c.conditions || []).forEach(function(cn) {
+    var eff = CONDITION_EFFECTS[cn];
+    if (eff && eff.attackMod) m += eff.attackMod;
+  });
+  return m;
 }
 
 // A player's request got refused — tell THEIR screen, not just the DM's
@@ -332,6 +369,7 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
     return null;
   }
   if (window.pendingReaction && window.pendingReaction.targetId !== attacker.id) clearPendingReaction();
+  if (window.pendingSmite && window.pendingSmite.attackerId !== attacker.id) window.pendingSmite = null;
 
   // Action economy: attacks/heals cost your Action (or Bonus if flagged)
   var cost = a.cost === 'bonus' ? 'bonus' : 'action';
@@ -371,6 +409,8 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
       ? Math.max(1, Math.min(20, parseInt(opts.roll) || 1))
       : rollD20WithAdvState(ctx.net);
     var bonus = parseInt(a.bonus) || 0;
+    var condMod = conditionAttackMod(attacker);
+    if (condMod) { bonus += condMod; result.notes.push((condMod > 0 ? '+' : '') + condMod + ' ' + ((attacker.conditions || []).indexOf('Blessed') >= 0 ? 'blessed' : 'baned')); }
     var total = roll + bonus;
     var effAC = (target.ac || 10) + conditionACMod(target);
     var crit = roll === 20 || (ctx.autoCrit && total >= effAC);
@@ -389,6 +429,15 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
           var bmd = (CONDITION_EFFECTS[cn] || {}).bonusMeleeDamage;
           if (bmd) { amount += bmd; result.notes.push('+' + bmd + ' rage damage'); }
         });
+      }
+      // Sneak Attack: rogues with advantage, automatically, once per turn
+      var sneakPc = party.find(function(p) { return p.name === attacker.name && (p.features || []).indexOf('Sneak Attack') >= 0; });
+      if (sneakPc && ctx.net > 0 && !ensureTurnUsed(attacker).sneakUsed) {
+        var sneakDice = Math.ceil((sneakPc.level || 1) / 2);
+        var sneak = rollDiceExpr(sneakDice + 'd6');
+        amount += sneak.total;
+        ensureTurnUsed(attacker).sneakUsed = true;
+        result.notes.push('🗡 +' + sneak.total + ' SNEAK ATTACK (' + sneakDice + 'd6)');
       }
       var dmgType = a.damageType || inferDamageType(a.name);
       var def = applyDamageWithDefenses(target, amount, dmgType);
@@ -460,6 +509,17 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
 
   window.lastActionResult = result;
   if (result.kind === 'attack' && target.type === 'ally') offerReaction(target, result, attacker);
+  // Divine Smite: a paladin just connected in melee — offer to burn a slot
+  if (result.kind === 'attack' && result.hit && ctx.isMelee && opts.source === 'player') {
+    var smitePc = party.find(function(p) { return p.name === attacker.name && (p.features || []).indexOf('Divine Smite') >= 0; });
+    if (smitePc && (smitePc.spellSlots || []).some(function(sl) { return sl.max > 0 && sl.used < sl.max; })) {
+      window.pendingSmite = { id: Date.now(), attackerId: attacker.id, attackerName: attacker.name, targetId: target.id, targetName: target.name,
+        slots: (smitePc.spellSlots || []).map(function(sl, i) { return { level: i + 1, free: sl.max - sl.used, max: sl.max }; }).filter(function(o) { return o.max > 0; }),
+        crit: !!result.crit, ts: new Date().toISOString() };
+    }
+  } else if (window.pendingSmite && opts.source === 'player') {
+    window.pendingSmite = null;
+  }
   renderCombatants();
   if (typeof renderMap === 'function') renderMap();
   if (window.cloudSave) window.cloudSave();
@@ -492,6 +552,10 @@ function offerReaction(target, result, attacker) {
       offers.push({ spell: 'Hellish Rebuke', desc: 'hellfire engulfs ' + attacker.name + ' — DEX save or 2d10 fire' });
     }
   });
+  // Uncanny Dodge (rogue feature): halve the damage — no slot needed
+  if ((pc.features || []).indexOf('Uncanny Dodge') >= 0 && result.hit && result.amount > 1) {
+    offers.push({ spell: 'Uncanny Dodge', desc: 'roll with the blow — take ' + Math.floor(result.amount / 2) + ' instead of ' + result.amount });
+  }
   if (!offers.length) return;
   window.pendingReaction = {
     id: Date.now(), targetId: target.id, targetName: target.name,
@@ -535,6 +599,14 @@ function processPlayerReaction(req) {
     showToast('🛡✨ ' + target.name + ' — SHIELD!', 'success');
     window.lastActionResult = { id: Date.now(), kind: 'spell', caster: target.name, spellName: 'Shield', slotLevel: 1,
       targets: [], notes: ['⚡ Reaction! The blow glances off — ' + pending.amount + ' damage undone', '+5 AC until their next turn'], ts: new Date().toISOString() };
+  } else if (req.spell === 'Uncanny Dodge') {
+    var back = pending.amount - Math.floor(pending.amount / 2);
+    target.hp = Math.min(target.maxHp, target.hp + back);
+    if (target.hp > 0) target.conditions = (target.conditions || []).filter(function(x) { return x !== 'Unconscious'; });
+    logCombat('🌀 ' + target.name + ' UNCANNY DODGE — rolls with the blow, ' + back + ' damage shrugged off', 'heal');
+    showToast('🌀 ' + target.name + ' — Uncanny Dodge!', 'success');
+    window.lastActionResult = { id: Date.now(), kind: 'spell', caster: target.name, spellName: 'Uncanny Dodge', slotLevel: 0,
+      targets: [], notes: ['⚡ Reaction! Damage halved — ' + back + ' shrugged off'], ts: new Date().toISOString() };
   } else if (req.spell === 'Hellish Rebuke') {
     burnLowestSlot(pc, 1);
     var dc = spellSaveDC(pc, { level: 1 });
@@ -574,6 +646,9 @@ function processPlayerAction(req) {
     else if (req.type === 'castSpell') processCastSpell(req);
     else if (req.type === 'useItem') processUseItem(req);
     else if (req.type === 'reaction') processPlayerReaction(req);
+    else if (req.type === 'smite') processPlayerSmite(req);
+    else if (req.type === 'inspire') processPlayerInspire(req);
+    else if (req.type === 'standUp') processPlayerStandUp(req);
   } catch(e) {
     console.error('processPlayerAction', e);
   }
@@ -855,6 +930,23 @@ function processToggleFeature(req) {
   var c = combatants.find(function(x) { return x.id === req.combatantId; });
   var ft = FEATURE_TOGGLES[req.feature];
   if (!c || !ft) return;
+  if (ft.instant === 'secondWind') {
+    if (!requireTurn(c)) return;
+    if (c.secondWindUsed) { showToast('🚫 ' + c.name + ' already used Second Wind (recharges on a rest)', 'warn'); rejectPlayer(c, 'Second Wind already spent — recharges on a rest'); return; }
+    if (combatActive && !actionAvailable(c, 'bonus')) { showToast('🚫 bonus action spent', 'warn'); rejectPlayer(c, 'Already used your bonus action'); return; }
+    var swPc = party.find(function(p) { return p.name === c.name; });
+    var heal = rollDiceExpr('1d10').total + ((swPc && swPc.level) || 1);
+    var prevSW = c.hp;
+    c.hp = Math.min(c.maxHp, c.hp + heal);
+    c.secondWindUsed = true;
+    if (combatActive) spendActionFor(c, 'bonus');
+    logCombat('💨 ' + c.name + ' SECOND WIND — heals ' + (c.hp - prevSW) + ' (' + prevSW + '→' + c.hp + ' HP)', 'heal');
+    showToast('💨 ' + c.name + ' — Second Wind! +' + (c.hp - prevSW), 'success');
+    window.lastActionResult = { id: Date.now(), kind: 'heal', attacker: c.name, target: c.name, actionName: 'Second Wind', amount: c.hp - prevSW, hit: true, notes: [], ts: new Date().toISOString() };
+    renderCombatants();
+    if (window.cloudSave) window.cloudSave();
+    return;
+  }
   // Instant features (Action Surge): grant now, no stance
   if (ft.instant === 'extraAction') {
     if (!requireTurn(c)) return;
@@ -1156,6 +1248,10 @@ function processCastSpell(req) {
       if (spell.applyCondition && CONDITION_EFFECTS[spell.applyCondition] !== undefined) {
         t.conditions = t.conditions || [];
         if (t.conditions.indexOf(spell.applyCondition) < 0) t.conditions.push(spell.applyCondition);
+        if (spell.concentration) {
+          t.condMeta = t.condMeta || {};
+          t.condMeta[spell.applyCondition] = { linkedCaster: caster.name, linkedSpell: spell.name };
+        }
         entry.buffed = spell.applyCondition;
         logCombat('✨ ' + caster.name + ' — ' + spell.name + ': ' + t.name + ' is ' + spell.applyCondition + '!', 'heal');
       } else {
@@ -1675,23 +1771,36 @@ function processUseItem(req) {
   var c = combatants.find(function(x) { return x.name === pc.name && x.type === 'ally'; });
 
   if (item.slot === 'potion') {
-    // Your table rule: costs a bonus action only during combat
+    // Feeding someone else costs your ACTION and 5 ft reach; drinking it yourself
+    // is a bonus action (your table rule) — and only during combat either way
+    var drinker = c;
+    var feeding = false;
+    if (req.targetId && c && req.targetId !== c.id) {
+      var tgt = combatants.find(function(x) { return x.id === req.targetId; });
+      if (!tgt) return;
+      var myPos2 = (typeof mapState !== 'undefined' && mapState.tokens) ? mapState.tokens[c.id] : null;
+      var tPos2 = (typeof mapState !== 'undefined' && mapState.tokens) ? mapState.tokens[tgt.id] : null;
+      if (myPos2 && tPos2 && dmDistFt(myPos2, tPos2) > 5) { rejectPlayer(c, 'Too far — get within 5 ft to feed them the potion'); return; }
+      drinker = tgt;
+      feeding = true;
+    }
     if (combatActive && c) {
       if (!requireTurn(c)) return;
-      if (!actionAvailable(c, 'bonus')) { showToast('🚫 ' + pc.name + ' already used their bonus action', 'warn'); rejectPlayer(c, 'Already used your bonus action'); return; }
-      spendActionFor(c, 'bonus');
+      var potCost = feeding ? 'action' : 'bonus';
+      if (!actionAvailable(c, potCost)) { showToast('🚫 ' + pc.name + ' already used their ' + potCost, 'warn'); rejectPlayer(c, 'Already used your ' + potCost); return; }
+      spendActionFor(c, potCost);
     }
     var heal = rollDiceExpr(item.healDice || '2d4+2');
-    if (c) {
-      var prev = c.hp;
-      c.hp = Math.min(c.maxHp, c.hp + heal.total);
-      if (prev === 0 && c.hp > 0) c.conditions = (c.conditions || []).filter(function(x) { return x !== 'Unconscious'; });
-      logCombat('🧪 ' + pc.name + ' drinks ' + item.name + ' — heals ' + (c.hp - prev) + ' (' + prev + '→' + c.hp + ' HP)', 'heal');
-      window.lastActionResult = { id: Date.now(), kind: 'heal', attacker: pc.name, target: pc.name, actionName: item.name, amount: c.hp - prev, hit: true, notes: [], ts: new Date().toISOString() };
+    if (drinker) {
+      var prev = drinker.hp;
+      drinker.hp = Math.min(drinker.maxHp, drinker.hp + heal.total);
+      if (prev === 0 && drinker.hp > 0) drinker.conditions = (drinker.conditions || []).filter(function(x) { return x !== 'Unconscious' && x !== 'Stable'; });
+      logCombat('🧪 ' + pc.name + (feeding ? ' pours ' + item.name + ' into ' + drinker.name : ' drinks ' + item.name) + ' — heals ' + (drinker.hp - prev) + ' (' + prev + '→' + drinker.hp + ' HP)', 'heal');
+      window.lastActionResult = { id: Date.now(), kind: 'heal', attacker: pc.name, target: drinker.name, actionName: item.name, amount: drinker.hp - prev, hit: true, notes: feeding && prev === 0 ? [drinker.name + ' sputters back to consciousness!'] : [], ts: new Date().toISOString() };
     } else {
       logCombat('🧪 ' + pc.name + ' drinks ' + item.name + ' (' + heal.total + ' HP — not in combat, DM adjust as needed)', 'heal');
     }
-    showToast('🧪 ' + pc.name + ' drinks ' + item.name + ' — +' + heal.total, 'success');
+    showToast('🧪 ' + (feeding ? drinker.name + ' fed ' : pc.name + ' drinks ') + item.name + ' — +' + heal.total, 'success');
   } else {
     showToast('🎒 ' + pc.name + ' uses ' + item.name, 'info');
     logCombat('🎒 ' + pc.name + ' uses ' + item.name, 'info');
@@ -1738,4 +1847,95 @@ function upsertHomebrewSpell(spell) {
   var dl = document.getElementById('spell-db-names');
   if (dl) dl.remove(); // rebuilt with homebrew on next open
   return isNew;
+}
+
+// ─── Divine Smite: burn a slot after the hit lands ───────────
+function processPlayerSmite(req) {
+  var pending = window.pendingSmite;
+  if (!pending || pending.id !== req.smiteId || pending.attackerId !== req.combatantId) {
+    if (req.accept !== false) showToast('⏳ Too late for the smite — the moment passed', 'info');
+    window.pendingSmite = null;
+    if (window.cloudSave) window.cloudSave();
+    return;
+  }
+  window.pendingSmite = null;
+  if (req.accept === false) { if (window.cloudSave) window.cloudSave(); return; }
+  var attacker = combatants.find(function(x) { return x.id === pending.attackerId; });
+  var target = combatants.find(function(x) { return x.id === pending.targetId; });
+  var pc = party.find(function(p) { return attacker && p.name === attacker.name; });
+  if (!attacker || !target || !pc) return;
+  var lvl = Math.max(1, parseInt(req.slotLevel) || 1);
+  var slot = (pc.spellSlots || [])[lvl - 1];
+  if (!slot || slot.used >= slot.max) { rejectPlayer(attacker, 'No level ' + lvl + ' slot left for the smite'); return; }
+  slot.used++;
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+  snapshotBeforeAction();
+  var diceCount = Math.min(5, 1 + lvl) * (pending.crit ? 2 : 1); // 2d8 at L1, +1d8/level, doubled on crit
+  var dmg = rollDiceExpr(diceCount + 'd8');
+  var def = applyDamageWithDefenses(target, dmg.total, 'radiant');
+  target.hp = Math.max(0, target.hp - def.taken);
+  logCombat('✨⚔ ' + attacker.name + ' DIVINE SMITE (L' + lvl + (pending.crit ? ', CRIT' : '') + ') — +' + def.taken + ' radiant to ' + target.name + (def.notes.length ? ' · ' + def.notes.join(', ') : ''), 'damage');
+  showToast('✨⚔ DIVINE SMITE — ' + def.taken + ' radiant!', 'success');
+  window.lastActionResult = { id: Date.now(), kind: 'spell', caster: attacker.name, spellName: 'Divine Smite', slotLevel: lvl,
+    targets: [{ name: target.name, type: target.type, hit: true, taken: def.taken, defNotes: def.notes }],
+    notes: [diceCount + 'd8 radiant' + (pending.crit ? ' (crit doubled!)' : '')], ts: new Date().toISOString() };
+  if (typeof renderParty === 'function') renderParty();
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+}
+
+// ─── Bardic Inspiration: hand an ally the die ────────────────
+function processPlayerInspire(req) {
+  var bard = combatants.find(function(x) { return x.id === req.combatantId; });
+  var target = combatants.find(function(x) { return x.id === req.targetId; });
+  if (!bard || !target || !requireTurn(bard)) return;
+  if (bard.bardicUsed) { rejectPlayer(bard, 'Bardic Inspiration already given — recharges on a rest'); return; }
+  if (combatActive && !actionAvailable(bard, 'bonus')) { rejectPlayer(bard, 'Already used your bonus action'); return; }
+  if (combatActive) spendActionFor(bard, 'bonus');
+  bard.bardicUsed = true;
+  target.conditions = target.conditions || [];
+  if (target.conditions.indexOf('Bardic Die') < 0) target.conditions.push('Bardic Die');
+  logCombat('🎵 ' + bard.name + ' inspires ' + target.name + ' — they hold a Bardic Inspiration die (add it to any roll, then the DM clears the tag)', 'heal');
+  showToast('🎵 ' + target.name + ' is INSPIRED!', 'success');
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+}
+
+// ─── Stand up from Prone (half your movement) ────────────────
+function processPlayerStandUp(req) {
+  var c = combatants.find(function(x) { return x.id === req.combatantId; });
+  if (!c || !requireTurn(c)) return;
+  if ((c.conditions || []).indexOf('Prone') < 0) return;
+  var base = parseInt(req.baseSpeed) || 30;
+  var cost = Math.floor(base / 2);
+  if (combatActive) {
+    var tu = ensureTurnUsed(c);
+    if (tu.movedFt + cost > base) { rejectPlayer(c, 'Not enough movement left to stand (needs ' + cost + ' ft)'); return; }
+    tu.movedFt += cost;
+  }
+  c.conditions = c.conditions.filter(function(x) { return x !== 'Prone'; });
+  logCombat('🧍 ' + c.name + ' stands up (' + cost + ' ft of movement)', 'info');
+  showToast('🧍 ' + c.name + ' is back on their feet', 'info');
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+}
+
+// ─── Concentration links: buff dies when the caster's focus breaks ──
+function dropLinkedConditions(casterName, spellName) {
+  var dropped = [];
+  combatants.forEach(function(c) {
+    var meta = c.condMeta || {};
+    (c.conditions || []).slice().forEach(function(cond) {
+      var m = meta[cond];
+      if (m && m.linkedCaster === casterName && m.linkedSpell === spellName) {
+        c.conditions = c.conditions.filter(function(x) { return x !== cond; });
+        delete meta[cond];
+        dropped.push(c.name + ' loses ' + cond);
+      }
+    });
+  });
+  if (dropped.length) {
+    logCombat('💫 Concentration broken — ' + dropped.join(', '), 'info');
+    renderCombatants();
+  }
 }

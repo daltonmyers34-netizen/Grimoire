@@ -75,7 +75,7 @@ function togglePartyInspiration(id) {
 function setCombatantConc(id) {
   var c = combatants.find(function(x) { return x.id === id; });
   if (!c) return;
-  if (c.concentrating) { c.concentrating = null; renderCombatants(); syncCombatState(); showToast(c.name + ' dropped concentration', 'info'); return; }
+  if (c.concentrating) { var oldSpell = c.concentrating; c.concentrating = null; if (typeof dropLinkedConditions === 'function') dropLinkedConditions(c.name, oldSpell); renderCombatants(); syncCombatState(); showToast(c.name + ' dropped concentration', 'info'); return; }
   var spell = window.prompt(c.name + ' is concentrating on...', '');
   if (spell === null) return;
   c.concentrating = spell || 'a spell';
@@ -97,6 +97,7 @@ function checkConcentration(c, damage) {
       showToast('🧠 ' + c.name + ' holds concentration on ' + spell + ' (' + total + ' vs DC ' + dc + ')', 'info');
     } else {
       c.concentrating = null;
+      if (typeof dropLinkedConditions === 'function') dropLinkedConditions(c.name, spell);
       combatLog.unshift({ round: currentRound || 0, text: '💫 ' + c.name + ' LOSES concentration on "' + spell + '" (CON ' + total + ' vs DC ' + dc + ')', type: 'damage', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) });
       showToast('💫 ' + c.name + ' loses concentration on ' + spell + '!', 'danger');
       renderCombatants();
@@ -131,7 +132,7 @@ function shortRest() {
     if (cmb) { cmb.hp = Math.min(cmb.maxHp, cmb.hp + heal); }
     pc.lastRest = 'short';
   });
-  combatants.forEach(function(c) { if (c.type === 'ally') c.actionSurgeUsed = false; });
+  combatants.forEach(function(c) { if (c.type === 'ally') { c.actionSurgeUsed = false; c.secondWindUsed = false; c.bardicUsed = false; } });
   savePartyStorage();
   renderParty();
   renderCombatants();
@@ -153,7 +154,7 @@ function longRest() {
     if (pc.spellSlots) pc.spellSlots.forEach(function(sl) { sl.used = 0; });
     pc.usedSlots = {}; // legacy compat
   });
-  combatants.forEach(function(c) { if (c.type === 'ally') c.actionSurgeUsed = false; });
+  combatants.forEach(function(c) { if (c.type === 'ally') { c.actionSurgeUsed = false; c.secondWindUsed = false; c.bardicUsed = false; } });
   // Also heal allies in combat
   combatants.filter(function(c) { return c.type === 'ally'; }).forEach(function(c) { c.hp = c.maxHp; });
   savePartyStorage();
