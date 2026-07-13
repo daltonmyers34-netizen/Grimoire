@@ -31,6 +31,7 @@ Key globals (js/app.js): `party`, `combatants`, `currentTurn`, `round` (NOT `cur
 | `js/party.js` | Character CRUD, tabbed character modal (`pmSwitchTab`: basics/combat/skills), FEAT_IDS checkbox↔feature mapping (in TWO places + reset list — keep all three in sync), inventory modal, spell rows |
 | `js/map.js` | Battle map engine (tokens, fog, walls, generators, AoE ghosts, uploads), world/town map tab (`renderWorldMapTab`, `generateWorldMap`, `deleteWorldMap`) |
 | `js/combat-view.js` | 🎬 full-screen DM combat mode (adopts `#tab-initiative`/`#tab-map` via DOM move, restores on exit), enemy drop-loot system (`generateDropLoot` by CR + name theme, death → `battlefieldLoot` → give/split UI), and auto-XP banking on enemy death (`cvCheckEnemyXP` → `bankMonsterXP` in world.js). Wraps `renderCombatants` and `endCombat` at load. |
+| `js/sound.js` | Ambient auto-sound: WebAudio stings (`dmSound(kind)` — combatStart/bossLow/bossPhase/victory/combatEnd) synthesized live. Auto-fired from startCombat/endCombat (initiative.js), the renderCombatants wrapper (`checkBossLowSound`), and checkBossPhases (boss.js). Toggle `dmAmbientOn` (localStorage) + previews on the Sound tab. |
 | `js/boss.js` | Boss mechanics: `maybeLegendaryResist` (spend to turn a failed enemy save into a success — hooked in player-actions.js save sites), `checkLairActions` (initiative-20 modal on round start, from initiative.js), `checkBossPhases` (HP-threshold banners, from the renderCombatants wrapper), `resetBossState` (startCombat). Config on the combatant: `legendaryResist{max,left}`, `lairActions[]`, `phases[{pct,note,fired}]` — set in the monster action editor (`dmEditActions`/`dmSaveActions`). |
 | `js/firebase.js` | Module: auth, `cloudSave` (800ms debounce) / `cloudSaveNow`, `doCloudWrite` builds the **pvSnap**, `listenForPlayerActions`, `uploadToStorage`, homebrew save/load |
 | `js/session.js` | `collectState`/`applyState` (every persisted field lives here — add new globals to BOTH), `newCampaign` |
@@ -96,7 +97,7 @@ git checkout <branch>
 1. ~~**XP auto-award on kill**~~ ✅ DONE — CR-based XP (`XP_BY_CR`, world.js) banks to `pendingXP` on enemy death; one button (`awardPendingXP`) splits to party. Shown in the XP tab and the Combat View loot panel.
 2. ~~**Boss mechanics**~~ ✅ DONE — legendary resistances, lair actions on initiative 20, HP-threshold phase prompts. See `js/boss.js`.
 3. **Session recap generator** — combat log + loot log + quest updates → "Previously on..." paragraph, shown on player phones next session.
-4. **Ambient auto-sound** — combat start/boss low HP/victory triggers wired to the Sound tab.
+4. ~~**Ambient auto-sound**~~ ✅ DONE — `js/sound.js`: WebAudio-synthesized stings (`dmSound`) auto-fire on combat start / boss <25% HP (`checkBossLowSound`) / phase change / victory. Toggle + previews on the Sound tab.
 5. **Clickable towns on generated world map** — tap a town → create/open Location entry; generate its battle map on demand.
 6. **Death-save drama on Table Mode** — dying PC's portrait shows ●●○ pips on the shared screen.
 7. **Monster tactics hint** — "🧠 suggest" in the enemy act menu picks a sensible action/target (lowest-HP PC in reach, ranged if kited).

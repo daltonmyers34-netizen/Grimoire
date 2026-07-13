@@ -28,6 +28,7 @@ function resetBossState() {
   combatants.forEach(function(c) {
     if (c.legendaryResist && c.legendaryResist.max) c.legendaryResist.left = c.legendaryResist.max;
     (c.phases || []).forEach(function(p) { p.fired = false; });
+    c._lowHpSounded = false; // ambient boss-low cue re-arms for the new fight
   });
 }
 
@@ -88,7 +89,10 @@ function checkBossPhases() {
       }
     });
   });
-  if (fired.length) showPhaseBanner(fired);
+  if (fired.length) {
+    showPhaseBanner(fired);
+    if (typeof dmSound === 'function') dmSound('bossPhase');
+  }
 }
 
 function showPhaseBanner(fired) {

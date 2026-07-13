@@ -246,6 +246,7 @@ function startCombat() {
   updateRoundDisplay();
   renderCombatants();
   syncCombatState();
+  if (typeof dmSound === 'function') dmSound('combatStart'); // war horn
   if (typeof checkLairActions === 'function') checkLairActions(); // initiative 20, round 1
   // Offer full-screen combat mode (unless it's already open)
   if (typeof combatViewOpen === 'undefined' || !combatViewOpen) {
@@ -378,6 +379,12 @@ function prevTurn() {
 
 // End combat and stop the timer
 function endCombat() {
+  // Victory fanfare if every enemy is down; a soft close otherwise
+  if (typeof dmSound === 'function') {
+    var hadEnemies = combatants.some(function (c) { return c.type === 'enemy'; });
+    var livingEnemies = combatants.filter(function (c) { return c.type === 'enemy' && c.hp > 0 && !c.hidden; }).length;
+    dmSound(hadEnemies && livingEnemies === 0 ? 'victory' : 'combatEnd');
+  }
   combatActive = false;
   currentTurn = -1;
   round = 0;
