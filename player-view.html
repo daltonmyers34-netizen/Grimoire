@@ -2606,6 +2606,23 @@ if (dmUid) {
     }
     wasMyTurn = nowMyTurn;
 
+    // 🚫 Your request was refused — show it HERE, not just on the DM screen
+    if (d.lastRejection && selectedPcId) {
+      const rej = d.lastRejection;
+      const mineRej = myUnits(d).some(u => u.id === rej.combatantId);
+      if (mineRej && String(rej.id) !== String(window._shownRejId)) {
+        window._shownRejId = rej.id;
+        if (Date.now() - new Date(rej.ts || 0).getTime() < 15000) {
+          closeOverlay(); // kill the "waiting..." spinner
+          pvSound('miss');
+          showOverlay('<div style="text-align:center;">' +
+            '<div style="font-size:26px;margin-bottom:6px;">🚫</div>' +
+            '<div style="font-size:15px;color:#ff8080;">' + esc(rej.msg) + '</div>' +
+            '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:14px;" onclick="_pvCloseOverlay()">OK</button></div>');
+        }
+      }
+    }
+
     // ⚡ Reaction offer: Shield / Hellish Rebuke on the victim's phone
     if (!tableMode && d.pendingReaction && selectedPcId) {
       const me2 = myCombatant(d);

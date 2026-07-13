@@ -55,6 +55,8 @@ function listenForPlayerActions(uid) {
       } catch(e) { console.error('player action', e); }
       deleteDoc(change.doc.ref).catch(() => {});
     });
+    // Players are staring at their phones waiting — skip the debounce
+    window.cloudSaveNow && window.cloudSaveNow();
   }, err => console.warn('playerActions listener:', err.message));
 }
 
@@ -182,6 +184,7 @@ async function doCloudWrite() {
       worldMap: (typeof worldMap !== 'undefined' && worldMap && worldMap.image) ? worldMap : null,
       actionFeed: window.lastActionResult || null,
       pendingReaction: window.pendingReaction || null,
+      lastRejection: window.lastRejection || null,
       updatedAt: new Date().toISOString()
     };
     await setDoc(doc(db, 'playerView', currentUid), pvSnap);
@@ -213,7 +216,7 @@ window.cloudSave = () => {
   } catch(e) { console.warn('localStorage backup:', e); }
   if (!currentUid) return;
   clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(doCloudWrite, 2000);
+  syncTimeout = setTimeout(doCloudWrite, 800);
 };
 
 // -- UI helpers --------------------------------------------------------
