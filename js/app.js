@@ -21,6 +21,7 @@ let pendingLootEntries = [];
 let partyInventory = JSON.parse(localStorage.getItem('dm-party-inventory') || '[]');
 let timerInterval = null, timerSeconds = 0, timerRunning = false;
 let xpLog = [], totalXP = 0;
+let pendingXP = []; // XP from slain enemies, banked on death, awarded to the party in one click
 let lastGeneratedNPC = null;
 let lastEncounterData = null;
 let savedEncounters = [];
