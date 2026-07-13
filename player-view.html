@@ -451,6 +451,35 @@
     0%, 100% { box-shadow: 0 0 6px rgba(212,175,55,0.25); }
     50% { box-shadow: 0 0 22px rgba(212,175,55,0.55); }
   }
+  /* Table-mode death-save drama */
+  .death-drama {
+    border: 2px solid rgba(224,60,60,0.55);
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(60,10,10,0.55), rgba(30,6,6,0.35));
+    padding: 16px;
+    margin-bottom: 14px;
+    text-align: center;
+    animation: deathPulse 1.4s ease-in-out infinite;
+  }
+  @keyframes deathPulse {
+    0%, 100% { box-shadow: 0 0 10px rgba(224,50,50,0.25); }
+    50% { box-shadow: 0 0 34px rgba(224,50,50,0.6); }
+  }
+  .death-drama-portrait {
+    width: 92px; height: 92px; border-radius: 50%; object-fit: cover;
+    border: 3px solid rgba(224,70,70,0.8);
+    animation: deathPortrait 1.4s ease-in-out infinite;
+  }
+  @keyframes deathPortrait {
+    0%, 100% { filter: grayscale(0.4) brightness(0.9); }
+    50% { filter: grayscale(0.7) brightness(0.6); }
+  }
+  .ds-pip {
+    display: inline-block; width: 22px; height: 22px; line-height: 22px;
+    font-size: 20px; text-align: center;
+  }
+  @keyframes dsPop { 0% { transform: scale(0.2); } 70% { transform: scale(1.35); } 100% { transform: scale(1); } }
+  .ds-pip.filled { animation: dsPop 0.4s ease-out; }
   .pv-action-row {
     display: flex;
     align-items: center;
@@ -1800,6 +1829,51 @@ function openAddCharacter() {
 window._pvOpenAddCharacter = openAddCharacter;
 
 // ══════════════════════════════════════════════════════════════
+// RENDER: Table-mode death-save drama — the whole table watches
+// ══════════════════════════════════════════════════════════════
+function renderTableDeathDrama(d) {
+  const party = d.party || [];
+  const dying = (d.combatants || []).filter(c =>
+    c.type === 'ally' && c.hp <= 0 && !c.isDead && !(c.conditions || []).includes('Stable'));
+  if (!dying.length) return '';
+
+  const pips = (n, on, off) => {
+    let out = '';
+    for (let i = 0; i < 3; i++) {
+      const lit = i < n;
+      out += '<span class="ds-pip ' + (lit ? 'filled' : '') + '" style="color:' + (lit ? on : off) + ';">' + (lit ? '●' : '○') + '</span>';
+    }
+    return out;
+  };
+
+  const cards = dying.map(cmb => {
+    const pc = party.find(p => p.name === cmb.name) || {};
+    const ds = cmb.deathSuccess || 0, df = cmb.deathFail || 0;
+    const portrait = pc.portrait
+      ? '<img src="' + pc.portrait + '" class="death-drama-portrait">'
+      : '<div class="death-drama-portrait" style="display:inline-flex;align-items:center;justify-content:center;font-size:34px;font-family:Cinzel,serif;background:' + avatarColor(cmb.name) + ';color:#fff;">' + initials(cmb.name) + '</div>';
+    let status = '';
+    if (df >= 3) status = '<div style="color:#ff5050;font-family:Cinzel,serif;font-size:14px;letter-spacing:0.1em;margin-top:8px;">☠ FALLEN</div>';
+    else if (ds >= 3) status = '<div style="color:#8fd050;font-family:Cinzel,serif;font-size:14px;letter-spacing:0.1em;margin-top:8px;">✔ STABILIZED</div>';
+    else if (df === 2) status = '<div style="color:#ff8080;font-size:12px;margin-top:8px;">One breath from the end…</div>';
+    else status = '<div style="color:var(--text-dim);font-size:12px;margin-top:8px;">' + (3 - ds) + ' to stabilize · ' + (3 - df) + ' to fall</div>';
+    return '<div style="display:inline-block;margin:0 16px;vertical-align:top;">' +
+      portrait +
+      '<div style="font-family:Cinzel,serif;font-size:17px;color:#ff9090;margin-top:10px;">' + esc(cmb.name) + '</div>' +
+      '<div style="margin-top:8px;display:flex;gap:22px;justify-content:center;">' +
+        '<div><div style="font-size:9px;letter-spacing:0.12em;color:#8fd050;margin-bottom:2px;">SAVES</div>' + pips(ds, '#8fd050', '#38562a') + '</div>' +
+        '<div><div style="font-size:9px;letter-spacing:0.12em;color:#e05050;margin-bottom:2px;">FAILS</div>' + pips(df, '#e05050', '#5a2a2a') + '</div>' +
+      '</div>' + status +
+    '</div>';
+  }).join('');
+
+  return '<div class="death-drama">' +
+    '<div style="font-family:Cinzel,serif;font-size:16px;letter-spacing:0.18em;color:#ff6060;margin-bottom:14px;">💀 DEATH SAVE</div>' +
+    cards +
+  '</div>';
+}
+
+// ══════════════════════════════════════════════════════════════
 // RENDER: Two-Column Layout (main + sidebar)
 // ══════════════════════════════════════════════════════════════
 function renderTwoColumnView(d) {
@@ -1820,6 +1894,7 @@ function renderTwoColumnView(d) {
     '</div>';
   } else {
     html += '<div style="text-align:center;font-family:Cinzel,serif;font-size:11px;letter-spacing:0.15em;color:var(--text-dim);margin-bottom:10px;">📺 TABLE MODE — following the current turn</div>';
+    html += renderTableDeathDrama(d); // dying allies: big portraits + pips for the whole table
   }
 
   // Messages
@@ -1969,8 +2044,9 @@ function renderCharacterCard(d) {
     html += '<div style="margin:8px 0;">' + conditions.map(c => '<span class="cond-tag" style="cursor:pointer;" onclick="_pvCondInfo(\'' + esc(c).replace(/'/g, "\\'") + '\')">' + esc(c) + ' ℹ</span>').join('') + '</div>';
   }
 
-  // Death saves — private: only YOU (and the DM) see your pips
-  if (cmb && curHp <= 0 && maxHp > 0 && !(cmb.conditions || []).includes('Stable') && !cmb.isDead) {
+  // Death saves — private: only YOU (and the DM) see your pips.
+  // In table mode the big death-drama banner handles this instead.
+  if (!tableMode && cmb && curHp <= 0 && maxHp > 0 && !(cmb.conditions || []).includes('Stable') && !cmb.isDead) {
     const ds = cmb.deathSuccess || 0, df = cmb.deathFail || 0;
     let pips = '<span style="color:#8fd050;letter-spacing:3px;">';
     for (let i = 0; i < 3; i++) pips += i < ds ? '●' : '○';

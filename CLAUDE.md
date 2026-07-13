@@ -99,7 +99,7 @@ git checkout <branch>
 3. **Session recap generator** — combat log + loot log + quest updates → "Previously on..." paragraph, shown on player phones next session.
 4. ~~**Ambient auto-sound**~~ ✅ DONE — `js/sound.js`: WebAudio-synthesized stings (`dmSound`) auto-fire on combat start / boss <25% HP (`checkBossLowSound`) / phase change / victory. Toggle + previews on the Sound tab.
 5. **Clickable towns on generated world map** — tap a town → create/open Location entry; generate its battle map on demand.
-6. **Death-save drama on Table Mode** — dying PC's portrait shows ●●○ pips on the shared screen.
+6. ~~**Death-save drama on Table Mode**~~ ✅ DONE — `renderTableDeathDrama(d)` in player-view.html shows dying allies' portraits + ●●○ save/fail pips on the shared table screen (`?table=1`); private per-phone death card suppressed in table mode.
 7. **Monster tactics hint** — "🧠 suggest" in the enemy act menu picks a sensible action/target (lowest-HP PC in reach, ranged if kited).
 
 Test each with the Playwright pattern above and ship via branch → main.
