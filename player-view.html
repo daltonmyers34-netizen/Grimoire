@@ -781,7 +781,7 @@ function pvActionsUsed(c) {
   return tu.actions !== undefined ? tu.actions : (tu.action ? 1 : 0);
 }
 
-const PV_FEATURES = { 'Rage': 'Raging', 'Reckless Attack': 'Reckless', 'Dodge': 'Dodging' };
+const PV_FEATURES = { 'Rage': 'Raging', 'Reckless Attack': 'Reckless', 'Dodge': 'Dodging', 'Disengage': 'Disengaged' };
 
 function pvCanAct(c) {
   for (const cn of (c.conditions || [])) {
@@ -924,6 +924,41 @@ function useAction(actionIdx) {
 window._pvUseAction = useAction;
 
 // ── Monster knowledge: what the party has EARNED about a creature ──
+const PV_COND_INFO = {
+  'Prone': 'Crawling only (half speed). Melee attacks against you have advantage; ranged have disadvantage. Your attacks have disadvantage. Stand up for half your movement.',
+  'Poisoned': 'Disadvantage on attack rolls and ability checks.',
+  'Blinded': 'You can\'t see. Your attacks have disadvantage; attacks against you have advantage.',
+  'Restrained': 'Speed 0. Your attacks have disadvantage, attacks against you have advantage, DEX saves at disadvantage.',
+  'Grappled': 'Speed 0 until you escape.',
+  'Paralyzed': 'You can\'t act or move. Attacks against you have advantage — melee hits are automatic CRITS.',
+  'Stunned': 'You can\'t act or move. Attacks against you have advantage.',
+  'Unconscious': 'Out cold. Attackers have advantage; melee hits auto-crit. Healing wakes you.',
+  'Incapacitated': 'No actions or reactions.',
+  'Invisible': 'Attacks against you have disadvantage; your attacks have advantage.',
+  'Frightened': 'Disadvantage on attacks and checks while the source of fear is in sight.',
+  'Petrified': 'Turned to stone — can\'t act, resistant to all damage.',
+  'Raging': 'Resist physical damage, +2 melee damage.',
+  'Reckless': 'Your attacks have advantage — but so do attacks against you. Ends next turn.',
+  'Dodging': 'Attacks against you have disadvantage until your next turn.',
+  'Disengaged': 'No opportunity attacks against you this turn.',
+  'Hastened': 'Extra action, +2 AC, double speed. (Haste)',
+  'Slowed': '-2 AC, half speed.',
+  'Shielded': '+5 AC until your next turn. (Shield)',
+  'Blessed': '+2 to attacks and saves. (Bless)',
+  'Baned': '-2 to attacks and saves. (Bane)',
+  'Bardic Die': 'You hold a Bardic Inspiration die! Add it to any attack, check, or save — tell the table when you spend it.',
+  'Half Cover': '+2 AC and +2 DEX saves.',
+  '3/4 Cover': '+5 AC and +5 DEX saves.',
+  'Stable': 'At 0 HP but no longer dying.'
+};
+function showCondInfo(name) {
+  const info = PV_COND_INFO[name] || 'Ask your DM what this one does...';
+  showOverlay('<div style="font-family:Cinzel,serif;font-size:16px;color:#ff9090;margin-bottom:8px;">' + esc(name) + '</div>' +
+    '<div style="font-size:14px;line-height:1.6;color:var(--text-secondary);">' + esc(info) + '</div>' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:14px;" onclick="_pvCloseOverlay()">Got it</button>');
+}
+window._pvCondInfo = showCondInfo;
+
 function pvHpDescriptor(c) {
   const pct = (c.hp / (c.maxHp || 1)) * 100;
   if (c.hp <= 0) return { label: 'Down', color: '#777' };
@@ -1182,6 +1217,13 @@ function pvShapeHits(spell, origin, aim, d) {
 }
 
 let pvCastHover = null; // cell under the finger/cursor while aiming a spell
+let pvZoomLevel = 1;    // 1 = fit width, 2 = 200%, 3 = 300%
+function pvZoom(dir) {
+  pvZoomLevel = dir === 0 ? 1 : Math.max(1, Math.min(3, pvZoomLevel + dir));
+  const c = document.getElementById('pv-map-canvas');
+  if (c) c.style.width = (pvZoomLevel * 100) + '%';
+}
+window._pvZoom = pvZoom;
 
 function drawCastGhost(ctx, m, d) {
   if (!pendingCast || !pvCastHover) return;
@@ -1296,6 +1338,33 @@ function finishCast(s, slotLevel, targeting) {
     askDamage(null);
   }
 }
+
+function standUpReq() {
+  const d = latestData;
+  const me = activeUnit(d) || myCombatant(d);
+  const pc = myPC(d);
+  if (!me) return;
+  sendPlayerRequest({ type: 'standUp', combatantId: me.id, baseSpeed: (pc && pc.speed) || 30, ts: Date.now() });
+}
+window._pvStandUp = standUpReq;
+
+function inspireReq() {
+  const d = latestData;
+  const me = myCombatant(d);
+  if (!me || !isMyTurn(d)) return;
+  const allies = (d.combatants || []).filter(c => c.type === 'ally' && c.id !== me.id && c.hp > 0 && !c.owner);
+  let html = '<div style="font-family:Cinzel,serif;font-size:16px;color:#c890ff;margin-bottom:10px;">🎵 Inspire who?</div>';
+  allies.forEach(c => {
+    html += '<button class="pv-target-btn" data-inspire="' + c.id + '"><span style="color:#90c8ff;">' + esc(c.name) + '</span></button>';
+  });
+  html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:8px;" onclick="_pvCloseOverlay()">Cancel</button>';
+  showOverlay(html);
+  document.querySelectorAll('[data-inspire]').forEach(btn => btn.addEventListener('click', () => {
+    closeOverlay();
+    sendPlayerRequest({ type: 'inspire', combatantId: me.id, targetId: parseFloat(btn.dataset.inspire), ts: Date.now() });
+  }));
+}
+window._pvInspire = inspireReq;
 
 function endMyTurn() {
   const d = latestData;
@@ -1761,6 +1830,24 @@ function renderTwoColumnView(d) {
     if (personalMsg) html += '<div class="msg-banner personal-msg">📨 <strong>DM to You:</strong> ' + esc(personalMsg) + '</div>';
   }
 
+  // On deck: heads-up one turn early
+  if (!isMyTurn(d) && d.combatActive && selectedPcId) {
+    const meOn = myCombatant(d);
+    if (meOn) {
+      let n = d.currentTurn;
+      const list = d.combatants || [];
+      for (let step = 0; step < list.length; step++) {
+        n = (n + 1) % list.length;
+        const cand = list[n];
+        if (!cand || cand.hidden || (cand.hp <= 0 && !(cand.type === 'ally' && !cand.isDead && !(cand.conditions || []).includes('Stable')))) continue;
+        if (cand.id === meOn.id) {
+          html += '<div style="text-align:center;font-family:Cinzel,serif;font-size:12px;letter-spacing:0.1em;color:#ffb450;border:1px dashed rgba(255,180,80,0.4);border-radius:6px;padding:6px;margin-bottom:10px;">🔜 YOU\'RE UP NEXT — plan your move!</div>';
+        }
+        break;
+      }
+    }
+  }
+
   // YOUR TURN banner + economy meters + End Turn
   if (isMyTurn(d)) {
     const extraUnits = myUnits(d).filter(u => u.owner);
@@ -1808,6 +1895,18 @@ function renderTwoColumnView(d) {
     html += renderJournalPanel(d);
   } else {
     html += renderCharacterCard(d);
+  }
+
+  // Recent events — what just happened, at your own pace
+  if ((d.recentLog || []).length) {
+    html += '<details style="margin-top:12px;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 14px;">' +
+      '<summary style="font-family:Cinzel,serif;font-size:11px;letter-spacing:0.12em;color:var(--text-dim);cursor:pointer;">📜 RECENT EVENTS</summary>' +
+      '<div style="margin-top:8px;max-height:220px;overflow-y:auto;">' +
+      d.recentLog.slice(0, 20).map(l =>
+        '<div style="font-size:12.5px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);color:' +
+        (l.type === 'damage' ? '#ff9090' : l.type === 'heal' ? '#8fd050' : 'var(--text-dim)') + ';">' +
+        '<span style="color:#555;font-size:10px;">R' + (l.round || '—') + '</span> ' + esc(l.text) + '</div>').join('') +
+      '</div></details>';
   }
 
   html += '</div>'; // close pv-main
@@ -1865,7 +1964,7 @@ function renderCharacterCard(d) {
 
   // Conditions
   if (conditions.length) {
-    html += '<div style="margin:8px 0;">' + conditions.map(c => '<span class="cond-tag">' + esc(c) + '</span>').join('') + '</div>';
+    html += '<div style="margin:8px 0;">' + conditions.map(c => '<span class="cond-tag" style="cursor:pointer;" onclick="_pvCondInfo(\'' + esc(c).replace(/'/g, "\\'") + '\')">' + esc(c) + ' ℹ</span>').join('') + '</div>';
   }
 
   // Death saves — private: only YOU (and the DM) see your pips
@@ -1887,11 +1986,27 @@ function renderCharacterCard(d) {
 
   // Class feature toggles (Rage, Reckless, Dodge)
   if (cmb) {
-    const avail = ['Dodge'].concat((pc.features || []).filter(f => (PV_FEATURES[f] || f === 'Action Surge') && f !== 'Dodge'));
+    const NAMED_FEATS = ['Action Surge', 'Second Wind', 'Bardic Inspiration'];
+    const avail = ['Dodge', 'Disengage'].concat((pc.features || []).filter(f => (PV_FEATURES[f] || NAMED_FEATS.includes(f)) && f !== 'Dodge'));
     const myTurnNow = isMyTurn(d);
     if (avail.length) {
       html += '<div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;">';
+      if ((cmb.conditions || []).includes('Prone')) {
+        html += '<button class="btn-pv" style="font-size:12px;border-color:#ffb450;color:#ffb450;" ' + (myTurnNow ? '' : 'disabled ') + 'onclick="_pvStandUp()">🧍 Stand Up (½ move)</button>';
+      }
       avail.forEach(f => {
+        if (f === 'Second Wind') {
+          const used = !!cmb.secondWindUsed;
+          html += '<button class="btn-pv" style="font-size:12px;' + (used ? 'opacity:0.4;' : 'border-color:#8fd050;color:#8fd050;') + '" ' +
+            ((myTurnNow && !used) ? '' : 'disabled ') + 'onclick="_pvToggleFeature(\'Second Wind\')">💨 Second Wind' + (used ? ' (spent)' : '') + '</button>';
+          return;
+        }
+        if (f === 'Bardic Inspiration') {
+          const used = !!cmb.bardicUsed;
+          html += '<button class="btn-pv" style="font-size:12px;' + (used ? 'opacity:0.4;' : 'border-color:#c890ff;color:#c890ff;') + '" ' +
+            ((myTurnNow && !used) ? '' : 'disabled ') + 'onclick="_pvInspire()">🎵 Inspire' + (used ? ' (spent)' : '') + '</button>';
+          return;
+        }
         if (f === 'Action Surge') {
           const used = !!cmb.actionSurgeUsed;
           html += '<button class="btn-pv" style="font-size:12px;' + (used ? 'opacity:0.4;' : 'border-color:#ffe066;color:#ffe066;') + '" ' +
@@ -2175,7 +2290,34 @@ window._pvSaveJournal = saveJournal;
 function useItemReq(itemId) {
   const d = latestData;
   const pc = myPC(d);
+  const me = myCombatant(d);
   if (!pc) return;
+  const item = (pc.inventory || []).find(i => i.id === itemId);
+  // Potions in combat: drink it yourself (bonus action) or feed a neighbor (action)
+  if (item && item.slot === 'potion' && me && d.combatActive && d.mapState) {
+    const myPos = (d.mapState.tokens || {})[me.id];
+    const nearby = (d.combatants || []).filter(c => {
+      if (c.id === me.id || c.type !== 'ally') return false;
+      const pos = (d.mapState.tokens || {})[c.id];
+      return pos && myPos && distFt(myPos, pos) <= 5;
+    });
+    if (nearby.length) {
+      let html = '<div style="font-family:Cinzel,serif;font-size:16px;color:#90c8ff;margin-bottom:10px;">🧪 ' + esc(item.name) + '</div>';
+      html += '<button class="pv-target-btn" data-drink="self"><span>Drink it yourself</span><span style="margin-left:auto;font-size:11px;color:var(--text-dim);">bonus action</span></button>';
+      nearby.forEach(c => {
+        html += '<button class="pv-target-btn" data-drink="' + c.id + '"><span style="color:#90c8ff;">Feed ' + esc(c.name) + (c.hp <= 0 ? ' 💀' : '') + '</span><span style="margin-left:auto;font-size:11px;color:var(--text-dim);">action · 5 ft</span></button>';
+      });
+      html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:8px;" onclick="_pvCloseOverlay()">Cancel</button>';
+      showOverlay(html);
+      document.querySelectorAll('[data-drink]').forEach(btn => btn.addEventListener('click', () => {
+        closeOverlay();
+        const t = btn.dataset.drink;
+        sendPlayerRequest({ type: 'useItem', pcId: pc.id, itemId, targetId: t === 'self' ? undefined : parseFloat(t), ts: Date.now() });
+        showWaiting('🧪 ' + (t === 'self' ? 'Drinking...' : 'Feeding the potion...'));
+      }));
+      return;
+    }
+  }
   sendPlayerRequest({ type: 'useItem', pcId: pc.id, itemId, ts: Date.now() });
   showWaiting('🧪 Using item...');
 }
@@ -2194,8 +2336,13 @@ function renderMapPanel(d) {
   return '<div class="card">' +
     '<div class="card-section-label">Battle Map <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(live from your DM — each square is 5 ft)</span></div>' +
     (myTurn ? '<div style="font-size:13px;color:var(--gold-light);margin-bottom:8px;">⚔ Your turn: tap an <strong style=\"color:#ff9090;\">enemy</strong> to attack, or tap your token then a square to move (up to ' + pvSpeedFt(myCombatant(d) || {}, (myPC(d) || {}).speed || 30) + ' ft).</div>' : '') +
-    '<div style="border:1px solid rgba(212,175,55,0.25);border-radius:8px;background:#0a0603;">' +
-      '<canvas id="pv-map-canvas" style="display:block;width:100%;height:auto;"></canvas>' +
+    '<div style="display:flex;gap:6px;justify-content:flex-end;margin-bottom:6px;">' +
+      '<button class="btn-pv" style="font-size:12px;padding:3px 12px;" onclick="_pvZoom(-1)">−</button>' +
+      '<button class="btn-pv" style="font-size:12px;padding:3px 12px;" onclick="_pvZoom(0)">⤢ Fit</button>' +
+      '<button class="btn-pv" style="font-size:12px;padding:3px 12px;" onclick="_pvZoom(1)">＋</button>' +
+    '</div>' +
+    '<div id="pv-map-scroll" style="border:1px solid rgba(212,175,55,0.25);border-radius:8px;background:#0a0603;overflow:auto;max-height:70vh;-webkit-overflow-scrolling:touch;">' +
+      '<canvas id="pv-map-canvas" style="display:block;width:' + pvZoomLevel * 100 + '%;height:auto;"></canvas>' +
     '</div>' +
   '</div>';
 }
@@ -2621,6 +2768,39 @@ if (dmUid) {
             '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:14px;" onclick="_pvCloseOverlay()">OK</button></div>');
         }
       }
+    }
+
+    // ✨⚔ Divine Smite offer: you just connected — burn a slot?
+    if (!tableMode && d.pendingSmite && selectedPcId) {
+      const meS = myCombatant(d);
+      if (meS && d.pendingSmite.attackerId === meS.id && String(d.pendingSmite.id) !== String(window._shownSmiteId)) {
+        window._shownSmiteId = d.pendingSmite.id;
+        const ps = d.pendingSmite;
+        let shtml = '<div style="text-align:center;font-family:Cinzel,serif;font-size:18px;color:#ffe066;margin-bottom:4px;">✨⚔ DIVINE SMITE?</div>' +
+          '<div style="font-size:13px;color:var(--text-dim);text-align:center;margin-bottom:12px;">Your blade found ' + esc(ps.targetName) + (ps.crit ? ' — a CRIT (smite dice double!)' : '') + '. Burn a slot for radiant fury?</div>';
+        (ps.slots || []).forEach(o => {
+          const dice = Math.min(5, 1 + o.level) * (ps.crit ? 2 : 1);
+          shtml += '<button class="pv-target-btn" ' + (o.free <= 0 ? 'disabled' : '') + ' data-smite="' + o.level + '" style="border-color:rgba(255,224,102,0.4);">' +
+            '<span style="color:#ffe066;">Level ' + o.level + ' → +' + dice + 'd8 radiant</span>' +
+            '<span style="margin-left:auto;font-size:12px;color:' + (o.free > 0 ? '#8fd050' : '#555') + ';">' + o.free + '/' + o.max + '</span></button>';
+        });
+        shtml += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:8px;" id="pv-smite-pass">Save it</button>';
+        showOverlay(shtml);
+        document.querySelectorAll('[data-smite]').forEach(btn => btn.addEventListener('click', () => {
+          closeOverlay();
+          sendPlayerRequest({ type: 'smite', smiteId: ps.id, combatantId: meS.id, slotLevel: parseInt(btn.dataset.smite), ts: Date.now() });
+          showWaiting('✨⚔ SMITE!');
+        }));
+        const spass = document.getElementById('pv-smite-pass');
+        if (spass) spass.addEventListener('click', () => {
+          closeOverlay();
+          sendPlayerRequest({ type: 'smite', smiteId: ps.id, combatantId: meS.id, accept: false, ts: Date.now() });
+        });
+      }
+    }
+    if (!d.pendingSmite && window._shownSmiteId) {
+      const cardS = document.querySelector('.pv-overlay-card');
+      if (cardS && cardS.textContent.includes('DIVINE SMITE?')) { closeOverlay(); window._shownSmiteId = null; }
     }
 
     // ⚡ Reaction offer: Shield / Hellish Rebuke on the victim's phone

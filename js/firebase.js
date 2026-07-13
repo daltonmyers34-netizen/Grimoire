@@ -184,7 +184,9 @@ async function doCloudWrite() {
       worldMap: (typeof worldMap !== 'undefined' && worldMap && worldMap.image) ? worldMap : null,
       actionFeed: window.lastActionResult || null,
       pendingReaction: window.pendingReaction || null,
+      pendingSmite: window.pendingSmite || null,
       lastRejection: window.lastRejection || null,
+      recentLog: (typeof combatLog !== 'undefined' ? combatLog : []).slice(0, 25).map(l => ({ text: l.text, time: l.time, type: l.type, round: l.round })),
       updatedAt: new Date().toISOString()
     };
     await setDoc(doc(db, 'playerView', currentUid), pvSnap);

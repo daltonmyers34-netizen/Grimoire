@@ -433,9 +433,9 @@ function openAddPlayerModal() {
   populateSpellRows([]);
   window._pendingPortrait = undefined;
   var pp0 = document.getElementById('pc-portrait-preview'); if (pp0) pp0.style.display = 'none';
-  var fr0 = document.getElementById('pc-feat-rage'); if (fr0) fr0.checked = false;
-  var fk0 = document.getElementById('pc-feat-reckless'); if (fk0) fk0.checked = false;
-  var fs0 = document.getElementById('pc-feat-surge'); if (fs0) fs0.checked = false;
+  ['pc-feat-rage','pc-feat-reckless','pc-feat-surge','pc-feat-secondwind','pc-feat-sneak','pc-feat-uncanny','pc-feat-smite','pc-feat-bardic'].forEach(function(id) {
+    var el = document.getElementById(id); if (el) el.checked = false;
+  });
   document.getElementById('player-modal').classList.add('show');
 }
 
@@ -621,9 +621,15 @@ function editPlayer(id) {
   window._pendingPortrait = undefined;
   var pp = document.getElementById('pc-portrait-preview');
   if (pp) { if (pc.portrait) { pp.src = pc.portrait; pp.style.display = 'block'; } else pp.style.display = 'none'; }
-  var fr = document.getElementById('pc-feat-rage'); if (fr) fr.checked = (pc.features || []).indexOf('Rage') >= 0;
-  var fk = document.getElementById('pc-feat-reckless'); if (fk) fk.checked = (pc.features || []).indexOf('Reckless Attack') >= 0;
-  var fs = document.getElementById('pc-feat-surge'); if (fs) fs.checked = (pc.features || []).indexOf('Action Surge') >= 0;
+  (function() {
+    var FEAT_IDS = { 'pc-feat-rage': 'Rage', 'pc-feat-reckless': 'Reckless Attack', 'pc-feat-surge': 'Action Surge',
+      'pc-feat-secondwind': 'Second Wind', 'pc-feat-sneak': 'Sneak Attack', 'pc-feat-uncanny': 'Uncanny Dodge',
+      'pc-feat-smite': 'Divine Smite', 'pc-feat-bardic': 'Bardic Inspiration' };
+    Object.keys(FEAT_IDS).forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.checked = (pc.features || []).indexOf(FEAT_IDS[id]) >= 0;
+    });
+  })();
   var existingSlots = pc.spellSlots || getDefaultSlots(pc.cls, pc.level) || [];
   for (var i = 1; i <= 9; i++) {
     var el = document.getElementById('pc-ss-' + i);
@@ -670,9 +676,13 @@ function savePlayer() {
     })(),
     features: (function() {
       var f = [];
-      if (document.getElementById('pc-feat-rage') && document.getElementById('pc-feat-rage').checked) f.push('Rage');
-      if (document.getElementById('pc-feat-reckless') && document.getElementById('pc-feat-reckless').checked) f.push('Reckless Attack');
-      if (document.getElementById('pc-feat-surge') && document.getElementById('pc-feat-surge').checked) f.push('Action Surge');
+      var FEAT_IDS = { 'pc-feat-rage': 'Rage', 'pc-feat-reckless': 'Reckless Attack', 'pc-feat-surge': 'Action Surge',
+        'pc-feat-secondwind': 'Second Wind', 'pc-feat-sneak': 'Sneak Attack', 'pc-feat-uncanny': 'Uncanny Dodge',
+        'pc-feat-smite': 'Divine Smite', 'pc-feat-bardic': 'Bardic Inspiration' };
+      Object.keys(FEAT_IDS).forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el && el.checked) f.push(FEAT_IDS[id]);
+      });
       return f;
     })(),
     resist: (window._importedDefenses && window._importedDefenses.resist) || (existingPC && existingPC.resist) || [],
