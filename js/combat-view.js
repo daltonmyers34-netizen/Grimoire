@@ -92,6 +92,7 @@ function cvUpdateHeader() {
     var waiting = battlefieldLoot.reduce(function(n, e) {
       return n + e.items.filter(function(it, i) { return !e.given[i]; }).length + (e.gp && !e.gpGiven ? 1 : 0);
     }, 0);
+    if (typeof pendingXP !== 'undefined' && pendingXP.length) waiting += 1; // one XP award waiting
     badge.style.display = waiting ? '' : 'none';
     badge.textContent = waiting;
   }
@@ -199,7 +200,17 @@ function cvSetLootGp(id, val) {
   if (window.cloudSave) window.cloudSave();
 }
 
-// ─── Death → drops hit the field ─────────────────────────────
+// ─── Death → XP banks + drops hit the field ──────────────────
+// XP is banked for EVERY slain enemy; loot only drops if it has any.
+function cvCheckEnemyXP() {
+  if (typeof bankMonsterXP !== 'function') return;
+  combatants.forEach(function(c) {
+    if (c.type !== 'enemy' || c.hp > 0 || c._xpBanked) return;
+    c._xpBanked = true;
+    bankMonsterXP(c);
+  });
+}
+
 function cvCheckEnemyDrops() {
   combatants.forEach(function(c) {
     if (c.type !== 'enemy' || c.hp > 0 || c._dropped) return;
@@ -226,7 +237,26 @@ function renderCvLoot() {
   var enemies = combatants.filter(function(c) { return c.type === 'enemy'; });
   var pcOptions = party.map(function(p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
 
-  var html = '<div class="panel" style="max-width:900px;margin:0 auto;">' +
+  var html = '';
+
+  // Banked XP from slain enemies — award to the party in one click
+  if (typeof pendingXP !== 'undefined' && pendingXP.length) {
+    var xpTotal = (typeof pendingXPTotal === 'function') ? pendingXPTotal() : 0;
+    var perPlayer = party.length ? Math.floor(xpTotal / party.length) : xpTotal;
+    html += '<div class="panel" style="max-width:900px;margin:0 auto 14px;">' +
+      '<div class="panel-title"><span class="ornament">⭐</span> Party XP</div>' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+        '<span style="font-family:Cinzel,serif;color:var(--gold);flex:1;min-width:180px;">' + pendingXP.length + ' slain · ' + xpTotal.toLocaleString() + ' XP waiting</span>' +
+        '<button class="btn btn-gold btn-sm" onclick="awardPendingXP()">Award to party (' + perPlayer.toLocaleString() + ' each)</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="clearPendingXP()" title="Discard banked XP">✕</button>' +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--text-dim);margin-top:6px;">' +
+        pendingXP.map(function(e) { return esc(e.creature) + ' +' + e.xp; }).join(' · ') +
+      '</div>' +
+    '</div>';
+  }
+
+  html += '<div class="panel" style="max-width:900px;margin:0 auto;">' +
     '<div class="panel-title"><span class="ornament">💰</span> Enemy Pockets <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="cvRollLootAll()">✨ Roll loot for all</button></div>';
 
   if (!enemies.length) html += '<div style="color:var(--text-dim);font-style:italic;padding:12px 0;">No enemies in the initiative order.</div>';
@@ -337,6 +367,7 @@ if (typeof renderCombatants === 'function') {
   var _cvOrigRenderCombatants = renderCombatants;
   renderCombatants = function() {
     _cvOrigRenderCombatants.apply(this, arguments);
+    cvCheckEnemyXP();
     cvCheckEnemyDrops();
     if (combatViewOpen) {
       cvUpdateHeader();
@@ -350,10 +381,11 @@ if (typeof endCombat === 'function') {
     _cvOrigEndCombat.apply(this, arguments);
     if (!combatViewOpen) return;
     // Spoils still on the field? Stay and hand them out before leaving.
-    var waiting = battlefieldLoot.some(function(e) {
+    var lootWaiting = battlefieldLoot.some(function(e) {
       return e.items.some(function(it, i) { return !e.given[i]; }) || (e.gp && !e.gpGiven);
     });
-    if (waiting) {
+    var xpWaiting = (typeof pendingXP !== 'undefined' && pendingXP.length > 0);
+    if (lootWaiting || xpWaiting) {
       cvShowPanel('loot');
       showToast('💰 Combat over — hand out the spoils, then ✕ Exit', 'info');
     } else {

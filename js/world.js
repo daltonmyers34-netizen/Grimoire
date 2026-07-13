@@ -43,7 +43,100 @@ function addXP() {
 
 function clearXP() { xpLog = []; totalXP = 0; renderXP(); }
 
+// ─── Auto-XP: enemies bank XP by CR when they die ────────────
+// Standard 5e SRD "Experience Points by Challenge Rating".
+var XP_BY_CR = {
+  0: 10, 0.125: 25, 0.25: 50, 0.5: 100,
+  1: 200, 2: 450, 3: 700, 4: 1100, 5: 1800, 6: 2300, 7: 2900, 8: 3900,
+  9: 5000, 10: 5900, 11: 7200, 12: 8400, 13: 10000, 14: 11500, 15: 13000,
+  16: 15000, 17: 18000, 18: 20000, 19: 22000, 20: 25000, 21: 33000,
+  22: 41000, 23: 50000, 24: 62000, 25: 75000, 26: 90000, 27: 105000,
+  28: 120000, 29: 135000, 30: 155000
+};
+
+function xpForCR(crValue) {
+  if (XP_BY_CR[crValue] !== undefined) return XP_BY_CR[crValue];
+  // Not an exact 5e CR — snap to the nearest table key.
+  var keys = Object.keys(XP_BY_CR).map(parseFloat).sort(function(a, b) { return a - b; });
+  var best = keys[0];
+  for (var i = 0; i < keys.length; i++) {
+    if (Math.abs(keys[i] - crValue) < Math.abs(best - crValue)) best = keys[i];
+  }
+  return XP_BY_CR[best];
+}
+
+// XP a combatant is worth. Uses declared CR; falls back to an HP estimate
+// (matches cvCrNum in combat-view.js) when CR is unknown.
+function combatantXP(c) {
+  var crNum = (typeof cvCrNum === 'function') ? cvCrNum(c) : (parseFloat(c.cr) || 1);
+  return xpForCR(crNum);
+}
+
+// Called when an enemy dies (from combat-view.js). Banks XP into the pool.
+function bankMonsterXP(c) {
+  var xp = combatantXP(c);
+  pendingXP.push({ creature: c.name || 'Enemy', xp: xp, cr: c.cr });
+  if (typeof logCombat === 'function') logCombat('⭐ ' + (c.name || 'Enemy') + ' defeated — +' + xp + ' XP banked', 'info');
+  showToast('⭐ +' + xp + ' XP banked (' + (c.name || 'enemy') + ')', 'success');
+  renderXP();
+  if (typeof combatViewOpen !== 'undefined' && combatViewOpen && typeof renderCvLoot === 'function') renderCvLoot();
+  if (typeof cvUpdateHeader === 'function') cvUpdateHeader();
+  if (window.cloudSave) window.cloudSave();
+}
+
+function pendingXPTotal() {
+  return pendingXP.reduce(function(n, e) { return n + (e.xp || 0); }, 0);
+}
+
+// One button: move the whole pending pool into the session XP tracker,
+// where renderXP splits it across the party automatically.
+function awardPendingXP() {
+  if (!pendingXP.length) { showToast('No XP waiting to award', 'info'); return; }
+  var total = pendingXPTotal();
+  var perPlayer = party.length ? Math.floor(total / party.length) : total;
+  pendingXP.forEach(function(e) {
+    xpLog.unshift({ creature: e.creature, xp: e.xp, time: new Date().toLocaleTimeString() });
+    totalXP += e.xp;
+  });
+  var count = pendingXP.length;
+  pendingXP = [];
+  renderXP();
+  if (typeof renderCvLoot === 'function' && typeof combatViewOpen !== 'undefined' && combatViewOpen) renderCvLoot();
+  if (typeof cvUpdateHeader === 'function') cvUpdateHeader();
+  if (typeof logCombat === 'function') logCombat('⭐ Awarded ' + total + ' XP to the party (' + perPlayer + ' each)', 'round');
+  showToast('⭐ Awarded ' + total.toLocaleString() + ' XP — ' + perPlayer.toLocaleString() + ' per player', 'success');
+  if (window.cloudSave) window.cloudSave();
+}
+
+function clearPendingXP() {
+  pendingXP = [];
+  renderXP();
+  if (typeof renderCvLoot === 'function' && typeof combatViewOpen !== 'undefined' && combatViewOpen) renderCvLoot();
+  if (window.cloudSave) window.cloudSave();
+}
+
+function renderPendingXP() {
+  var el = document.getElementById('xp-pending');
+  if (!el) return;
+  var total = pendingXPTotal();
+  if (!pendingXP.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = '';
+  var perPlayer = party.length ? Math.floor(total / party.length) : total;
+  el.innerHTML =
+    '<div style="border:1px solid rgba(212,175,55,0.4);border-radius:6px;padding:10px 12px;margin-bottom:12px;background:rgba(212,175,55,0.07);">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+        '<span style="font-family:Cinzel,serif;font-size:13px;color:var(--gold);flex:1;">⭐ ' + pendingXP.length + ' slain · ' + total.toLocaleString() + ' XP waiting</span>' +
+        '<button class="btn btn-gold btn-sm" onclick="awardPendingXP()">Award to party (' + perPlayer.toLocaleString() + ' each)</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="clearPendingXP()" title="Discard banked XP without awarding">✕</button>' +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--text-dim);">' +
+        pendingXP.map(function(e) { return esc(e.creature) + ' +' + e.xp; }).join(' · ') +
+      '</div>' +
+    '</div>';
+}
+
 function renderXP() {
+  renderPendingXP();
   const xpTotalEl = document.getElementById('xp-total-display');
   if (xpTotalEl) xpTotalEl.textContent = totalXP.toLocaleString();
   const xpTotalElTop = document.getElementById('top-xp-total');
@@ -60,7 +153,7 @@ function renderXP() {
   // Update per-player split
   const playerList = document.getElementById('xp-player-list');
   if (!playerList) return;
-  if (!window.party || !party.length) {
+  if (typeof party === 'undefined' || !party.length) {
     playerList.innerHTML = '<div style="color:var(--text-dim);font-size:13px;padding:8px;">Add party members in the Party tab first.</div>';
     return;
   }

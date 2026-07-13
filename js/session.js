@@ -17,6 +17,7 @@ function collectState() {
     worldSeason: worldSeason,
     totalXP: totalXP,
     xpLog: xpLog,
+    pendingXP: (typeof pendingXP !== 'undefined') ? pendingXP : [],
     timerSeconds: timerSeconds,
     currentRound: round,
     currentTurn: currentTurn,
@@ -43,7 +44,9 @@ function applyState(s) {
   if (s.party)       { party = s.party; try { localStorage.setItem('dm_party', JSON.stringify(party)); } catch(e){}; renderParty(); }
   if (s.presets)     { localStorage.setItem('dm_presets', JSON.stringify(s.presets)); }
   if (s.worldTotalHours !== undefined) { worldTotalHours = s.worldTotalHours; worldSeason = s.worldSeason||0; updateWorldDisplay(); syncTopBar(); }
-  if (s.totalXP !== undefined) { totalXP = s.totalXP; xpLog = s.xpLog||[]; renderXP(); }
+  if (s.totalXP !== undefined) { totalXP = s.totalXP; xpLog = s.xpLog||[]; }
+  if (typeof pendingXP !== 'undefined') pendingXP = s.pendingXP || [];
+  if (s.totalXP !== undefined || (s.pendingXP && s.pendingXP.length)) renderXP();
   if (s.timerSeconds) timerSeconds = s.timerSeconds;
   if (s.currentRound !== undefined) {
     round = s.currentRound;
@@ -232,6 +235,7 @@ function newCampaign() {
 
   // XP, world clock, encounters, messages, map
   totalXP = 0; xpLog = [];
+  if (typeof pendingXP !== 'undefined') pendingXP = [];
   worldTotalHours = 6; worldSeason = 0;
   savedEncounters = [];
   quests = [];
