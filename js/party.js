@@ -416,7 +416,19 @@ function setPcPortrait(file) {
   reader.readAsDataURL(file);
 }
 
+// Character modal is tabbed (Basics / Combat / Skills) — fields stay in the
+// DOM either way, so save/populate never care which tab is showing.
+function pmSwitchTab(name) {
+  ['basics', 'combat', 'skills'].forEach(function(t) {
+    var pane = document.getElementById('pm-tab-' + t);
+    if (pane) pane.style.display = t === name ? '' : 'none';
+    var btn = document.getElementById('pm-tabbtn-' + t);
+    if (btn) btn.classList.toggle('active', t === name);
+  });
+}
+
 function openAddPlayerModal() {
+  pmSwitchTab('basics');
   document.getElementById('player-modal-title').textContent = '🧝 Add Character';
   document.getElementById('edit-player-id').value = '';
   ['name','player','race','moves'].forEach(function(f) { document.getElementById('pc-' + f).value = ''; });
@@ -598,6 +610,7 @@ function commitLevelUp(id) {
 function editPlayer(id) {
   var pc = party.find(function(p) { return p.id === id; });
   if (!pc) return;
+  pmSwitchTab('basics');
   document.getElementById('player-modal-title').textContent = '✏ Edit Character';
   document.getElementById('edit-player-id').value = id;
   document.getElementById('pc-name').value = pc.name || '';
