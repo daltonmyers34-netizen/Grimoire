@@ -479,6 +479,7 @@
     <div class="modal-btns">
       <button class="btn btn-blood" onclick="applyHP('damage')">💔 Damage</button>
       <button class="btn btn-gold" onclick="applyHP('heal')">💚 Heal</button>
+      <button class="btn btn-ghost" onclick="applyHP('temp')" title="Temporary HP — a separate pool that soaks damage first and doesn't stack">🛡 Temp HP</button>
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
     </div>
   </div>
@@ -492,7 +493,6 @@
       <button class="btn btn-ghost btn-sm" onclick="addCondition('Blinded')">Blinded</button>
       <button class="btn btn-ghost btn-sm" onclick="addCondition('Charmed')">Charmed</button>
       <button class="btn btn-ghost btn-sm" onclick="addCondition('Deafened')">Deafened</button>
-      <button class="btn btn-ghost btn-sm" onclick="addCondition('Exhausted')">Exhausted</button>
       <button class="btn btn-ghost btn-sm" onclick="addCondition('Frightened')">Frightened</button>
       <button class="btn btn-ghost btn-sm" onclick="addCondition('Grappled')">Grappled</button>
       <button class="btn btn-ghost btn-sm" onclick="addCondition('Incapacitated')">Incapacitated</button>
@@ -514,6 +514,11 @@
     <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px;">
       <div style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:8px;">🛡 DEFENSES <span style="text-transform:none;letter-spacing:0;color:#666;">— click to toggle; attacks auto-adjust</span></div>
       <div id="defense-chips"></div>
+    </div>
+    <!-- Exhaustion 0–6 ladder -->
+    <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px;">
+      <div style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:8px;">😫 EXHAUSTION <span style="text-transform:none;letter-spacing:0;color:#666;">— cumulative effects, a long rest removes one level</span></div>
+      <div id="exhaustion-row"></div>
     </div>
     <button class="btn btn-ghost" onclick="closeCondModal()" style="margin-top:10px;">Close</button>
   </div>
