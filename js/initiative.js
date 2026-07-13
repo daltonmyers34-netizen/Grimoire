@@ -147,8 +147,9 @@ function longRest() {
   if (!confirm('Take a Long Rest? This will fully restore all party HP and spell slots.')) return;
   party.forEach(function(pc) {
     var cmb = combatants.find(function(x) { return x.name === pc.name && x.type === 'ally'; });
-    if (cmb) { cmb.hp = cmb.maxHp; }
-    pc.exhaustion = 0;
+    if (cmb) { cmb.hp = cmb.maxHp; cmb.tempHp = 0; }
+    // A long rest removes one level of exhaustion (5e RAW)
+    pc.exhaustion = Math.max(0, (pc.exhaustion || 0) - 1);
     pc.lastRest = 'long';
     // Restore all spell slots
     if (pc.spellSlots) pc.spellSlots.forEach(function(sl) { sl.used = 0; });
@@ -437,19 +438,22 @@ function renderCombatants() {
     var inspBadge = c.inspiration ? '<span style="color:#ffe066;font-size:13px;margin-left:4px;" title="Inspired">★</span>' : '';
     var concBadge = c.concentrating ? '<span style="background:rgba(100,50,200,0.2);border:1px solid rgba(150,80,255,0.4);color:#b080ff;font-size:9px;font-family:Cinzel,serif;border-radius:3px;padding:1px 5px;margin-left:4px;" title="' + c.concentrating + '">CONC</span>' : '';
     var hiddenBadge = c.hidden ? '<span style="color:#888;font-size:10px;margin-left:4px;" title="Hidden from players">👁</span>' : '';
+    var exLvl = (typeof exhaustionLevel === 'function') ? exhaustionLevel(c) : (c.exhaustion || 0);
+    var exBadge = exLvl > 0 ? '<span style="background:rgba(180,120,40,0.2);border:1px solid rgba(210,150,60,0.5);color:#e0a860;font-size:9px;font-family:Cinzel,serif;border-radius:3px;padding:1px 5px;margin-left:4px;" title="Exhaustion — ' + ((typeof EXHAUSTION_TEXT !== "undefined") ? EXHAUSTION_TEXT[exLvl] : "") + '">😫 ' + exLvl + '</span>' : '';
     var hiddenStyle = c.hidden ? 'opacity:0.5;' : '';
     return '<li class="combatant ' + (isActive ? 'active-turn' : '') + ' ' + (isDead ? 'dead' : '') + '" data-id="' + c.id + '" style="border-left:3px solid ' + typeColor + '33;' + hiddenStyle + '">' +
       '<div class="combatant-init" onclick="editInit(' + c.id + ')" title="Tap to edit initiative" style="cursor:pointer;border-radius:4px;padding:3px;text-align:center;"><span id="init-disp-' + c.id + '">' + c.init + '</span></div>' +
       '<div>' +
         '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px;margin-bottom:3px;">' +
           '<span class="combatant-name ' + nameClass + '" style="font-size:16px;">' + c.name + (isActive ? ' ◀' : '') + '</span>' +
-          inspBadge + concBadge + hiddenBadge +
+          inspBadge + concBadge + hiddenBadge + exBadge +
           '<span style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.04em;color:' + typeColor + ';margin-left:4px;opacity:0.8;">' + c.type.toUpperCase() + '</span>' +
         '</div>' +
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
           '<div style="min-width:80px;">' +
             '<div class="hp-number-wrap" id="hp-num-' + c.id + '" style="color:' + (isDead ? 'var(--blood-light)' : 'var(--text-primary)') + ';font-family:Cinzel,serif;font-size:13px;font-weight:bold;">' +
               (isDead ? '💀 Down' : c.hp + ' / ' + c.maxHp) +
+              ((c.tempHp > 0 && !isDead) ? ' <span style="color:#64c8ff;" title="Temporary HP">+' + c.tempHp + '🛡</span>' : '') +
             '</div>' +
             '<div class="combatant-hp-bar" style="width:90px;"><div class="combatant-hp-fill ' + hpClass + '" style="width:' + pct + '%"></div></div>' +
           '</div>' +
@@ -528,12 +532,29 @@ function applyHP(type) {
       if (def.taken !== amount) defNote = ' (' + def.notes.join(', ') + ')';
       amount = def.taken;
     }
-    c.hp = Math.max(0, c.hp - amount);
+    if (typeof applyHpDamage === 'function') {
+      var dd = applyHpDamage(c, amount, {});
+      if (dd.notes.length) defNote += ' (' + dd.notes.join(', ') + ')';
+    } else {
+      c.hp = Math.max(0, c.hp - amount);
+    }
+  } else if (type === 'temp') {
+    // Temporary HP — separate pool, doesn't stack (keep the higher)
+    if (typeof grantTempHp === 'function') grantTempHp(c, amount);
+    else c.tempHp = Math.max(c.tempHp || 0, amount);
   } else {
     c.hp = Math.min(c.maxHp, c.hp + amount);
   }
   if (isDamage && amount > 0) checkConcentration(c, amount);
-  if (amount > 0 || defNote) {
+  if (type === 'temp') {
+    if (amount > 0) {
+      var rt = window.currentRound || 0;
+      combatLog.unshift({ round: rt || '—', text: c.name + ' gains ' + amount + ' temp HP (now ' + (c.tempHp || 0) + ')', type: 'heal', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) });
+      if (combatLog.length > 200) combatLog.pop();
+      renderCombatLog();
+      showToast('🛡 ' + c.name + ' — ' + (c.tempHp || 0) + ' temp HP', 'info');
+    }
+  } else if (amount > 0 || defNote) {
     var r = window.currentRound || 0;
     combatLog.unshift({ round: r || '—', text: isDamage ? c.name + ' took ' + amount + ' damage' + defNote + ' (' + prevHp + '→' + c.hp + ' HP)' : c.name + ' healed ' + amount + ' HP (' + prevHp + '→' + c.hp + ' HP)', type: isDamage ? 'damage' : 'heal', time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) });
     if (combatLog.length > 200) combatLog.pop();
@@ -581,7 +602,55 @@ function closeHPModal() {
 function openCondModal(id) {
   condTargetId = id;
   renderDefenseChips();
+  renderExhaustionRow();
   document.getElementById('cond-modal').classList.add('show');
+}
+
+function renderExhaustionRow() {
+  var wrap = document.getElementById('exhaustion-row');
+  var c = combatants.find(function(x) { return x.id === condTargetId; });
+  if (!wrap || !c) return;
+  var lvl = (typeof exhaustionLevel === 'function') ? exhaustionLevel(c) : (c.exhaustion || 0);
+  var text = (typeof EXHAUSTION_TEXT !== 'undefined') ? EXHAUSTION_TEXT : ['', '', '', '', '', '', ''];
+  var btns = '';
+  for (var i = 0; i <= 6; i++) {
+    var on = i === lvl;
+    var danger = i === 6;
+    btns += '<button onclick="setExhaustionLevel(' + i + ')" style="width:30px;height:30px;border-radius:4px;cursor:pointer;font-family:Cinzel,serif;font-size:13px;border:1px solid ' +
+      (on ? (danger ? '#e05050' : 'var(--gold)') : 'rgba(255,255,255,0.12)') + ';background:' +
+      (on ? (danger ? 'rgba(224,80,80,0.2)' : 'rgba(212,175,55,0.15)') : 'rgba(0,0,0,0.25)') + ';color:' +
+      (on ? (danger ? '#ff8080' : 'var(--gold)') : '#888') + ';">' + i + '</button>';
+  }
+  wrap.innerHTML = '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;">' + btns + '</div>' +
+    (lvl > 0 ? '<div style="font-size:11px;color:' + (lvl >= 5 ? '#ff8080' : 'var(--text-dim)') + ';margin-top:6px;">Level ' + lvl + ': ' + esc(text[lvl]) +
+      (lvl >= 2 ? ' <span style="color:#666;">(includes lower levels)</span>' : '') + '</div>' : '');
+}
+
+function setExhaustionLevel(level) {
+  var c = combatants.find(function(x) { return x.id === condTargetId; });
+  if (!c) return;
+  level = Math.max(0, Math.min(6, level));
+  c.exhaustion = level;
+  // Keep the linked party sheet in sync (survives a long rest / persists)
+  var pc = party.find(function(p) { return p.name === c.name && c.type === 'ally'; });
+  if (pc) pc.exhaustion = level;
+  // Level 4+ halves max HP — clamp current HP into the new ceiling
+  if (typeof effectiveMaxHp === 'function') {
+    var em = effectiveMaxHp(c);
+    if (c.hp > em) c.hp = em;
+  }
+  // Level 6 is death
+  if (level >= 6) {
+    c.hp = 0;
+    if (c.type === 'ally') c.isDead = true;
+    logCombat('☠ ' + c.name + ' reaches exhaustion 6 — death', 'damage');
+    showToast('☠ ' + c.name + ' dies of exhaustion', 'danger');
+  } else if (level > 0) {
+    logCombat('😫 ' + c.name + ' is at exhaustion level ' + level, 'info');
+  }
+  renderExhaustionRow();
+  renderCombatants();
+  syncCombatState();
 }
 
 // Defenses editor: resist / immune / vulnerable per damage type

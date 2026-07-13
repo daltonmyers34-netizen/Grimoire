@@ -218,6 +218,61 @@ function applyDamageWithDefenses(target, amount, dmgType) {
   return { taken: taken, notes: notes };
 }
 
+// Central HP-loss application: temp HP soaks first, then real HP, with 5e's
+// downed-target (auto death-save failures) and massive-damage instant-death
+// rules. `taken` is post-resistance damage. Returns {realTaken, absorbed, notes}.
+// opts: { crit } two failures instead of one on a downed target;
+//        { riderDamage } same-hit add-on (Smite) — skip the separate auto-fail.
+function applyHpDamage(target, taken, opts) {
+  opts = opts || {};
+  var notes = [];
+  taken = Math.max(0, Math.round(taken));
+  var dyingAlly = target.hp <= 0 && target.type === 'ally' && !target.isDead &&
+                  (target.conditions || []).indexOf('Stable') < 0;
+
+  // Temp HP soaks first (doesn't stack with real HP; separate pool)
+  var absorbed = 0;
+  if ((target.tempHp || 0) > 0 && taken > 0) {
+    absorbed = Math.min(target.tempHp, taken);
+    target.tempHp = Math.max(0, target.tempHp - absorbed);
+    taken -= absorbed;
+    notes.push('🛡 ' + absorbed + ' soaked by temp HP' + (target.tempHp > 0 ? ' (' + target.tempHp + ' left)' : ' (gone)'));
+  }
+
+  // Damage to a creature already at 0 HP → death-save failures / instant death
+  if (dyingAlly && taken > 0 && !opts.riderDamage) {
+    if (taken >= (target.maxHp || 1)) {
+      target.isDead = true;
+      notes.push('☠ ' + taken + ' ≥ max HP — INSTANT DEATH');
+      return { realTaken: 0, absorbed: absorbed, notes: notes, instantDeath: true };
+    }
+    var fails = opts.crit ? 2 : 1;
+    target.deathFail = (target.deathFail || 0) + fails;
+    notes.push('💀 struck while down — ' + fails + ' death-save failure' + (fails > 1 ? 's' : ''));
+    if (target.deathFail >= 3) { target.isDead = true; notes.push('☠ ' + target.name + ' dies'); }
+    return { realTaken: 0, absorbed: absorbed, notes: notes, autoFail: fails };
+  }
+
+  var prevHp = target.hp;
+  var overkill = taken - prevHp; // damage that spills past 0
+  if (taken > 0 && overkill >= (target.maxHp || 1) && prevHp > 0) {
+    target.hp = 0;
+    if (target.type === 'ally') target.isDead = true;
+    notes.push('☠ MASSIVE DAMAGE (' + overkill + ' past 0 ≥ max HP) — instant death!');
+    return { realTaken: prevHp, absorbed: absorbed, notes: notes, instantDeath: true };
+  }
+  target.hp = Math.max(0, prevHp - taken);
+  if (prevHp > 0 && target.hp === 0) notes.push(target.name + ' drops to 0 HP!');
+  return { realTaken: prevHp - target.hp, absorbed: absorbed, notes: notes };
+}
+
+// Temp HP grant — doesn't stack, you keep the higher pool (5e RAW).
+function grantTempHp(target, amount) {
+  amount = Math.max(0, parseInt(amount) || 0);
+  if (!target) return;
+  if (amount > (target.tempHp || 0)) target.tempHp = amount;
+}
+
 // ─── Condition queries ───────────────────────────────────────
 function combatantCanAct(c) {
   var conds = c.conditions || [];
@@ -227,6 +282,18 @@ function combatantCanAct(c) {
   }
   if (c.hp <= 0) return { ok: false, reason: 'at 0 HP' };
   return { ok: true };
+}
+
+// Exhaustion 0–6 (5e RAW ladder). Read from the combatant.
+function exhaustionLevel(c) { return Math.max(0, Math.min(6, (c && c.exhaustion) || 0)); }
+var EXHAUSTION_TEXT = [
+  '', 'Disadvantage on ability checks', 'Speed halved',
+  'Disadvantage on attacks & saves', 'HP maximum halved', 'Speed reduced to 0', 'Death'
+];
+// Effective HP max (level 4+ halves it)
+function effectiveMaxHp(c) {
+  var m = c.maxHp || 1;
+  return exhaustionLevel(c) >= 4 ? Math.floor(m / 2) : m;
 }
 
 function combatantSpeedFt(c, baseFt) {
@@ -239,6 +306,10 @@ function combatantSpeedFt(c, baseFt) {
     if (eff.speedFactor) speed = speed * eff.speedFactor;
     if (eff.halfSpeed) speed = Math.floor(speed / 2);
   }
+  // Exhaustion: L2 half speed, L5 speed 0
+  var ex = exhaustionLevel(c);
+  if (ex >= 5) return 0;
+  if (ex >= 2) speed = Math.floor(speed / 2);
   return speed;
 }
 
@@ -264,6 +335,7 @@ function computeAttackContext(attacker, target, action) {
     if (eff.selfDis) { dis = true; notes.push('you are ' + cn.toLowerCase() + ' (disadvantage)'); }
     if (eff.selfAdv) { adv = true; notes.push('you are ' + cn.toLowerCase() + ' (advantage)'); }
   });
+  if (exhaustionLevel(attacker) >= 3) { dis = true; notes.push('exhaustion ' + exhaustionLevel(attacker) + ' (disadvantage)'); }
   (target.conditions || []).forEach(function(cn) {
     var eff = CONDITION_EFFECTS[cn]; if (!eff) return;
     if (eff.attackersAdv) { adv = true; notes.push('target is ' + cn.toLowerCase() + ' (advantage)'); }
@@ -303,6 +375,12 @@ function saveBonusFor(combatant, ability) {
     if (eff.saveMod) bonus += eff.saveMod;
   });
   return bonus;
+}
+
+// Advantage state for a saving throw: -1 disadvantage (exhaustion 3+), else 0.
+// Fed into the DM roll modal's `adv` so the table rolls twice, keeps the lower.
+function saveAdvFor(combatant) {
+  return exhaustionLevel(combatant) >= 3 ? -1 : 0;
 }
 
 // Attack roll modifier from conditions (Bless +2, Bane -2)
@@ -477,9 +555,9 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
       result.damageType = dmgType || '';
       result.notes = result.notes.concat(def.notes);
       var prevHp = target.hp;
-      target.hp = Math.max(0, target.hp - def.taken);
+      var dd = applyHpDamage(target, def.taken, { crit: result.crit, attack: true });
+      result.notes = result.notes.concat(dd.notes);
       if (typeof checkConcentration === 'function' && def.taken > 0) checkConcentration(target, def.taken);
-      if (target.hp === 0 && prevHp > 0) result.notes.push(target.name + ' drops to 0 HP!');
 
       // Condition rider: on-hit save-or-suffer
       if (a.applyCondition && CONDITION_EFFECTS[a.applyCondition] !== undefined) {
@@ -488,8 +566,9 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
           result.notes.push(target.name + ' must make a DC ' + a.saveDC + ' ' + a.saveAbility.toUpperCase() + ' save or be ' + a.applyCondition);
           (function(tgt, act) {
             var sb = saveBonusFor(tgt, act.saveAbility);
+            var cAdv = saveAdvFor(tgt);
             requestRolls('⚡ ' + act.name + ' — ' + tgt.name + ' saves vs ' + act.applyCondition,
-              [{ id: 'r', label: tgt.name + ' — ' + act.saveAbility.toUpperCase() + ' save', sub: 'DC ' + act.saveDC + ' · their bonus ' + (sb >= 0 ? '+' : '') + sb, adv: 0 }],
+              [{ id: 'r', label: tgt.name + ' — ' + act.saveAbility.toUpperCase() + ' save', sub: 'DC ' + act.saveDC + ' · their bonus ' + (sb >= 0 ? '+' : '') + sb + (cAdv < 0 ? ' · exhausted: disadvantage' : ''), adv: cAdv }],
               function(results) {
                 var total = (results.r || 10) + sb;
                 var passed = total >= act.saveDC;
@@ -650,8 +729,8 @@ function processPlayerReaction(req) {
       var dmg = rollDiceExpr('2d10').total;
       var amt = saved ? Math.floor(dmg / 2) : dmg;
       var def = applyDamageWithDefenses(attacker, amt, 'fire');
-      attacker.hp = Math.max(0, attacker.hp - def.taken);
-      logCombat('🔥 Hellish Rebuke: ' + attacker.name + ' ' + (saved ? 'saves (' + total + '), ' : 'FAILS (' + total + '), ') + def.taken + ' fire' + (def.notes.length ? ' · ' + def.notes.join(', ') : ''), 'damage');
+      var ddHR = applyHpDamage(attacker, def.taken, {});
+      logCombat('🔥 Hellish Rebuke: ' + attacker.name + ' ' + (saved ? 'saves (' + total + '), ' : 'FAILS (' + total + '), ') + def.taken + ' fire' + (def.notes.concat(ddHR.notes).length ? ' · ' + def.notes.concat(ddHR.notes).join(', ') : ''), 'damage');
       window.lastActionResult = { id: Date.now(), kind: 'spell', caster: target.name, spellName: 'Hellish Rebuke', slotLevel: 1,
         targets: [{ name: attacker.name, type: attacker.type, save: { ability: 'DEX', dc: dc, roll: results.r || 10, bonus: sb, total: total, saved: saved }, taken: def.taken, defNotes: def.notes }],
         notes: ['⚡ Reaction!'], ts: new Date().toISOString() };
@@ -1413,9 +1492,9 @@ function processCastSpell(req) {
       if (hit) {
         var amt = roll === 20 ? baseDamage + rollDiceExpr(dice.replace(/[+-]\s*\d+$/, '')).total : baseDamage;
         var def = applyDamageWithDefenses(t, amt, spell.damageType);
-        t.hp = Math.max(0, t.hp - def.taken);
+        var ddSA = applyHpDamage(t, def.taken, { crit: roll === 20, attack: true });
         entry.taken = def.taken;
-        entry.defNotes = def.notes;
+        entry.defNotes = def.notes.concat(ddSA.notes);
         if (def.taken > 0 && typeof checkConcentration === 'function') checkConcentration(t, def.taken);
         logCombat('✨ ' + caster.name + ' — ' + spell.name + ' hits ' + t.name + ' (' + total + ' vs AC ' + entry.ac + ') for ' + def.taken + (def.notes.length ? ' · ' + def.notes.join(' · ') : ''), 'damage');
       } else {
@@ -1440,7 +1519,8 @@ function processCastSpell(req) {
     var ability = (spell.saveAbility || 'dex').toUpperCase();
     var rollEntries = savePending.map(function(sp) {
       var sb = saveBonusFor(sp.t, spell.saveAbility || 'dex');
-      return { id: String(sp.t.id), label: sp.t.name + ' — ' + ability + ' save', sub: 'DC ' + dc + ' · their bonus ' + (sb >= 0 ? '+' : '') + sb + ' (added automatically)', adv: 0 };
+      var sAdv = saveAdvFor(sp.t);
+      return { id: String(sp.t.id), label: sp.t.name + ' — ' + ability + ' save', sub: 'DC ' + dc + ' · their bonus ' + (sb >= 0 ? '+' : '') + sb + ' (added automatically)' + (sAdv < 0 ? ' · exhausted: disadvantage' : ''), adv: sAdv };
     });
     requestRolls('✨ ' + spell.name + ' (' + caster.name + ') — ' + ability + ' saves, DC ' + dc, rollEntries, function(results) {
       savePending.forEach(function(sp) {
@@ -1453,9 +1533,9 @@ function processCastSpell(req) {
         entry.save = { ability: ability, dc: dc, roll: sRoll, bonus: sb, total: sTotal, saved: saved };
         var amt2 = saved && spell.halfOnSave !== false ? Math.floor(sp.baseDamage / 2) : (saved ? 0 : sp.baseDamage);
         var def2 = applyDamageWithDefenses(t, amt2, spell.damageType);
-        t.hp = Math.max(0, t.hp - def2.taken);
+        var dd2 = applyHpDamage(t, def2.taken, {});
         entry.taken = def2.taken;
-        entry.defNotes = def2.notes;
+        entry.defNotes = def2.notes.concat(dd2.notes);
         learnDefense(t, spell.damageType, def2.notes);
         if (spell.applyCondition && !saved && CONDITION_EFFECTS[spell.applyCondition] !== undefined) {
           t.conditions = t.conditions || [];
@@ -2054,7 +2134,7 @@ function processPlayerSmite(req) {
   var diceCount = Math.min(5, 1 + lvl) * (pending.crit ? 2 : 1); // 2d8 at L1, +1d8/level, doubled on crit
   var dmg = rollDiceExpr(diceCount + 'd8');
   var def = applyDamageWithDefenses(target, dmg.total, 'radiant');
-  target.hp = Math.max(0, target.hp - def.taken);
+  applyHpDamage(target, def.taken, { crit: pending.crit, riderDamage: true });
   logCombat('✨⚔ ' + attacker.name + ' DIVINE SMITE (L' + lvl + (pending.crit ? ', CRIT' : '') + ') — +' + def.taken + ' radiant to ' + target.name + (def.notes.length ? ' · ' + def.notes.join(', ') : ''), 'damage');
   showToast('✨⚔ DIVINE SMITE — ' + def.taken + ' radiant!', 'success');
   window.lastActionResult = { id: Date.now(), kind: 'spell', caster: attacker.name, spellName: 'Divine Smite', slotLevel: lvl,
