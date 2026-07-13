@@ -75,7 +75,7 @@
   <div class="nav-tab" onclick="switchTab('sounds')"><span class="tab-icon">🎵</span>Sound</div>
   <div class="nav-tab" onclick="switchTab('reference')"><span class="tab-icon">📜</span>Rules</div>
   <div class="nav-tab" onclick="switchTab('notes')"><span class="tab-icon">🪶</span>Notes</div>
-  <div class="nav-tab" onclick="switchTab('quests')"><span class="tab-icon">📜</span>Quests</div>
+  <div class="nav-tab" onclick="switchTab('quests')"><span class="tab-icon">🧭</span>Quests</div>
   <div class="nav-tab" onclick="switchTab('loot')"><span class="tab-icon">💰</span>Loot</div>
 </nav>
 
@@ -101,8 +101,14 @@
 <!-- Add Player Modal -->
 <div class="modal-overlay" id="player-modal">
   <div class="modal" style="max-width:540px;width:95%;max-height:90vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">
-    <h3 style="font-family:'Cinzel',serif;color:var(--gold);margin-bottom:16px;" id="player-modal-title">🧝 Add Character</h3>
+    <h3 style="font-family:'Cinzel',serif;color:var(--gold);margin-bottom:12px;" id="player-modal-title">🧝 Add Character</h3>
     <input type="hidden" id="edit-player-id">
+    <div class="pm-tabbar">
+      <button type="button" class="pm-tab active" id="pm-tabbtn-basics" onclick="pmSwitchTab('basics')">📋 Basics</button>
+      <button type="button" class="pm-tab" id="pm-tabbtn-combat" onclick="pmSwitchTab('combat')">⚔ Combat</button>
+      <button type="button" class="pm-tab" id="pm-tabbtn-skills" onclick="pmSwitchTab('skills')">🎯 Skills</button>
+    </div>
+    <div id="pm-tab-basics">
     <!-- AI Sheet Import -->
     <div style="background:rgba(100,180,255,0.05);border:1px solid rgba(100,180,255,0.2);border-radius:6px;padding:12px;margin-bottom:14px;">
       <div style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:#90c8ff;margin-bottom:8px;">📸 AI SHEET IMPORT <span style="text-transform:none;letter-spacing:0;color:var(--text-dim);">— photo, pasted screenshot (Ctrl+V right now!), or text — the AI fills the form</span></div>
@@ -163,6 +169,8 @@
       <label>Key Abilities / Spells <span style="color:var(--text-dim);font-weight:normal;">(one per line)</span></label>
       <textarea id="pc-moves" placeholder="Action Surge — take an extra action&#10;Second Wind — bonus action, heal 1d10+level&#10;Sneak Attack — 3d6 extra damage" style="height:80px;"></textarea>
     </div>
+    </div><!-- /pm-tab-basics -->
+    <div id="pm-tab-combat" style="display:none;">
     <!-- Structured Actions (powers playable combat on the Player View) -->
     <div style="margin-bottom:12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -214,6 +222,8 @@
       </div>
       <div style="font-size:10px;color:var(--text-dim);margin-top:5px;">Leave blank for no slots. Non-spellcasters (Barbarian, Monk, Fighter below lvl 3) auto-get none.</div>
     </div>
+    </div><!-- /pm-tab-combat -->
+    <div id="pm-tab-skills" style="display:none;">
     <!-- Skills Section -->
     <div style="margin-bottom:12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -224,6 +234,7 @@
       <div id="pc-skills-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;">
       </div>
     </div>
+    </div><!-- /pm-tab-skills -->
     <div class="modal-btns">
       <button class="btn btn-gold" onclick="savePlayer()">💾 Save Character</button>
       <button class="btn btn-ghost" onclick="closePlayerModal()">Cancel</button>
@@ -258,6 +269,7 @@
 
   <div class="battle-controls">
     <button class="btn btn-gold" onclick="startCombat()">▶ Start Combat</button>
+    <button class="btn btn-blood" onclick="enterCombatView()" title="Full-screen combat mode — initiative, map, and enemy loot in one place">🎬 Combat View</button>
     <button class="btn btn-ghost" onclick="nextTurn()">Next Turn ▷</button>
     <button class="btn btn-ghost" id="undo-action-btn" onclick="undoLastAction()" style="display:none;border-color:rgba(255,180,80,0.4);color:#ffb450;">↶ Undo Action</button>
     <button class="btn btn-ghost" onclick="resetCombat()">↺ Reset</button>
@@ -1558,6 +1570,7 @@ Use this space freely during your session. Notes auto-save in your browser."></t
 <script src="js/map.js"></script>
 <script src="js/quests.js"></script>
 <script src="js/player-actions.js"></script>
+<script src="js/combat-view.js"></script>
 
 <!-- Firebase (module - loads after regular scripts) -->
 <script type="module" src="js/firebase.js"></script>
