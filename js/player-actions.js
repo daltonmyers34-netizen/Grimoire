@@ -259,6 +259,12 @@ function saveBonusFor(combatant, ability) {
   return bonus;
 }
 
+// A player's request got refused — tell THEIR screen, not just the DM's
+function rejectPlayer(c, msg) {
+  window.lastRejection = { id: Date.now(), combatantId: (c && c.id) || c, msg: msg, ts: new Date().toISOString() };
+  if (window.cloudSaveNow) window.cloudSaveNow();
+}
+
 function pvLogTime() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -322,6 +328,7 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
   var can = combatantCanAct(attacker);
   if (!can.ok) {
     showToast('🚫 ' + attacker.name + ' can\'t act — ' + can.reason, 'warn');
+    if (opts.source === 'player') rejectPlayer(attacker, "You can't act — you're " + can.reason);
     return null;
   }
   if (window.pendingReaction && window.pendingReaction.targetId !== attacker.id) clearPendingReaction();
@@ -331,6 +338,7 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
   if (combatActive && a.cost !== 'legendary' && a.cost !== 'reaction') {
     if (!actionAvailable(attacker, cost) && opts.source === 'player') {
       showToast('🚫 ' + attacker.name + ' already used their ' + cost + ' this turn', 'warn');
+      rejectPlayer(attacker, 'Already used your ' + cost + ' this turn');
       return null;
     }
     spendActionFor(attacker, cost); // spent whether it hits or not — DM act-as is never blocked
@@ -577,6 +585,7 @@ function requireTurn(c) {
   if (cur.id === c.id) return true;
   if (c.owner && cur.name === c.owner) return true; // summons share their owner's turn
   showToast('🚫 ' + c.name + ' tried to act out of turn', 'warn');
+  rejectPlayer(c, "Not your turn yet!");
   return false;
 }
 
@@ -588,6 +597,7 @@ function processPlayerMove(req) {
   var speed = combatantSpeedFt(c, req.baseSpeed || 30);
   if (speed === 0 || (!can.ok && can.reason !== 'at 0 HP')) {
     showToast('🚫 ' + c.name + ' can\'t move (' + ((c.conditions || []).join(', ') || can.reason) + ')', 'warn');
+    rejectPlayer(c, "You can't move — " + ((c.conditions || []).join(', ') || can.reason));
     return;
   }
   if (typeof mapState === 'undefined') return;
@@ -601,6 +611,7 @@ function processPlayerMove(req) {
   });
   if (occupied) {
     showToast('🚫 That square is occupied', 'warn');
+    rejectPlayer(c, 'That square is occupied');
     return;
   }
   // Movement budget: distance walked accumulates across the whole turn
@@ -610,6 +621,7 @@ function processPlayerMove(req) {
     var tu = ensureTurnUsed(c);
     if (tu.movedFt + dist > speed) {
       showToast('🚫 ' + c.name + ' only has ' + Math.max(0, speed - tu.movedFt) + ' ft of movement left', 'warn');
+      rejectPlayer(c, 'Only ' + Math.max(0, speed - tu.movedFt) + ' ft of movement left');
       return;
     }
     tu.movedFt += dist;
@@ -846,7 +858,7 @@ function processToggleFeature(req) {
   // Instant features (Action Surge): grant now, no stance
   if (ft.instant === 'extraAction') {
     if (!requireTurn(c)) return;
-    if (c.actionSurgeUsed) { showToast('🚫 ' + c.name + ' already used Action Surge (recharges on a rest)', 'warn'); return; }
+    if (c.actionSurgeUsed) { showToast('🚫 ' + c.name + ' already used Action Surge (recharges on a rest)', 'warn'); rejectPlayer(c, 'Action Surge already spent — recharges on a rest'); return; }
     c.actionSurgeUsed = true;
     c._surgeExtra = (c._surgeExtra || 0) + 1;
     logCombat('⚡⚡ ' + c.name + ' ACTION SURGES — an extra action this turn!', 'round');
@@ -1062,7 +1074,7 @@ function processCastSpell(req) {
   }
   if (!requireTurn(caster)) return;
   var can = combatantCanAct(caster);
-  if (!can.ok) { showToast('🚫 ' + caster.name + ' can\'t cast — ' + can.reason, 'warn'); return; }
+  if (!can.ok) { showToast('🚫 ' + caster.name + ' can\'t cast — ' + can.reason, 'warn'); rejectPlayer(caster, "You can't cast — you're " + can.reason); return; }
 
   // Validate the slot BEFORE mutating anything (so we can snapshot cleanly)
   var slotLevel = parseInt(req.slotLevel) || spell.level || 0;
@@ -1071,12 +1083,14 @@ function processCastSpell(req) {
     slot = (pc.spellSlots || [])[slotLevel - 1];
     if (!slot || slot.used >= slot.max) {
       showToast('🚫 ' + pc.name + ' has no level ' + slotLevel + ' slots left', 'warn');
+      rejectPlayer(caster, 'No level ' + slotLevel + ' slots left');
       return;
     }
   }
   var castCost = spell.cost === 'bonus' ? 'bonus' : 'action';
   if (combatActive && !actionAvailable(caster, castCost)) {
     showToast('🚫 ' + caster.name + ' already used their ' + castCost, 'warn');
+    rejectPlayer(caster, 'Already used your ' + castCost + ' this turn');
     return;
   }
 
@@ -1664,7 +1678,7 @@ function processUseItem(req) {
     // Your table rule: costs a bonus action only during combat
     if (combatActive && c) {
       if (!requireTurn(c)) return;
-      if (!actionAvailable(c, 'bonus')) { showToast('🚫 ' + pc.name + ' already used their bonus action', 'warn'); return; }
+      if (!actionAvailable(c, 'bonus')) { showToast('🚫 ' + pc.name + ' already used their bonus action', 'warn'); rejectPlayer(c, 'Already used your bonus action'); return; }
       spendActionFor(c, 'bonus');
     }
     var heal = rollDiceExpr(item.healDice || '2d4+2');
