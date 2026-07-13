@@ -39,7 +39,9 @@ var CONDITION_EFFECTS = {
   'Bardic Die':   {},                             // spend it at the table, DM removes
   'Half Cover':   { acMod: 2, dexSaveMod: 2 },
   '3/4 Cover':    { acMod: 5, dexSaveMod: 5 },
-  'Disengaged':   {}
+  'Disengaged':   {},
+  'Hidden':       { selfAdv: true, attackersDis: true }, // unseen: adv to attack, attackers have dis (revealed on attack)
+  'Helped':       { selfAdv: true }                      // Help action granted you advantage on your next attack
 };
 
 // Toggleable class features → the stance condition they apply + action cost
@@ -49,7 +51,8 @@ var FEATURE_TOGGLES = {
   'Dodge':           { condition: 'Dodging',  cost: 'action' },
   'Action Surge':    { instant: 'extraAction', cost: 'free'  }, // fighter: one more action, once per rest
   'Second Wind':     { instant: 'secondWind',  cost: 'bonus' }, // fighter: self-heal 1d10+level, once per rest
-  'Disengage':       { condition: 'Disengaged', cost: 'action' } // no opportunity attacks until your next turn
+  'Disengage':       { condition: 'Disengaged', cost: 'action' }, // no opportunity attacks until your next turn
+  'Hide':            { condition: 'Hidden',    cost: 'action' }   // Stealth — unseen until you attack or are found
 };
 
 // ─── Action economy ──────────────────────────────────────────
@@ -117,6 +120,8 @@ function startTurnFor(c) {
   if (c.conditions && c.conditions.some(function(x) { return expiring.indexOf(x) >= 0; })) {
     c.conditions = c.conditions.filter(function(x) { return expiring.indexOf(x) < 0; });
   }
+  // An unused readied action is lost at the start of your next turn
+  if (c.readied) { logCombat('⏳ ' + c.name + '\'s readied action expires unused', 'info'); c.readied = null; }
 }
 
 // Called when a combatant's turn ENDS: repeat saves + durations (all auto)
@@ -527,6 +532,16 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
     result.targetAC = effAC; result.hit = hit; result.crit = hit && crit;
     learnFromAttack(target);
     if (attacker.type === 'ally') consumeAmmoFor(attacker, a);
+    // Attacking reveals a hidden creature and spends a Help advantage
+    if ((attacker.conditions || []).indexOf('Hidden') >= 0) {
+      attacker.conditions = attacker.conditions.filter(function(x) { return x !== 'Hidden'; });
+      result.notes.push('revealed by attacking');
+    }
+    if ((attacker.conditions || []).indexOf('Helped') >= 0) {
+      attacker.conditions = attacker.conditions.filter(function(x) { return x !== 'Helped'; });
+      if (attacker.condMeta) delete attacker.condMeta['Helped'];
+      result.notes.push('used the Help (advantage)');
+    }
 
     if (hit) {
       var dmg = rollDiceExpr(a.dice);
@@ -760,6 +775,8 @@ function processPlayerAction(req) {
     else if (req.type === 'smite') processPlayerSmite(req);
     else if (req.type === 'inspire') processPlayerInspire(req);
     else if (req.type === 'standUp') processPlayerStandUp(req);
+    else if (req.type === 'help') processPlayerHelp(req);
+    else if (req.type === 'ready') processPlayerReady(req);
   } catch(e) {
     console.error('processPlayerAction', e);
   }
@@ -1262,19 +1279,24 @@ function effectiveAC(pc) {
 
 // An equipped weapon becomes an attack action automatically:
 // to-hit = ability mod + proficiency, damage = dice + ability mod
-function weaponToAction(pc, item) {
+function weaponToAction(pc, item, offHand) {
   var strMod = Math.floor((effectiveAbility(pc, 'str') - 10) / 2);
   var dexMod = Math.floor((effectiveAbility(pc, 'dex') - 10) / 2);
   var isRanged = (item.range || 5) > 20;
   var abilityMod = isRanged ? dexMod : Math.max(strMod, dexMod); // melee uses best (finesse-friendly)
   var prof = typeof getProfBonus === 'function' ? getProfBonus(pc.level || 1) : 2;
+  // Two-weapon fighting: the off-hand attack is a bonus action and adds NO
+  // ability modifier to its damage unless you have the Two-Weapon Fighting style.
+  var dmgMod = abilityMod;
+  if (offHand && (pc.features || []).indexOf('Two-Weapon Fighting') < 0 && dmgMod > 0) dmgMod = 0;
   return {
-    name: item.name,
+    name: item.name + (offHand ? ' (off-hand)' : ''),
     kind: 'attack',
     range: item.range || 5,
     bonus: abilityMod + prof,
-    dice: (item.dice || '1d6') + (abilityMod !== 0 ? (abilityMod > 0 ? '+' : '') + abilityMod : ''),
+    dice: (item.dice || '1d6') + (dmgMod !== 0 ? (dmgMod > 0 ? '+' : '') + dmgMod : ''),
     damageType: item.damageType || inferDamageType(item.name),
+    cost: offHand ? 'bonus' : undefined,
     fromItem: true
   };
 }
@@ -1282,11 +1304,18 @@ function weaponToAction(pc, item) {
 // Full action list: manual sheet actions + equipped weapons
 function effectiveActions(pc) {
   var acts = (pc.actions || []).slice();
+  // Two-weapon fighting: a second equipped melee weapon becomes an off-hand
+  // bonus-action attack. Find equipped melee weapons to know which is off-hand.
+  var meleeWeapons = (pc.inventory || []).filter(function(it) {
+    return it.equipped && it.slot === 'weapon' && it.dice && (it.range || 5) <= 5;
+  });
+  var offHandId = meleeWeapons.length >= 2 ? meleeWeapons[1].id : null;
   (pc.inventory || []).forEach(function(it) {
     if (!it.equipped) return;
     if (it.slot === 'weapon' && it.dice) {
-      if (!acts.some(function(a) { return a.name.toLowerCase() === it.name.toLowerCase(); })) {
-        acts.push(weaponToAction(pc, it));
+      var isOff = it.id === offHandId;
+      if (!acts.some(function(a) { return a.name.toLowerCase() === (it.name + (isOff ? ' (off-hand)' : '')).toLowerCase(); })) {
+        acts.push(weaponToAction(pc, it, isOff));
       }
     }
     if (it.grantAction && it.grantAction.name) {
@@ -2177,6 +2206,50 @@ function processPlayerStandUp(req) {
   c.conditions = c.conditions.filter(function(x) { return x !== 'Prone'; });
   logCombat('🧍 ' + c.name + ' stands up (' + cost + ' ft of movement)', 'info');
   showToast('🧍 ' + c.name + ' is back on their feet', 'info');
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+}
+
+// ─── Help: give an ally advantage on their next attack ───────
+function processPlayerHelp(req) {
+  var helper = combatants.find(function(x) { return x.id === req.combatantId; });
+  var ally = combatants.find(function(x) { return x.id === req.targetId; });
+  if (!helper || !ally || !requireTurn(helper)) return;
+  if (ally.id === helper.id) { rejectPlayer(helper, 'Help an ally, not yourself'); return; }
+  if (combatActive && !actionAvailable(helper, 'action')) { rejectPlayer(helper, 'Already used your action this turn'); return; }
+  var can = combatantCanAct(helper);
+  if (!can.ok) { rejectPlayer(helper, "You can't Help — you're " + can.reason); return; }
+  if (combatActive) spendActionFor(helper, 'action');
+  ally.conditions = ally.conditions || [];
+  if (ally.conditions.indexOf('Helped') < 0) ally.conditions.push('Helped');
+  ally.condMeta = ally.condMeta || {};
+  ally.condMeta['Helped'] = { by: helper.name, rounds: 1 }; // wears off if unused by their next turn
+  logCombat('🤝 ' + helper.name + ' Helps ' + ally.name + ' — advantage on their next attack', 'info');
+  showToast('🤝 ' + helper.name + ' Helps ' + ally.name, 'success');
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+}
+
+// ─── Ready: declare a held action + trigger (DM resolves it) ─
+function processPlayerReady(req) {
+  var c = combatants.find(function(x) { return x.id === req.combatantId; });
+  if (!c || !requireTurn(c)) return;
+  if (combatActive && !actionAvailable(c, 'action')) { rejectPlayer(c, 'Already used your action this turn'); return; }
+  if (combatActive) spendActionFor(c, 'action');
+  c.readied = { action: String(req.action || 'an action').slice(0, 60), trigger: String(req.trigger || '').slice(0, 120) };
+  logCombat('⏳ ' + c.name + ' READIES ' + c.readied.action + (c.readied.trigger ? ' — trigger: ' + c.readied.trigger : ''), 'info');
+  showToast('⏳ ' + c.name + ' readies an action', 'info');
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+}
+
+// DM (or trigger) resolves / clears a readied action
+function clearReadied(combatantId) {
+  var c = combatants.find(function(x) { return x.id === combatantId; });
+  if (!c || !c.readied) return;
+  logCombat('⏳ ' + c.name + '\'s readied action (' + c.readied.action + ') resolves/clears', 'info');
+  c.readied = null;
+  c.reactionUsed = true; // a readied action uses your reaction
   renderCombatants();
   if (window.cloudSave) window.cloudSave();
 }
