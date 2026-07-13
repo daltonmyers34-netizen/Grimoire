@@ -433,7 +433,10 @@ function renderCombatants() {
     var isActive = combatActive && i === currentTurn;
     var isDead = c.hp <= 0;
     var nameClass = c.type === 'enemy' ? 'enemy' : c.type === 'ally' ? 'ally' : '';
-    var conds = c.conditions.map(function(cond) { return '<span class="cond-badge" onclick="removeCondition(' + c.id + ',\'' + cond + '\')" title="Click to remove">' + cond + ' ✕</span>'; }).join('');
+    var conds = c.conditions.map(function(cond) {
+      var rd = (c.condMeta && c.condMeta[cond] && typeof c.condMeta[cond].rounds === 'number') ? c.condMeta[cond].rounds : null;
+      return '<span class="cond-badge" onclick="removeCondition(' + c.id + ',\'' + cond + '\')" title="Click to remove">' + cond + (rd !== null ? ' <span style="color:#e0a860;">' + rd + 'r</span>' : '') + ' ✕</span>';
+    }).join('');
     var typeColor = c.type === 'enemy' ? '#c0392b' : c.type === 'ally' ? '#27ae60' : '#888';
     var inspBadge = c.inspiration ? '<span style="color:#ffe066;font-size:13px;margin-left:4px;" title="Inspired">★</span>' : '';
     var concBadge = c.concentrating ? '<span style="background:rgba(100,50,200,0.2);border:1px solid rgba(150,80,255,0.4);color:#b080ff;font-size:9px;font-family:Cinzel,serif;border-radius:3px;padding:1px 5px;margin-left:4px;" title="' + c.concentrating + '">CONC</span>' : '';
@@ -460,6 +463,7 @@ function renderCombatants() {
           '<div style="font-family:Cinzel,serif;font-size:13px;color:var(--text-secondary);white-space:nowrap;">🛡 ' + c.ac + '</div>' +
           (conds ? '<div style="display:flex;flex-wrap:wrap;gap:3px;">' + conds + '</div>' : '') +
         '</div>' +
+        (c.readied ? '<div style="margin-top:4px;font-size:11px;color:#c8a8ff;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">⏳ Readied: <strong>' + esc(c.readied.action) + '</strong>' + (c.readied.trigger ? ' <span style="color:var(--text-dim);">when ' + esc(c.readied.trigger) + '</span>' : '') + '<button onclick="clearReadied(' + c.id + ')" style="font-size:10px;padding:1px 8px;border:1px solid rgba(150,110,230,0.5);background:rgba(120,90,200,0.15);color:#c8a8ff;border-radius:3px;cursor:pointer;">⚡ Trigger / clear</button></div>' : '') +
       '</div>' +
       '<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">' +
         '<div style="display:flex;gap:3px;">' +
@@ -602,8 +606,53 @@ function closeHPModal() {
 function openCondModal(id) {
   condTargetId = id;
   renderDefenseChips();
+  renderCondDurations();
   renderExhaustionRow();
   document.getElementById('cond-modal').classList.add('show');
+}
+
+// Per-condition round timers — set a duration, it ticks down each turn end
+function renderCondDurations() {
+  var wrap = document.getElementById('cond-durations');
+  var c = combatants.find(function(x) { return x.id === condTargetId; });
+  if (!wrap || !c) return;
+  var active = (c.conditions || []).filter(function(cond) {
+    return ['Stable', 'Half Cover', '3/4 Cover'].indexOf(cond) < 0; // permanent-ish, skip
+  });
+  if (!active.length) { wrap.innerHTML = '<div style="font-size:11px;color:#555;">No active conditions to time.</div>'; return; }
+  wrap.innerHTML = active.map(function(cond) {
+    var rd = (c.condMeta && c.condMeta[cond] && typeof c.condMeta[cond].rounds === 'number') ? c.condMeta[cond].rounds : null;
+    return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">' +
+      '<span style="flex:1;font-size:12px;color:var(--parchment);">' + cond + '</span>' +
+      '<button onclick="bumpCondRounds(\'' + cond.replace(/'/g, "\\'") + '\',-1)" style="width:22px;height:22px;border:1px solid var(--border);background:rgba(0,0,0,0.25);color:var(--text-dim);border-radius:3px;cursor:pointer;">−</button>' +
+      '<span style="min-width:40px;text-align:center;font-size:12px;color:' + (rd !== null ? '#e0a860' : '#555') + ';">' + (rd !== null ? rd + 'r' : '∞') + '</span>' +
+      '<button onclick="bumpCondRounds(\'' + cond.replace(/'/g, "\\'") + '\',1)" style="width:22px;height:22px;border:1px solid var(--border);background:rgba(0,0,0,0.25);color:var(--text-dim);border-radius:3px;cursor:pointer;">+</button>' +
+      (rd !== null ? '<button onclick="clearCondRounds(\'' + cond.replace(/'/g, "\\'") + '\')" title="Remove timer" style="font-size:10px;padding:2px 6px;border:1px solid var(--border);background:none;color:#888;border-radius:3px;cursor:pointer;">∞</button>' : '') +
+    '</div>';
+  }).join('');
+}
+
+function bumpCondRounds(cond, delta) {
+  var c = combatants.find(function(x) { return x.id === condTargetId; });
+  if (!c) return;
+  c.condMeta = c.condMeta || {};
+  c.condMeta[cond] = c.condMeta[cond] || {};
+  var cur = typeof c.condMeta[cond].rounds === 'number' ? c.condMeta[cond].rounds : 0;
+  var next = Math.max(0, cur + delta);
+  if (next === 0 && delta < 0) { delete c.condMeta[cond].rounds; }
+  else c.condMeta[cond].rounds = next;
+  renderCondDurations();
+  renderCombatants();
+  syncCombatState();
+}
+
+function clearCondRounds(cond) {
+  var c = combatants.find(function(x) { return x.id === condTargetId; });
+  if (!c || !c.condMeta || !c.condMeta[cond]) return;
+  delete c.condMeta[cond].rounds;
+  renderCondDurations();
+  renderCombatants();
+  syncCombatState();
 }
 
 function renderExhaustionRow() {

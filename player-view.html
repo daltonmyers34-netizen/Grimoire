@@ -794,7 +794,9 @@ const PV_CONDITION_EFFECTS = {
   'Reckless':     { selfAdv: true, attackersAdv: true },
   'Dodging':      { attackersDis: true },
   'Hastened':     { extraAction: 1, speedFactor: 2 },
-  'Slowed':       { halfSpeed: true }
+  'Slowed':       { halfSpeed: true },
+  'Hidden':       { selfAdv: true, attackersDis: true },
+  'Helped':       { selfAdv: true }
 };
 
 function pvMaxActions(c) {
@@ -810,7 +812,7 @@ function pvActionsUsed(c) {
   return tu.actions !== undefined ? tu.actions : (tu.action ? 1 : 0);
 }
 
-const PV_FEATURES = { 'Rage': 'Raging', 'Reckless Attack': 'Reckless', 'Dodge': 'Dodging', 'Disengage': 'Disengaged' };
+const PV_FEATURES = { 'Rage': 'Raging', 'Reckless Attack': 'Reckless', 'Dodge': 'Dodging', 'Disengage': 'Disengaged', 'Hide': 'Hidden' };
 
 function pvCanAct(c) {
   for (const cn of (c.conditions || [])) {
@@ -984,7 +986,9 @@ const PV_COND_INFO = {
   'Bardic Die': 'You hold a Bardic Inspiration die! Add it to any attack, check, or save — tell the table when you spend it.',
   'Half Cover': '+2 AC and +2 DEX saves.',
   '3/4 Cover': '+5 AC and +5 DEX saves.',
-  'Stable': 'At 0 HP but no longer dying.'
+  'Stable': 'At 0 HP but no longer dying.',
+  'Hidden': 'Unseen — your attacks have advantage and attackers have disadvantage. You reveal yourself the moment you attack.',
+  'Helped': 'An ally Helped you — your next attack has advantage.'
 };
 function showCondInfo(name) {
   const info = PV_COND_INFO[name] || 'Ask your DM what this one does...';
@@ -1400,6 +1404,49 @@ function inspireReq() {
   }));
 }
 window._pvInspire = inspireReq;
+
+function helpReq() {
+  const d = latestData;
+  const me = myCombatant(d);
+  if (!me || !isMyTurn(d)) return;
+  const allies = (d.combatants || []).filter(c => c.type === 'ally' && c.id !== me.id && c.hp > 0 && !c.owner);
+  if (!allies.length) { showOverlay('<div style="text-align:center;color:var(--text-dim);">No ally to Help right now.</div><button class="btn-pv" style="width:100%;justify-content:center;margin-top:10px;" onclick="_pvCloseOverlay()">OK</button>'); return; }
+  let html = '<div style="font-family:Cinzel,serif;font-size:16px;color:#8fd050;margin-bottom:4px;">🤝 Help who?</div>' +
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">They get advantage on their next attack.</div>';
+  allies.forEach(c => { html += '<button class="pv-target-btn" data-help="' + c.id + '"><span style="color:#90c8ff;">' + esc(c.name) + '</span></button>'; });
+  html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:8px;" onclick="_pvCloseOverlay()">Cancel</button>';
+  showOverlay(html);
+  document.querySelectorAll('[data-help]').forEach(btn => btn.addEventListener('click', () => {
+    closeOverlay();
+    sendPlayerRequest({ type: 'help', combatantId: me.id, targetId: parseFloat(btn.dataset.help), ts: Date.now() });
+  }));
+}
+window._pvHelp = helpReq;
+
+function readyReq() {
+  const d = latestData;
+  const me = myCombatant(d);
+  if (!me || !isMyTurn(d)) return;
+  let html = '<div style="font-family:Cinzel,serif;font-size:16px;color:#c8a8ff;margin-bottom:4px;">⏳ Ready an action</div>' +
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">Declare what you\'ll do and what sets it off. The DM triggers it as your reaction.</div>' +
+    '<input id="pv-ready-action" placeholder="Action (e.g. Attack with bow)" style="width:100%;margin-bottom:8px;font-size:14px;padding:8px;">' +
+    '<input id="pv-ready-trigger" placeholder="Trigger (e.g. an enemy enters the door)" style="width:100%;margin-bottom:12px;font-size:14px;padding:8px;">' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;border-color:var(--gold);" onclick="_pvReadySend()">⏳ Ready it</button>' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:6px;" onclick="_pvCloseOverlay()">Cancel</button>';
+  showOverlay(html);
+}
+window._pvReady = readyReq;
+
+function readySend() {
+  const d = latestData;
+  const me = myCombatant(d);
+  if (!me) return;
+  const action = (document.getElementById('pv-ready-action') || {}).value || 'an action';
+  const trigger = (document.getElementById('pv-ready-trigger') || {}).value || '';
+  closeOverlay();
+  sendPlayerRequest({ type: 'ready', combatantId: me.id, action, trigger, ts: Date.now() });
+}
+window._pvReadySend = readySend;
 
 function endMyTurn() {
   const d = latestData;
@@ -2046,7 +2093,11 @@ function renderCharacterCard(d) {
 
   // Conditions
   if (conditions.length) {
-    html += '<div style="margin:8px 0;">' + conditions.map(c => '<span class="cond-tag" style="cursor:pointer;" onclick="_pvCondInfo(\'' + esc(c).replace(/'/g, "\\'") + '\')">' + esc(c) + ' ℹ</span>').join('') + '</div>';
+    const cMeta = (cmb && cmb.condMeta) || {};
+    html += '<div style="margin:8px 0;">' + conditions.map(c => {
+      const rd = (cMeta[c] && typeof cMeta[c].rounds === 'number') ? ' <span style="color:#e0a860;">' + cMeta[c].rounds + 'r</span>' : '';
+      return '<span class="cond-tag" style="cursor:pointer;" onclick="_pvCondInfo(\'' + esc(c).replace(/'/g, "\\'") + '\')">' + esc(c) + rd + ' ℹ</span>';
+    }).join('') + '</div>';
   }
 
   // Death saves — private: only YOU (and the DM) see your pips.
@@ -2070,7 +2121,7 @@ function renderCharacterCard(d) {
   // Class feature toggles (Rage, Reckless, Dodge)
   if (cmb) {
     const NAMED_FEATS = ['Action Surge', 'Second Wind', 'Bardic Inspiration'];
-    const avail = ['Dodge', 'Disengage'].concat((pc.features || []).filter(f => (PV_FEATURES[f] || NAMED_FEATS.includes(f)) && f !== 'Dodge'));
+    const avail = ['Dodge', 'Disengage', 'Hide'].concat((pc.features || []).filter(f => (PV_FEATURES[f] || NAMED_FEATS.includes(f)) && f !== 'Dodge'));
     const myTurnNow = isMyTurn(d);
     if (avail.length) {
       html += '<div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;">';
@@ -2097,12 +2148,19 @@ function renderCharacterCard(d) {
           return;
         }
         const active = (cmb.conditions || []).includes(PV_FEATURES[f]);
+        const icon = f === 'Rage' ? '😤 ' : f === 'Dodge' ? '🛡 ' : f === 'Hide' ? '🥷 ' : f === 'Disengage' ? '🏃 ' : '⚔ ';
         html += '<button class="btn-pv" style="font-size:12px;' +
           (active ? 'border-color:#ffb450;color:#ffb450;background:rgba(255,180,80,0.12);' : '') + '" ' +
           ((myTurnNow || active) ? '' : 'disabled ') + 'onclick="_pvToggleFeature(\'' + f + '\')">' +
-          (f === 'Rage' ? '😤 ' : f === 'Dodge' ? '🛡 ' : '⚔ ') + f + (active ? ' ✓' : '') + '</button>';
+          icon + f + (active ? ' ✓' : '') + '</button>';
       });
+      // Help an ally + Ready an action — universal actions
+      html += '<button class="btn-pv" style="font-size:12px;" ' + (myTurnNow ? '' : 'disabled ') + 'onclick="_pvHelp()">🤝 Help</button>';
+      html += '<button class="btn-pv" style="font-size:12px;" ' + (myTurnNow ? '' : 'disabled ') + 'onclick="_pvReady()">⏳ Ready</button>';
       html += '</div>';
+      if (cmb.readied) {
+        html += '<div style="margin-top:8px;font-size:12px;color:#c8a8ff;border:1px dashed rgba(150,110,230,0.4);border-radius:6px;padding:6px 8px;">⏳ Readied: <strong>' + esc(cmb.readied.action) + '</strong>' + (cmb.readied.trigger ? ' — when ' + esc(cmb.readied.trigger) : '') + ' <span style="color:#666;">(the DM triggers it)</span></div>';
+      }
     }
   }
 
