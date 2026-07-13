@@ -793,7 +793,9 @@ function pvCanAct(c) {
 }
 
 function pvSpeedFt(c, baseFt) {
-  let speed = baseFt || 30;
+  let speed = parseInt(baseFt, 10);
+  if (!speed || speed <= 0) speed = 30; // stale/string speeds from old saves default to 30
+
   for (const cn of (c.conditions || [])) {
     const eff = PV_CONDITION_EFFECTS[cn];
     if (!eff) continue;
@@ -1557,7 +1559,7 @@ function bindMapInteraction() {
 
     const pc = myPC(d);
     const usedFt = (me.turnUsed && me.turnUsed.movedFt) || 0;
-    let baseSpd = me.owner ? 30 : ((pc && pc.speed) || 30);
+    let baseSpd = me.owner ? 30 : (parseInt(pc && pc.speed, 10) || 30);
     if (!me.owner) ((pc && pc.inventory) || []).forEach(it => { if (it.equipped && it.speedBonus) baseSpd += it.speedBonus; });
     const speed = Math.max(0, pvSpeedFt(me, baseSpd) - usedFt);
 
@@ -2152,14 +2154,14 @@ function renderCharacterCard(d) {
     html += '</div>';
   }
 
-  // Personal inventory & equipment
+  // Personal inventory & equipment — always shown so players know where to equip/drink
   const myInv = pc.inventory || [];
-  if (myInv.length || pc.gold !== undefined) {
+  {
     html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);">';
     html += '<div class="card-section-label" style="border:none;padding:0;margin-bottom:8px;">My Inventory' +
-      (pc.gold !== undefined ? ' <span style="color:#ffd700;font-size:11px;text-transform:none;letter-spacing:0;margin-left:8px;">🪙 ' + (pc.gold || 0) + ' gold</span>' : '') + '</div>';
+      ' <span style="color:#ffd700;font-size:11px;text-transform:none;letter-spacing:0;margin-left:8px;">🪙 ' + (pc.gold || 0) + ' gold</span></div>';
     if (!myInv.length) {
-      html += '<div style="font-size:12px;color:#555;font-style:italic;">Empty pockets. Ask your DM for loot!</div>';
+      html += '<div style="font-size:12px;color:#555;font-style:italic;">Empty pockets — when the DM hands you loot it shows up here, with Equip and 🧪 Drink buttons.</div>';
     }
     const slotIcons = { weapon: '⚔', armor: '🛡', shield: '🛡', light: '🕯', gear: '🎒', potion: '🧪', ammo: '🏹' };
     myInv.forEach(it => {

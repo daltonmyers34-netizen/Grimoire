@@ -245,6 +245,18 @@ function startCombat() {
   updateRoundDisplay();
   renderCombatants();
   syncCombatState();
+  // Offer the combat map (unless you're already there)
+  var mapTab = document.getElementById('tab-map');
+  if (mapTab && !mapTab.classList.contains('active')) {
+    var bar = document.createElement('div');
+    bar.id = 'combat-jump-bar';
+    bar.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:5000;display:flex;gap:10px;align-items:center;background:linear-gradient(135deg,rgba(60,20,15,0.97),rgba(40,12,8,0.97));border:1px solid rgba(224,80,80,0.5);border-radius:10px;padding:12px 18px;box-shadow:0 8px 30px rgba(0,0,0,0.7);';
+    bar.innerHTML = '<span style="font-family:Cinzel,serif;font-size:13px;color:#ffb0a0;">⚔ Combat started!</span>' +
+      '<button class="btn btn-gold btn-sm" onclick="switchTab(\'map\');document.getElementById(\'combat-jump-bar\').remove();">🗺 Open Combat Map</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'combat-jump-bar\').remove();">Stay here</button>';
+    document.body.appendChild(bar);
+    setTimeout(function() { var b = document.getElementById('combat-jump-bar'); if (b) b.remove(); }, 12000);
+  }
 }
 
 // BUG FIX: Added safety counter to prevent infinite loop if all combatants are hidden or dead
@@ -365,7 +377,7 @@ function endCombat() {
   round = 0;
   stopTurnTimer();
   document.getElementById('round-num').textContent = '0';
-  document.querySelector('.round-display span').textContent = 'Combat Not Started';
+  document.getElementById('round-status').textContent = 'Combat Not Started';
   document.getElementById('turn-indicator').textContent = '';
   renderCombatants();
   syncCombatState();
@@ -379,7 +391,7 @@ function resetCombat() {
   combatActive = false;
   stopTurnTimer();
   document.getElementById('round-num').textContent = '0';
-  document.querySelector('.round-display span').textContent = 'Combat Not Started';
+  document.getElementById('round-status').textContent = 'Combat Not Started';
   document.getElementById('turn-indicator').textContent = '';
   renderCombatants();
   syncCombatState();
@@ -387,7 +399,7 @@ function resetCombat() {
 
 function updateRoundDisplay() {
   document.getElementById('round-num').textContent = round;
-  document.querySelector('.round-display span').textContent = 'Active Combat';
+  document.getElementById('round-status').textContent = 'Active Combat';
   var cur = combatants[currentTurn];
   document.getElementById('turn-indicator').textContent = cur ? 'Current: ' + cur.name : '';
   var mapBar = document.getElementById('map-turn-indicator');
@@ -716,7 +728,7 @@ function clearEncounter() {
   combatActive = false;
   stopTurnTimer();
   document.getElementById('round-num').textContent = '0';
-  document.querySelector('.round-display span').textContent = 'Combat Not Started';
+  document.getElementById('round-status').textContent = 'Combat Not Started';
   document.getElementById('turn-indicator').textContent = '';
   renderCombatants();
   showToast('Encounter cleared.', 'info');
