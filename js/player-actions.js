@@ -60,6 +60,15 @@ function ensureTurnUsed(c) {
   return c.turnUsed;
 }
 
+// Attacks per Attack action: Extra Attack feature (PCs) or the
+// multiattack count set in the monster action editor
+function attacksPerActionFor(c) {
+  var pc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === c.name; });
+  if (pc && (pc.features || []).indexOf('Extra Attack') >= 0) return 2;
+  if (c.multiattack > 1) return c.multiattack;
+  return 1;
+}
+
 // How many Actions this creature gets this turn (Haste, Action Surge...)
 function maxActionsFor(c) {
   var max = 1 + (c._surgeExtra || 0);
@@ -371,15 +380,26 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
   if (window.pendingReaction && window.pendingReaction.targetId !== attacker.id) clearPendingReaction();
   if (window.pendingSmite && window.pendingSmite.attackerId !== attacker.id) window.pendingSmite = null;
 
-  // Action economy: attacks/heals cost your Action (or Bonus if flagged)
+  // Action economy: attacks/heals cost your Action (or Bonus if flagged).
+  // Extra Attack / multiattack: N weapon swings per Action.
   var cost = a.cost === 'bonus' ? 'bonus' : 'action';
+  var multiNote = '';
   if (combatActive && a.cost !== 'legendary' && a.cost !== 'reaction') {
-    if (!actionAvailable(attacker, cost) && opts.source === 'player') {
+    var per = (a.kind !== 'heal' && cost === 'action') ? attacksPerActionFor(attacker) : 1;
+    var tuE = ensureTurnUsed(attacker);
+    var midSwing = per > 1 && (tuE.attacksMade || 0) > 0;
+    if (!midSwing && !actionAvailable(attacker, cost) && opts.source === 'player') {
       showToast('🚫 ' + attacker.name + ' already used their ' + cost + ' this turn', 'warn');
       rejectPlayer(attacker, 'Already used your ' + cost + ' this turn');
       return null;
     }
-    spendActionFor(attacker, cost); // spent whether it hits or not — DM act-as is never blocked
+    if (per > 1) {
+      tuE.attacksMade = (tuE.attacksMade || 0) + 1;
+      multiNote = '⚔ attack ' + tuE.attacksMade + ' of ' + per;
+      if (tuE.attacksMade >= per) { spendActionFor(attacker, cost); tuE.attacksMade = 0; }
+    } else {
+      spendActionFor(attacker, cost); // spent whether it hits or not — DM act-as is never blocked
+    }
   }
   if (a.cost === 'legendary' && attacker.legendary) {
     if (attacker.legendary.used >= attacker.legendary.max) {
@@ -397,7 +417,7 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
     attacker: attacker.name,
     target: target.name,
     actionName: a.name,
-    notes: [],
+    notes: multiNote ? [multiNote] : [],
     ts: new Date().toISOString()
   };
 
@@ -742,12 +762,18 @@ function dmOpenActMenu(combatantId) {
   ov.className = 'modal-overlay show';
   ov.style.zIndex = '2600';
   var legInfo = c.legendary ? ' · ⭐ ' + (c.legendary.max - (c.legendary.used || 0)) + '/' + c.legendary.max + ' legendary left' : '';
+  var tuA = c.turnUsed || {};
+  var econInfo = combatActive ? '⏱ ' + Math.max(0, maxActionsFor(c) - (tuA.actions || 0)) + '/' + maxActionsFor(c) + ' actions · bonus ' + (tuA.bonus ? 'spent' : 'free') : '';
   var inner = '<div class="modal" style="max-width:420px;width:95%;">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' +
       '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin:0;flex:1;">⚔ ' + c.name + ' acts</h3>' +
       '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'dm-act-modal\').remove();dmEditActions(' + combatantId + ')">✎ Edit</button>' +
     '</div>' +
-    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">Pick an action, then a target. You enter the rolls (or auto)' + legInfo + '.</div>';
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">Pick an action, then a target. You enter the rolls (or auto)' + legInfo + '.</div>' +
+    (econInfo ? '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;color:var(--text-dim);">' + econInfo +
+      '<button class="btn btn-ghost btn-sm" onclick="dmGrantAction(' + combatantId + ')" title="House-rule an extra action for this turn">+1 action</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="dmResetEconomy(' + combatantId + ')" title="Fresh action/bonus/movement — as if their turn just started">↺ Refresh turn</button>' +
+    '</div>' : '');
   actions.forEach(function(a, i) {
     inner += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:rgba(0,0,0,0.25);">' +
       '<span>' + (a.kind === 'heal' ? '❤' : '⚔') + '</span>' +
@@ -972,12 +998,12 @@ function processToggleFeature(req) {
     var can = combatantCanAct(c);
     if (!can.ok) { showToast('🚫 ' + c.name + ' can\'t use ' + req.feature + ' — ' + can.reason, 'warn'); return; }
     if (combatActive && ft.cost !== 'free') {
-      var tu = ensureTurnUsed(c);
-      if (tu[ft.cost]) {
+      if (!actionAvailable(c, ft.cost)) {
         showToast('🚫 ' + c.name + ' already used their ' + ft.cost + ' this turn', 'warn');
+        rejectPlayer(c, 'Already used your ' + ft.cost + ' this turn');
         return;
       }
-      tu[ft.cost] = true;
+      spendActionFor(c, ft.cost);
     }
     c.conditions.push(ft.condition);
     logCombat('⚡ ' + c.name + ' uses ' + req.feature + '!', 'info');
@@ -1603,6 +1629,10 @@ function dmEditActions(combatantId) {
     '<div id="ae-rows">' + rowsHtml() + '</div>' +
     '<button class="btn btn-ghost btn-sm" onclick="dmAddActionRow()" style="margin:6px 0 12px;">+ Add action</button>' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+      '<span style="font-size:12px;color:var(--text-dim);">⚔⚔ Attacks per Action (multiattack):</span>' +
+      '<input id="ae-multi" type="number" min="1" max="6" value="' + (c.multiattack || 1) + '" style="width:56px;font-size:14px;padding:4px;text-align:center;">' +
+    '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
       '<span style="font-size:12px;color:var(--text-dim);">⭐ Legendary actions per round:</span>' +
       '<input id="ae-legmax" type="number" min="0" max="5" value="' + ((c.legendary && c.legendary.max) || 0) + '" style="width:56px;font-size:14px;padding:4px;text-align:center;">' +
       '<span style="font-size:10px;color:#555;">(0 = none)</span>' +
@@ -1661,6 +1691,9 @@ function dmSaveActions(combatantId) {
   c.legendary = legMax > 0 ? { max: legMax, used: (c.legendary && c.legendary.used) || 0 } : undefined;
   var ownerEl = document.getElementById('ae-owner');
   c.owner = (ownerEl && ownerEl.value.trim()) || undefined;
+  var multiEl = document.getElementById('ae-multi');
+  var multi = multiEl ? parseInt(multiEl.value) || 1 : 1;
+  c.multiattack = multi > 1 ? multi : undefined;
   var m = document.getElementById('dm-actedit-modal');
   if (m) m.remove();
   renderCombatants();
@@ -1938,4 +1971,30 @@ function dropLinkedConditions(casterName, spellName) {
     logCombat('💫 Concentration broken — ' + dropped.join(', '), 'info');
     renderCombatants();
   }
+}
+
+// ─── DM economy overrides: you're the boss ───────────────────
+function dmGrantAction(combatantId) {
+  var c = combatants.find(function(x) { return x.id === combatantId; });
+  if (!c) return;
+  c._surgeExtra = (c._surgeExtra || 0) + 1;
+  showToast('⚡ ' + c.name + ' granted an extra action this turn', 'success');
+  logCombat('⚡ DM grants ' + c.name + ' an extra action', 'round');
+  var m = document.getElementById('dm-act-modal');
+  if (m) { m.remove(); dmOpenActMenu(combatantId); }
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+}
+
+function dmResetEconomy(combatantId) {
+  var c = combatants.find(function(x) { return x.id === combatantId; });
+  if (!c) return;
+  c.turnUsed = { actions: 0, bonus: false, movedFt: 0 };
+  c.reactionUsed = false;
+  c._surgeExtra = 0; // "as if their turn just started" — granted extras reset too
+  showToast('↺ ' + c.name + ' — fresh action, bonus, movement, and reaction', 'success');
+  var m = document.getElementById('dm-act-modal');
+  if (m) { m.remove(); dmOpenActMenu(combatantId); }
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
 }

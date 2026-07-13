@@ -63,10 +63,11 @@ function switchTab(name) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   const section = document.getElementById('tab-' + name);
   if (section) section.classList.add('active');
-  // Find and activate the matching nav tab
-  const tab = document.querySelector('.nav-tab[onclick*="' + name + '"]');
+  // Find and activate the matching nav tab (match the quoted name so 'world' doesn't hit 'worldmap')
+  const tab = document.querySelector(".nav-tab[onclick*=\"switchTab('" + name + "')\"]");
   if (tab) tab.classList.add('active');
   if (name === 'map' && typeof initMapTab === 'function') initMapTab();
+  if (name === 'worldmap' && typeof renderWorldMapTab === 'function') renderWorldMapTab();
 }
 
 // ============================================================

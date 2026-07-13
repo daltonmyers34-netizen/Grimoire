@@ -151,6 +151,7 @@ function uploadWorldMapImage(file) {
     var apply = function(src, viaCloud) {
       worldMap.image = src;
       syncMapState();
+      if (typeof renderWorldMapTab === 'function') renderWorldMapTab();
       showToast('🌍 World map set' + (viaCloud ? ' (cloud storage — full quality)' : ' (' + kb + ' KB inline)') + ' — players can view it any time', 'success');
     };
     if (window.uploadToStorage) {
@@ -161,19 +162,218 @@ function uploadWorldMapImage(file) {
   }, 2400);
 }
 
-function viewWorldMap() {
-  if (!worldMap.image) { showToast('No world map yet — upload one with 🌍', 'info'); return; }
+// World/Town map tab
+function renderWorldMapTab() {
+  var view = document.getElementById('worldmap-view');
+  if (!view) return;
+  var nameEl = document.getElementById('worldmap-name');
+  if (nameEl) nameEl.value = worldMap.name || '';
+  if (worldMap.image) {
+    view.innerHTML = '<img src="' + worldMap.image + '" style="max-width:100%;max-height:78vh;border-radius:8px;border:1px solid var(--border);cursor:zoom-in;" onclick="zoomWorldMap()">' +
+      (worldMap.name ? '<div style="font-family:Cinzel,serif;font-size:15px;color:var(--gold);margin-top:8px;">' + esc(worldMap.name) + '</div>' : '');
+  } else {
+    view.innerHTML = '<div style="padding:60px 20px;color:var(--text-dim);border:2px dashed var(--border);border-radius:8px;">' +
+      '<div style="font-size:40px;margin-bottom:10px;">🌍</div>' +
+      '<div>No world/town map yet.</div>' +
+      '<div style="font-size:12px;margin-top:6px;">Upload an image, or hit ✨ Generate to draw one.</div></div>';
+  }
+}
+
+function zoomWorldMap() {
+  if (!worldMap.image) return;
   var ov = document.createElement('div');
   ov.className = 'modal-overlay show';
   ov.style.zIndex = '2800';
-  ov.innerHTML = '<div class="modal" style="max-width:92vw;max-height:92vh;padding:10px;">' +
-    '<img src="' + worldMap.image + '" style="max-width:100%;max-height:80vh;display:block;border-radius:6px;">' +
-    '<div class="modal-btns" style="margin-top:8px;">' +
-      '<button class="btn btn-blood btn-sm" onclick="worldMap.image=null;syncMapState();this.closest(\'.modal-overlay\').remove();showToast(\'World map removed\',\'info\')">🗑 Remove</button>' +
-      '<button class="btn btn-ghost" onclick="this.closest(\'.modal-overlay\').remove()">Close</button>' +
-    '</div></div>';
-  ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
+  ov.innerHTML = '<div style="max-width:96vw;max-height:96vh;overflow:auto;"><img src="' + worldMap.image + '" style="display:block;border-radius:6px;"></div>';
+  ov.addEventListener('click', function() { ov.remove(); });
   document.body.appendChild(ov);
+}
+
+function deleteWorldMap() {
+  if (!worldMap.image) { showToast('No world map to delete', 'info'); return; }
+  if (!confirm('Delete the current world/town map? Players will no longer see it.')) return;
+  worldMap.image = null;
+  worldMap.name = '';
+  syncMapState();
+  renderWorldMapTab();
+  showToast('🗑 World map deleted', 'info');
+}
+
+// Keep old toolbar hook working
+function viewWorldMap() { switchTab('worldmap'); }
+
+// ─── Procedural world map generator ─────────────────────────
+var WM_SYL_A = ['Ald', 'Bran', 'Cael', 'Dun', 'Ever', 'Fal', 'Gild', 'Hollow', 'Iron', 'Karn', 'Loch', 'Mist', 'North', 'Oak', 'Raven', 'Stone', 'Thorn', 'Vale', 'West', 'Wynd'];
+var WM_SYL_B = ['brook', 'burg', 'crest', 'dale', 'fell', 'ford', 'gate', 'haven', 'helm', 'hollow', 'mere', 'moor', 'reach', 'rest', 'shade', 'shire', 'stead', 'vale', 'watch', 'wick'];
+function wmTownName() {
+  return WM_SYL_A[Math.floor(Math.random() * WM_SYL_A.length)] + WM_SYL_B[Math.floor(Math.random() * WM_SYL_B.length)];
+}
+
+function generateWorldMap() {
+  var W = 1400, H = 1000;
+  var cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  var ctx = cv.getContext('2d');
+
+  // Sea
+  var sea = ctx.createLinearGradient(0, 0, W, H);
+  sea.addColorStop(0, '#b7c4c9'); sea.addColorStop(1, '#9fb3bb');
+  ctx.fillStyle = sea; ctx.fillRect(0, 0, W, H);
+  // Sea hatch lines
+  ctx.strokeStyle = 'rgba(90,110,120,0.18)'; ctx.lineWidth = 1;
+  for (var hy = 20; hy < H; hy += 26) {
+    ctx.beginPath();
+    for (var hx = 0; hx <= W; hx += 40) ctx.lineTo(hx, hy + Math.sin(hx / 90 + hy) * 4);
+    ctx.stroke();
+  }
+
+  // Landmass: irregular blob around center
+  var cx = W / 2 + (Math.random() - 0.5) * 120, cy = H / 2 + (Math.random() - 0.5) * 80;
+  var pts = [], N = 26;
+  for (var i = 0; i < N; i++) {
+    var ang = (i / N) * Math.PI * 2;
+    var r = 320 + Math.random() * 180 + Math.sin(ang * 3 + Math.random()) * 60;
+    pts.push([cx + Math.cos(ang) * r * 1.25, cy + Math.sin(ang) * r * 0.85]);
+  }
+  var landPath = function() {
+    ctx.beginPath();
+    ctx.moveTo((pts[0][0] + pts[N - 1][0]) / 2, (pts[0][1] + pts[N - 1][1]) / 2);
+    for (var j = 0; j < N; j++) {
+      var p = pts[j], q = pts[(j + 1) % N];
+      ctx.quadraticCurveTo(p[0], p[1], (p[0] + q[0]) / 2, (p[1] + q[1]) / 2);
+    }
+    ctx.closePath();
+  };
+  // Coast glow
+  landPath(); ctx.strokeStyle = 'rgba(70,90,100,0.35)'; ctx.lineWidth = 14; ctx.stroke();
+  // Land fill (parchment)
+  var land = ctx.createLinearGradient(cx - 400, cy - 400, cx + 400, cy + 400);
+  land.addColorStop(0, '#e8dcb8'); land.addColorStop(0.5, '#e0d2a8'); land.addColorStop(1, '#d6c698');
+  landPath(); ctx.fillStyle = land; ctx.fill();
+  landPath(); ctx.strokeStyle = '#7a6844'; ctx.lineWidth = 2.5; ctx.stroke();
+  // Parchment speckle
+  ctx.save(); landPath(); ctx.clip();
+  ctx.fillStyle = 'rgba(120,100,60,0.08)';
+  for (var s = 0; s < 900; s++) ctx.fillRect(cx - 700 + Math.random() * 1400, cy - 500 + Math.random() * 1000, 2, 2);
+  ctx.restore();
+
+  var inLand = function(x, y) { landPath(); return ctx.isPointInPath(x, y); };
+  var randLand = function(margin) {
+    for (var t = 0; t < 60; t++) {
+      var x = cx + (Math.random() - 0.5) * 900, y = cy + (Math.random() - 0.5) * 640;
+      if (inLand(x, y) && inLand(x - margin, y) && inLand(x + margin, y) && inLand(x, y - margin) && inLand(x, y + margin)) return [x, y];
+    }
+    return [cx, cy];
+  };
+
+  // Mountain range
+  var mBase = randLand(80);
+  ctx.strokeStyle = '#6b5a3a'; ctx.fillStyle = '#cbbc94'; ctx.lineWidth = 2;
+  for (var m = 0; m < 14; m++) {
+    var mx = mBase[0] + (Math.random() - 0.5) * 240, my = mBase[1] + (Math.random() - 0.5) * 140;
+    if (!inLand(mx, my)) continue;
+    var sz = 14 + Math.random() * 14;
+    ctx.beginPath();
+    ctx.moveTo(mx - sz, my + sz * 0.7);
+    ctx.lineTo(mx, my - sz);
+    ctx.lineTo(mx + sz, my + sz * 0.7);
+    ctx.fill(); ctx.stroke();
+    // snow cap
+    ctx.beginPath(); ctx.moveTo(mx - sz * 0.3, my - sz * 0.4); ctx.lineTo(mx, my - sz); ctx.lineTo(mx + sz * 0.3, my - sz * 0.4);
+    ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.strokeStyle = '#6b5a3a';
+  }
+
+  // Two forests
+  for (var f = 0; f < 2; f++) {
+    var fBase = randLand(70);
+    for (var t2 = 0; t2 < 22; t2++) {
+      var tx = fBase[0] + (Math.random() - 0.5) * 220, ty = fBase[1] + (Math.random() - 0.5) * 150;
+      if (!inLand(tx, ty)) continue;
+      ctx.fillStyle = '#5d7a4a';
+      ctx.beginPath(); ctx.arc(tx, ty, 7 + Math.random() * 5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#4a6238'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(tx, ty + 6); ctx.lineTo(tx, ty + 13); ctx.stroke();
+    }
+  }
+
+  // River: from mountains to the coast
+  ctx.strokeStyle = '#7fa3b5'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(mBase[0], mBase[1]);
+  var rx = mBase[0], ry = mBase[1];
+  var dirx = (cx - rx) > 0 ? -1 : 1;
+  for (var rSeg = 0; rSeg < 24; rSeg++) {
+    rx += dirx * (14 + Math.random() * 26); ry += (Math.random() - 0.35) * 44;
+    ctx.lineTo(rx, ry);
+    if (!inLand(rx, ry)) break;
+  }
+  ctx.stroke();
+
+  // Towns: 1 capital + 4 towns, connected by roads
+  var towns = [];
+  var capital = randLand(60); towns.push({ x: capital[0], y: capital[1], cap: true, name: wmTownName() });
+  for (var tn = 0; tn < 4; tn++) {
+    var pos = randLand(50);
+    towns.push({ x: pos[0], y: pos[1], cap: false, name: wmTownName() });
+  }
+  // Roads (dashed, capital hub + a ring link)
+  ctx.strokeStyle = '#8a7048'; ctx.lineWidth = 2; ctx.setLineDash([8, 7]);
+  for (var rd = 1; rd < towns.length; rd++) {
+    ctx.beginPath(); ctx.moveTo(towns[0].x, towns[0].y);
+    ctx.quadraticCurveTo((towns[0].x + towns[rd].x) / 2 + (Math.random() - 0.5) * 80, (towns[0].y + towns[rd].y) / 2 + (Math.random() - 0.5) * 80, towns[rd].x, towns[rd].y);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // Town markers + labels
+  towns.forEach(function(t3) {
+    ctx.fillStyle = t3.cap ? '#8b1a1a' : '#3a2f1c';
+    ctx.strokeStyle = '#f4ecd4'; ctx.lineWidth = 2;
+    if (t3.cap) {
+      ctx.font = '26px serif'; ctx.textAlign = 'center'; ctx.fillText('★', t3.x, t3.y + 9);
+    } else {
+      ctx.beginPath(); ctx.arc(t3.x, t3.y, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    ctx.font = (t3.cap ? 'bold 22px' : '17px') + ' Georgia, serif';
+    ctx.fillStyle = '#2c2415'; ctx.textAlign = 'center';
+    ctx.strokeStyle = 'rgba(240,230,200,0.75)'; ctx.lineWidth = 4;
+    ctx.strokeText(t3.name, t3.x, t3.y - 14);
+    ctx.fillText(t3.name, t3.x, t3.y - 14);
+  });
+
+  // Compass rose (top-right)
+  var cpx = W - 110, cpy = 110;
+  ctx.strokeStyle = '#5a4a2c'; ctx.fillStyle = '#5a4a2c'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cpx, cpy, 44, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cpx, cpy - 56); ctx.lineTo(cpx - 10, cpy); ctx.lineTo(cpx, cpy + 40); ctx.lineTo(cpx + 10, cpy); ctx.closePath(); ctx.fill();
+  ctx.font = 'bold 22px Georgia, serif'; ctx.textAlign = 'center'; ctx.fillText('N', cpx, cpy - 64);
+
+  // Title banner
+  var regionName = wmTownName() + (Math.random() < 0.5 ? ' Reach' : ' Realm');
+  ctx.fillStyle = 'rgba(244,236,212,0.9)'; ctx.strokeStyle = '#7a6844'; ctx.lineWidth = 2;
+  var tw = ctx.measureText(regionName).width + 160;
+  ctx.fillRect(W / 2 - tw / 2, 26, tw, 54); ctx.strokeRect(W / 2 - tw / 2, 26, tw, 54);
+  ctx.font = 'bold 30px Georgia, serif'; ctx.fillStyle = '#3a2f1c'; ctx.textAlign = 'center';
+  ctx.fillText(regionName, W / 2, 62);
+
+  // Scale bar
+  ctx.strokeStyle = '#3a2f1c'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(60, H - 50); ctx.lineTo(260, H - 50); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(60, H - 58); ctx.lineTo(60, H - 42); ctx.moveTo(260, H - 58); ctx.lineTo(260, H - 42); ctx.stroke();
+  ctx.font = '16px Georgia, serif'; ctx.fillStyle = '#3a2f1c'; ctx.textAlign = 'center';
+  ctx.fillText('50 miles', 160, H - 62);
+
+  var dataUrl = cv.toDataURL('image/jpeg', 0.85);
+  var apply = function(src) {
+    worldMap.image = src;
+    if (!worldMap.name) worldMap.name = regionName;
+    var nameEl = document.getElementById('worldmap-name');
+    if (nameEl && !nameEl.value) nameEl.value = worldMap.name;
+    syncMapState();
+    renderWorldMapTab();
+    showToast('✨ ' + regionName + ' drawn — hit Generate again for a different land', 'success');
+  };
+  if (window.uploadToStorage) {
+    window.uploadToStorage(dataUrl, 'maps/world-gen-' + Date.now() + '.jpg').then(function(url) { apply(url || dataUrl); });
+  } else apply(dataUrl);
 }
 
 // ─── Rendering ───────────────────────────────────────────────

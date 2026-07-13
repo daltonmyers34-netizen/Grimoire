@@ -433,7 +433,7 @@ function openAddPlayerModal() {
   populateSpellRows([]);
   window._pendingPortrait = undefined;
   var pp0 = document.getElementById('pc-portrait-preview'); if (pp0) pp0.style.display = 'none';
-  ['pc-feat-rage','pc-feat-reckless','pc-feat-surge','pc-feat-secondwind','pc-feat-sneak','pc-feat-uncanny','pc-feat-smite','pc-feat-bardic'].forEach(function(id) {
+  ['pc-feat-rage','pc-feat-reckless','pc-feat-surge','pc-feat-secondwind','pc-feat-sneak','pc-feat-uncanny','pc-feat-smite','pc-feat-bardic','pc-feat-extraattack'].forEach(function(id) {
     var el = document.getElementById(id); if (el) el.checked = false;
   });
   document.getElementById('player-modal').classList.add('show');
@@ -624,7 +624,7 @@ function editPlayer(id) {
   (function() {
     var FEAT_IDS = { 'pc-feat-rage': 'Rage', 'pc-feat-reckless': 'Reckless Attack', 'pc-feat-surge': 'Action Surge',
       'pc-feat-secondwind': 'Second Wind', 'pc-feat-sneak': 'Sneak Attack', 'pc-feat-uncanny': 'Uncanny Dodge',
-      'pc-feat-smite': 'Divine Smite', 'pc-feat-bardic': 'Bardic Inspiration' };
+      'pc-feat-smite': 'Divine Smite', 'pc-feat-bardic': 'Bardic Inspiration', 'pc-feat-extraattack': 'Extra Attack' };
     Object.keys(FEAT_IDS).forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.checked = (pc.features || []).indexOf(FEAT_IDS[id]) >= 0;
@@ -678,7 +678,7 @@ function savePlayer() {
       var f = [];
       var FEAT_IDS = { 'pc-feat-rage': 'Rage', 'pc-feat-reckless': 'Reckless Attack', 'pc-feat-surge': 'Action Surge',
         'pc-feat-secondwind': 'Second Wind', 'pc-feat-sneak': 'Sneak Attack', 'pc-feat-uncanny': 'Uncanny Dodge',
-        'pc-feat-smite': 'Divine Smite', 'pc-feat-bardic': 'Bardic Inspiration' };
+        'pc-feat-smite': 'Divine Smite', 'pc-feat-bardic': 'Bardic Inspiration', 'pc-feat-extraattack': 'Extra Attack' };
       Object.keys(FEAT_IDS).forEach(function(id) {
         var el = document.getElementById(id);
         if (el && el.checked) f.push(FEAT_IDS[id]);
@@ -752,7 +752,7 @@ function addPCToInitiative(id) {
   if (!pc) return;
   var dexMod = Math.floor(((pc.dex || 10) - 10) / 2) + (pc.initBonus || 0);
   var sign = dexMod >= 0 ? '+' + dexMod : '' + dexMod;
-  var roll = window.prompt('Initiative roll for ' + pc.name + ' (DEX mod ' + sign + '):\nEnter their d20 result (mod will be added), or leave blank to auto-roll.', '');
+  var roll = window.prompt('Initiative for ' + pc.name + ' — their total bonus is ' + sign + ' (DEX ' + Math.floor(((pc.dex || 10) - 10) / 2) + ' + misc ' + (pc.initBonus || 0) + ').\nEnter the RAW d20 only — the ' + sign + ' is added automatically. Leave blank to auto-roll.', '');
   var init;
   if (roll === null) return;
   var parsed = parseInt(roll);

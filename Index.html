@@ -69,6 +69,7 @@
   <div class="nav-tab" onclick="switchTab('party')"><span class="tab-icon">🧝</span>Party</div>
   <div class="nav-tab active" onclick="switchTab('initiative')"><span class="tab-icon">⚔</span>Initiative</div>
   <div class="nav-tab" onclick="switchTab('map')"><span class="tab-icon">🗺</span>Map</div>
+  <div class="nav-tab" onclick="switchTab('worldmap')"><span class="tab-icon">🌍</span>World/Town</div>
   <div class="nav-tab" onclick="switchTab('npcs')"><span class="tab-icon">🧙</span>NPCs</div>
   <div class="nav-tab" onclick="switchTab('locations')"><span class="tab-icon">🏰</span>Locations</div>
   <div class="nav-tab" onclick="switchTab('sounds')"><span class="tab-icon">🎵</span>Sound</div>
@@ -183,15 +184,16 @@
     <!-- Class feature toggles -->
     <div style="margin-bottom:12px;">
       <label style="font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.1em;color:var(--text-dim);">CLASS FEATURES <span style="text-transform:none;letter-spacing:0;color:#666;">(players can toggle these in combat — Dodge is always available)</span></label>
-      <div style="display:flex;gap:14px;margin-top:6px;flex-wrap:wrap;">
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="checkbox" id="pc-feat-rage"> 😤 Rage <span style="font-size:10px;color:var(--text-dim);">(resist phys, +2 melee dmg)</span></label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="checkbox" id="pc-feat-reckless"> ⚔ Reckless Attack <span style="font-size:10px;color:var(--text-dim);">(adv, but attackers get adv)</span></label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="checkbox" id="pc-feat-surge"> ⚡⚡ Action Surge <span style="font-size:10px;color:var(--text-dim);">(extra action, 1/rest)</span></label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="checkbox" id="pc-feat-secondwind"> 💨 Second Wind <span style="font-size:10px;color:var(--text-dim);">(heal 1d10+lvl, bonus, 1/rest)</span></label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="checkbox" id="pc-feat-sneak"> 🗡 Sneak Attack <span style="font-size:10px;color:var(--text-dim);">(auto +d6s with advantage)</span></label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="checkbox" id="pc-feat-uncanny"> 🌀 Uncanny Dodge <span style="font-size:10px;color:var(--text-dim);">(reaction: halve a hit)</span></label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="checkbox" id="pc-feat-smite"> ✨⚔ Divine Smite <span style="font-size:10px;color:var(--text-dim);">(on melee hit: burn slot for radiant)</span></label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="checkbox" id="pc-feat-bardic"> 🎵 Bardic Inspiration <span style="font-size:10px;color:var(--text-dim);">(bonus: give an ally the die)</span></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;margin-top:6px;">
+        <label class="feat-check"><input type="checkbox" id="pc-feat-rage" ><span class="feat-name">😤 <strong>Rage</strong> <span class="feat-desc">resist phys, +2 melee</span></span></label>
+        <label class="feat-check"><input type="checkbox" id="pc-feat-reckless" ><span class="feat-name">⚔ <strong>Reckless Attack</strong> <span class="feat-desc">adv both ways</span></span></label>
+        <label class="feat-check"><input type="checkbox" id="pc-feat-surge" ><span class="feat-name">⚡⚡ <strong>Action Surge</strong> <span class="feat-desc">extra action, 1/rest</span></span></label>
+        <label class="feat-check"><input type="checkbox" id="pc-feat-extraattack" ><span class="feat-name">⚔⚔ <strong>Extra Attack</strong> <span class="feat-desc">2 attacks per action (fighter 5+)</span></span></label>
+        <label class="feat-check"><input type="checkbox" id="pc-feat-secondwind" ><span class="feat-name">💨 <strong>Second Wind</strong> <span class="feat-desc">heal 1d10+lvl, bonus, 1/rest</span></span></label>
+        <label class="feat-check"><input type="checkbox" id="pc-feat-sneak" ><span class="feat-name">🗡 <strong>Sneak Attack</strong> <span class="feat-desc">auto +d6s with advantage</span></span></label>
+        <label class="feat-check"><input type="checkbox" id="pc-feat-uncanny" ><span class="feat-name">🌀 <strong>Uncanny Dodge</strong> <span class="feat-desc">reaction: halve a hit</span></span></label>
+        <label class="feat-check"><input type="checkbox" id="pc-feat-smite" ><span class="feat-name">✨⚔ <strong>Divine Smite</strong> <span class="feat-desc">on melee hit: slot → radiant</span></span></label>
+        <label class="feat-check"><input type="checkbox" id="pc-feat-bardic" ><span class="feat-name">🎵 <strong>Bardic Inspiration</strong> <span class="feat-desc">bonus: give ally the die</span></span></label>
       </div>
     </div>
     <div style="margin-bottom:12px;">
@@ -251,7 +253,7 @@
 <div id="tab-initiative" class="section active">
   <div class="round-display">
     Round <span id="round-num">0</span>
-    <span>Combat Not Started</span>
+    <span id="round-status">Combat Not Started</span>
   </div>
 
   <div class="battle-controls">
@@ -391,10 +393,7 @@
       <button class="btn btn-ghost btn-sm" onclick="toggleMapGrid()" title="Grid on/off">▦ Grid</button>
       <button class="btn btn-ghost btn-sm" id="map-vis-btn" onclick="toggleMapVisibility()" title="Hide the battle map from players (they still see the world map)">👁 Players see it</button>
       <span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>
-      <label class="btn btn-ghost btn-sm" style="cursor:pointer;" title="World/town map — players can view it ANY time from their Map tab">🌍 World Map
-        <input type="file" accept="image/*" style="display:none;" onchange="if(this.files[0])uploadWorldMapImage(this.files[0]);this.value='';">
-      </label>
-      <button class="btn btn-ghost btn-sm" onclick="viewWorldMap()">🌍 View</button>
+      <button class="btn btn-ghost btn-sm" onclick="switchTab('worldmap')" title="The world/town map lives in its own tab now">🌍 World/Town Map</button>
     </div>
 
     <!-- AoE palette (shown when AoE tool active) -->
@@ -576,6 +575,25 @@
       <button class="btn btn-ghost" id="enc-save-btn" onclick="saveEncounter()" style="display:none;">💾 Save Encounter</button>
       <button class="btn btn-ghost" onclick="closeEncounterModal()">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--  WORLD/TOWN MAP TAB                                          -->
+<!-- ============================================================ -->
+<div id="tab-worldmap" class="section">
+  <div class="panel">
+    <div class="panel-title"><span class="ornament">🌍</span> World/Town Map</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px;">
+      <input type="text" id="worldmap-name" placeholder="Map name (e.g. Kingdom of Aldenmere, Phandalin)" style="flex:1;min-width:200px;" onchange="worldMap.name=this.value;syncMapState();">
+      <label class="btn btn-gold btn-sm" style="cursor:pointer;" title="Upload or replace the world/town map image">🖼 Upload / Replace
+        <input type="file" accept="image/*" style="display:none;" onchange="if(this.files[0])uploadWorldMapImage(this.files[0]);this.value='';">
+      </label>
+      <button class="btn btn-ghost btn-sm" onclick="generateWorldMap()" title="Procedurally draw a parchment-style region map with towns, roads, forests and mountains">✨ Generate</button>
+      <button class="btn btn-blood btn-sm" onclick="deleteWorldMap()" title="Remove the current world map">🗑 Delete</button>
+    </div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">Players can open this map ANY time from the 🌍 World tab on their phones — even mid-combat. The battle map stays separate.</div>
+    <div id="worldmap-view" style="text-align:center;"></div>
   </div>
 </div>
 
