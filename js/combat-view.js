@@ -329,7 +329,8 @@ function cvGiveItem(lootId, idx) {
   var pc = party.find(function(p) { return p.id === parseInt(sel.value); });
   if (!pc) return;
   var name = e.items[idx];
-  var item = { id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()), name: name, qty: 1, slot: 'gear', equipped: false };
+  var slot = (typeof inferItemSlot === 'function') ? inferItemSlot(name) : 'gear';
+  var item = { id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()), name: name, qty: 1, slot: slot, equipped: false };
   var preset = (typeof itemPresetFor === 'function') ? itemPresetFor(name) : null;
   if (preset) { for (var k in preset) item[k] = preset[k]; }
   pc.inventory = pc.inventory || [];

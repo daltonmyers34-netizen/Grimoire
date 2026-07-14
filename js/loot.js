@@ -215,7 +215,7 @@ function updateGiveBtn() {
 }
 
 // ─── Grant / create any item straight into a player's inventory ──
-var GRANT_SLOTS = ['gear', 'weapon', 'armor', 'shield', 'potion', 'light', 'ammo'];
+var GRANT_SLOTS = ['gear', 'weapon', 'armor', 'shield', 'wearable', 'potion', 'light', 'ammo'];
 function openGrantItemModal() {
   if (typeof party === 'undefined' || !party.length) { showToast('Add a party member first', 'warn'); return; }
   var ov = document.getElementById('grant-item-modal');
@@ -262,8 +262,8 @@ function grantItemSlotFields() {
       '<div class="field-group" style="margin:0;"><label class="gi-lbl">Range (ft)</label><input id="gi-range" type="number" value="5"></div>' +
       '<div style="font-size:10px;color:#666;grid-column:1/-1;">Magic bonus? Fold it into the dice, e.g. <code>1d8+1</code>.</div>' +
     '</div>';
-  } else if (slot === 'armor' || slot === 'shield') {
-    html = '<div class="field-group" style="margin-bottom:8px;"><label class="gi-lbl">AC bonus</label><input id="gi-acbonus" type="number" placeholder="' + (slot === 'shield' ? '2' : '1') + '"></div>';
+  } else if (slot === 'armor' || slot === 'shield' || slot === 'wearable') {
+    html = '<div class="field-group" style="margin-bottom:8px;"><label class="gi-lbl">AC bonus <span style="color:#666;">(optional — e.g. Cloak of Protection +1)</span></label><input id="gi-acbonus" type="number" placeholder="' + (slot === 'shield' ? '2' : slot === 'wearable' ? '0' : '1') + '"></div>';
   } else if (slot === 'potion') {
     html = '<div class="field-group" style="margin-bottom:8px;"><label class="gi-lbl">Heals (dice)</label><input id="gi-heal" placeholder="2d4+2"></div>';
   } else if (slot === 'light') {
@@ -275,9 +275,14 @@ function grantItemSlotFields() {
 // Typing a known item name auto-fills its slot + stats
 function grantItemAutofill() {
   var name = (document.getElementById('gi-name') || {}).value || '';
+  // Infer the category from the name (Cloak → wearable, Longsword → weapon, …)
+  var slotSel = document.getElementById('gi-slot');
+  if (slotSel && typeof inferItemSlot === 'function') {
+    var guess = inferItemSlot(name);
+    if (guess && GRANT_SLOTS.indexOf(guess) >= 0 && slotSel.value !== guess) { slotSel.value = guess; grantItemSlotFields(); }
+  }
   var preset = (typeof itemPresetFor === 'function') ? itemPresetFor(name) : null;
   if (!preset) return;
-  var slotSel = document.getElementById('gi-slot');
   if (slotSel && preset.slot && GRANT_SLOTS.indexOf(preset.slot) >= 0) { slotSel.value = preset.slot; grantItemSlotFields(); }
   if (preset.dice) { var d = document.getElementById('gi-dice'); if (d) d.value = preset.dice; }
   if (preset.damageType) { var dt = document.getElementById('gi-dtype'); if (dt) dt.value = preset.damageType; }
@@ -301,8 +306,10 @@ function grantItemConfirm() {
     item.dice = gv('gi-dice') || '1d6';
     var dt = gv('gi-dtype'); if (dt) item.damageType = dt; else if (typeof inferDamageType === 'function') { var inf = inferDamageType(name); if (inf) item.damageType = inf; }
     item.range = parseInt(gv('gi-range')) || 5;
-  } else if (slot === 'armor' || slot === 'shield') {
-    var acb = parseInt(gv('gi-acbonus')); item.acBonus = acb || (slot === 'shield' ? 2 : 1);
+  } else if (slot === 'armor' || slot === 'shield' || slot === 'wearable') {
+    var acb = parseInt(gv('gi-acbonus'));
+    if (slot === 'wearable') { if (acb) item.acBonus = acb; }
+    else item.acBonus = acb || (slot === 'shield' ? 2 : 1);
   } else if (slot === 'potion') {
     var hd = gv('gi-heal'); if (hd) item.healDice = hd;
   } else if (slot === 'light') {
@@ -340,14 +347,12 @@ function giveLootToParty() {
         goldGiven += gp;
       } else {
         // Items land in THEIR inventory with combat stats attached and ready to equip
-        const item = { id: typeof uniqueId === 'function' ? uniqueId() : Date.now(), name: entry.name, qty: 1, slot: 'gear', equipped: false, desc: entry.desc || '' };
+        const inferred = typeof inferItemSlot === 'function' ? inferItemSlot(entry.name) : 'gear';
+        const item = { id: typeof uniqueId === 'function' ? uniqueId() : Date.now(), name: entry.name, qty: 1, slot: inferred, equipped: false, desc: entry.desc || '' };
         const preset = typeof itemPresetFor === 'function' ? itemPresetFor(entry.name) : null;
         if (preset) Object.assign(item, preset);
-        else if (typeof inferDamageType === 'function') {
-          const dt = inferDamageType(entry.name);
-          if (dt && /sword|axe|bow|dagger|mace|hammer|spear|blade|staff|whip|flail|crossbow/i.test(entry.name)) {
-            item.slot = 'weapon'; item.dice = '1d6'; item.range = /bow|crossbow/i.test(entry.name) ? 80 : 5; item.damageType = dt;
-          }
+        else if (item.slot === 'weapon' && typeof inferDamageType === 'function') {
+          item.dice = '1d6'; item.range = /bow|crossbow|sling/i.test(entry.name) ? 80 : 5; item.damageType = inferDamageType(entry.name) || 'bludgeoning';
         }
         targetPc.inventory = targetPc.inventory || [];
         targetPc.inventory.push(item);
