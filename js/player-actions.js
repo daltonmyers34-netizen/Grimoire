@@ -862,6 +862,8 @@ function processPlayerAction(req) {
     else if (req.type === 'ready') processPlayerReady(req);
     else if (req.type === 'saveRoll') processPlayerSaveRoll(req);
     else if (req.type === 'damageRoll') processPlayerDamageRoll(req);
+    else if (req.type === 'recategorize') processRecategorizeItem(req);
+    else if (req.type === 'dropItem') processDropItem(req);
   } catch(e) {
     console.error('processPlayerAction', e);
   }
@@ -1532,6 +1534,23 @@ function itemPresetFor(name) {
   return ITEM_PRESETS[String(name || '').trim().toLowerCase()] || null;
 }
 
+// Guess a slot from an item's name so loot/grants arrive in the right category
+var WEARABLE_NAME_RE = /cloak|cape|mantle|ring|amulet|necklace|pendant|talisman|brooch|boots|shoes|gloves|gauntlet|bracers|bracer|belt|girdle|circlet|crown|diadem|tiara|goggles|lenses|periapt|scarab|medallion|torc/i;
+var WEAPON_NAME_RE = /sword|axe|bow|dagger|mace|hammer|spear|blade|staff|wand|whip|flail|crossbow|halberd|glaive|scimitar|rapier|club|maul|javelin|sling|trident|scythe|pike|morningstar/i;
+function inferItemSlot(name) {
+  var n = String(name || '');
+  var preset = itemPresetFor(n);
+  if (preset && preset.slot) return preset.slot;
+  if (/potion|elixir|philter|oil of/i.test(n)) return 'potion';
+  if (WEARABLE_NAME_RE.test(n)) return 'wearable';
+  if (/shield/i.test(n)) return 'shield';
+  if (/armor|mail|plate|breastplate|leather|hide|cuirass/i.test(n)) return 'armor';
+  if (WEAPON_NAME_RE.test(n)) return 'weapon';
+  if (/torch|lantern|candle|lamp/i.test(n)) return 'light';
+  if (/arrow|bolt|bullet|ammunition|dart/i.test(n)) return 'ammo';
+  return 'gear';
+}
+
 // Effective AC = base AC + everything equipped (armor, shield, magic items)
 function effectiveAC(pc) {
   return (pc.ac || 10) + (typeof equipmentMods === 'function' ? equipmentMods(pc).ac : 0);
@@ -1625,6 +1644,37 @@ function processEquipItem(req) {
   if (typeof renderParty === 'function') renderParty();
   renderCombatants();
   showToast((item.equipped ? '🎒 ' : '📦 ') + pc.name + (item.equipped ? ' equipped ' : ' unequipped ') + item.name, 'info');
+}
+
+// Player re-files an item into a different category (fixes mis-slotted loot)
+var INVENTORY_SLOTS = ['weapon', 'armor', 'shield', 'wearable', 'potion', 'light', 'ammo', 'gear'];
+var EQUIPPABLE_SLOTS = ['weapon', 'armor', 'shield', 'wearable', 'light'];
+function processRecategorizeItem(req) {
+  var pc = party.find(function(p) { return p.id === req.pcId; });
+  if (!pc) return;
+  var item = (pc.inventory || []).find(function(i) { return i.id === req.itemId; });
+  if (!item || INVENTORY_SLOTS.indexOf(req.slot) < 0) return;
+  item.slot = req.slot;
+  if (EQUIPPABLE_SLOTS.indexOf(req.slot) < 0) item.equipped = false; // can't wear misc/potions/ammo
+  if (typeof recomputePcCombat === 'function') recomputePcCombat(pc); else if (typeof recomputePcAC === 'function') recomputePcAC(pc);
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+  if (typeof renderParty === 'function') renderParty();
+  renderCombatants();
+  showToast('🎒 ' + pc.name + ' moved ' + item.name + ' → ' + req.slot, 'info');
+}
+
+// Player drops / discards an item
+function processDropItem(req) {
+  var pc = party.find(function(p) { return p.id === req.pcId; });
+  if (!pc || !pc.inventory) return;
+  var item = pc.inventory.find(function(i) { return i.id === req.itemId; });
+  if (!item) return;
+  pc.inventory = pc.inventory.filter(function(i) { return i.id !== req.itemId; });
+  if (typeof recomputePcCombat === 'function') recomputePcCombat(pc); else if (typeof recomputePcAC === 'function') recomputePcAC(pc);
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+  if (typeof renderParty === 'function') renderParty();
+  renderCombatants();
+  showToast('🗑 ' + pc.name + ' dropped ' + item.name, 'info');
 }
 
 function processJournal(req) {

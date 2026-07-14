@@ -2112,6 +2112,7 @@ function renderTwoColumnView(d) {
   if (true) { // tabs always show — Journal is always available
     html += '<div class="pv-tabs">' +
       '<button class="pv-tab' + (activeTab === 'character' ? ' active' : '') + '" onclick="_pvSwitchTab(\'character\')">My Character</button>' +
+      (tableMode ? '' : '<button class="pv-tab' + (activeTab === 'inventory' ? ' active' : '') + '" onclick="_pvSwitchTab(\'inventory\')">\ud83c\udf92 Bag</button>') +
       (hasCombat ? '<button class="pv-tab' + (activeTab === 'initiative' ? ' active' : '') + '" onclick="_pvSwitchTab(\'initiative\')">\u2694 Initiative</button>' : '') +
       (hasMap ? '<button class="pv-tab' + (activeTab === 'map' ? ' active' : '') + '" onclick="_pvSwitchTab(\'map\')">\ud83d\uddfa Map</button>' : '') +
       (hasWorld ? '<button class="pv-tab' + (activeTab === 'world' ? ' active' : '') + '" onclick="_pvSwitchTab(\'world\')">🌍 World</button>' : '') +
@@ -2120,7 +2121,9 @@ function renderTwoColumnView(d) {
   }
 
   // Tab content
-  if (activeTab === 'initiative' && hasCombat) {
+  if (activeTab === 'inventory') {
+    html += renderInventoryTab(d);
+  } else if (activeTab === 'initiative' && hasCombat) {
     html += renderInitiativePanel(d);
   } else if (activeTab === 'map' && hasMap) {
     html += renderMapPanel(d);
@@ -2155,6 +2158,116 @@ function renderTwoColumnView(d) {
   html += '</div>'; // close pv-layout
   return html;
 }
+
+// ══════════════════════════════════════════════════════════════
+// RENDER: Inventory tab — categorized, equip/unequip, use, re-file
+// ══════════════════════════════════════════════════════════════
+const PV_INV_CATS = [
+  { key: 'weapon',   label: '⚔ Weapons',            slots: ['weapon'] },
+  { key: 'armor',    label: '🛡 Armor & Wearables',  slots: ['armor', 'shield', 'wearable'] },
+  { key: 'potion',   label: '🧪 Consumables',        slots: ['potion'] },
+  { key: 'misc',     label: '🎒 Miscellaneous',      slots: ['gear', 'light', 'ammo'] }
+];
+const PV_SLOT_LABELS = { weapon: 'Weapon', armor: 'Armor', shield: 'Shield', wearable: 'Wearable', potion: 'Potion', light: 'Light', ammo: 'Ammo', gear: 'Misc' };
+const PV_EQUIPPABLE = ['weapon', 'armor', 'shield', 'wearable', 'light'];
+
+function renderInventoryTab(d) {
+  const pc = (d.party || []).find(p => String(p.id) === selectedPcId);
+  if (!pc) return '<div class="card">Select a character first.</div>';
+  const inv = pc.inventory || [];
+  const slotIcons = { weapon: '⚔', armor: '🛡', shield: '🛡', wearable: '🧣', light: '🕯', gear: '🎒', potion: '🧪', ammo: '🏹' };
+
+  let html = '<div class="card">';
+  // Header: gold + equipped summary
+  const equipped = inv.filter(it => it.equipped);
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">' +
+    '<div style="font-family:Cinzel,serif;font-size:18px;color:var(--gold);">🎒 ' + esc(pc.name) + '’s Bag</div>' +
+    '<div style="font-size:15px;color:#ffd700;">🪙 ' + (pc.gold || 0) + ' gold</div>' +
+  '</div>';
+  if (equipped.length) {
+    html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;padding:8px 10px;border:1px solid rgba(212,175,55,0.25);border-radius:6px;background:rgba(212,175,55,0.05);">' +
+      '<span style="color:var(--gold-light);">Equipped:</span> ' + equipped.map(it => esc(it.name)).join(' · ') + '</div>';
+  }
+  if (!inv.length) {
+    html += '<div style="font-size:13px;color:#555;font-style:italic;padding:20px 0;text-align:center;">Your bag is empty. Loot and gifts from the DM land here.</div></div>';
+    return html;
+  }
+
+  const itemRow = (it) => {
+    const extra = [];
+    if (it.dice) extra.push(it.dice + (it.damageType ? ' ' + it.damageType : ''));
+    if (it.acBonus) extra.push('+' + it.acBonus + ' AC');
+    if (it.speedBonus) extra.push('+' + it.speedBonus + ' ft');
+    if (it.lightFt) extra.push('💡 ' + it.lightFt + ' ft');
+    if (it.healDice) extra.push('heals ' + it.healDice);
+    const canEquip = PV_EQUIPPABLE.indexOf(it.slot) >= 0;
+    let btns = '';
+    if (it.slot === 'potion') {
+      btns += '<button class="btn-pv" style="font-size:10px;padding:3px 10px;border-color:#64b4ff;color:#90c8ff;" onclick="_pvUseItem(' + it.id + ')">🧪 Drink</button>';
+    } else if (canEquip) {
+      btns += '<button class="btn-pv" style="font-size:10px;padding:3px 10px;' + (it.equipped ? 'border-color:var(--gold);color:var(--gold-light);background:rgba(212,175,55,0.1);' : '') + '" onclick="_pvEquip(' + it.id + ',' + (it.equipped ? 'false' : 'true') + ')">' + (it.equipped ? '✓ Equipped' : 'Equip') + '</button>';
+    }
+    btns += '<button class="btn-pv" style="font-size:11px;padding:3px 8px;" onclick="_pvItemMenu(' + it.id + ')" title="Move category or drop">⋯</button>';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border:1px solid ' + (it.equipped ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.07)') + ';border-radius:5px;margin-bottom:4px;background:' + (it.equipped ? 'rgba(212,175,55,0.05)' : 'rgba(0,0,0,0.15)') + ';">' +
+      '<span>' + (slotIcons[it.slot] || '🎒') + '</span>' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="font-size:13px;color:var(--parchment);">' + esc(it.name) + (it.qty > 1 ? ' ×' + it.qty : '') + '</div>' +
+        (extra.length ? '<div style="font-size:10px;color:var(--text-dim);">' + extra.join(' · ') + '</div>' : '') +
+        (it.desc ? '<div style="font-size:10px;color:#666;font-style:italic;">' + esc(it.desc) + '</div>' : '') +
+      '</div>' + btns +
+    '</div>';
+  };
+
+  PV_INV_CATS.forEach(cat => {
+    const items = inv.filter(it => cat.slots.indexOf(it.slot || 'gear') >= 0);
+    if (!items.length) return;
+    html += '<div class="card-section-label" style="border:none;padding:0;margin:14px 0 6px;">' + cat.label + ' <span style="color:#555;font-size:10px;">(' + items.length + ')</span></div>';
+    items.forEach(it => { html += itemRow(it); });
+  });
+
+  html += '<div style="font-size:10px;color:#555;margin-top:12px;text-align:center;">Tap ⋯ to move an item to another category (e.g. a cloak into Wearables so you can equip it) or drop it.</div>';
+  html += '</div>';
+  return html;
+}
+
+// Item menu: re-categorize or drop
+function pvItemMenu(itemId) {
+  const d = latestData;
+  const pc = (d.party || []).find(p => String(p.id) === selectedPcId);
+  const it = pc && (pc.inventory || []).find(i => i.id === itemId);
+  if (!it) return;
+  const cats = [['weapon','⚔ Weapon'],['armor','🛡 Armor'],['shield','🛡 Shield'],['wearable','🧣 Wearable'],['potion','🧪 Potion'],['light','🕯 Light'],['ammo','🏹 Ammo'],['gear','🎒 Misc']];
+  let html = '<div style="font-family:Cinzel,serif;font-size:16px;color:var(--gold);margin-bottom:4px;">' + esc(it.name) + '</div>' +
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">Move to a category — then you can equip it if it’s wearable.</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
+  cats.forEach(c => {
+    const on = (it.slot || 'gear') === c[0];
+    html += '<button class="btn-pv" style="font-size:12px;justify-content:center;' + (on ? 'border-color:var(--gold);color:var(--gold-light);' : '') + '" onclick="_pvRecategorize(' + itemId + ',\'' + c[0] + '\')">' + c[1] + (on ? ' ✓' : '') + '</button>';
+  });
+  html += '</div>' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;border-color:#e05050;color:#ff8080;" onclick="_pvDropItem(' + itemId + ')">🗑 Drop this item</button>' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:6px;" onclick="_pvCloseOverlay()">Close</button>';
+  showOverlay(html);
+}
+window._pvItemMenu = pvItemMenu;
+
+function pvRecategorize(itemId, slot) {
+  const d = latestData;
+  const pc = (d.party || []).find(p => String(p.id) === selectedPcId);
+  if (!pc) return;
+  closeOverlay();
+  sendPlayerRequest({ type: 'recategorize', pcId: pc.id, itemId, slot, ts: Date.now() });
+}
+window._pvRecategorize = pvRecategorize;
+
+function pvDropItem(itemId) {
+  const d = latestData;
+  const pc = (d.party || []).find(p => String(p.id) === selectedPcId);
+  if (!pc) return;
+  closeOverlay();
+  sendPlayerRequest({ type: 'dropItem', pcId: pc.id, itemId, ts: Date.now() });
+}
+window._pvDropItem = pvDropItem;
 
 // ══════════════════════════════════════════════════════════════
 // RENDER: Character Card (left panel)
@@ -2401,32 +2514,22 @@ function renderCharacterCard(d) {
     html += '</div>';
   }
 
-  // Personal inventory & equipment — always shown so players know where to equip/drink
+  // Personal inventory — compact summary; full management lives in the 🎒 Bag tab
   const myInv = pc.inventory || [];
   {
+    const equippedNames = myInv.filter(it => it.equipped).map(it => esc(it.name));
     html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);">';
-    html += '<div class="card-section-label" style="border:none;padding:0;margin-bottom:8px;">My Inventory' +
-      ' <span style="color:#ffd700;font-size:11px;text-transform:none;letter-spacing:0;margin-left:8px;">🪙 ' + (pc.gold || 0) + ' gold</span></div>';
-    if (!myInv.length) {
-      html += '<div style="font-size:12px;color:#555;font-style:italic;">Empty pockets — when the DM hands you loot it shows up here, with Equip and 🧪 Drink buttons.</div>';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">' +
+      '<div class="card-section-label" style="border:none;padding:0;margin:0;">My Bag <span style="color:#ffd700;font-size:11px;text-transform:none;letter-spacing:0;margin-left:6px;">🪙 ' + (pc.gold || 0) + ' gold · ' + myInv.length + ' item' + (myInv.length === 1 ? '' : 's') + '</span></div>' +
+      '<button class="btn-pv" style="font-size:11px;padding:3px 12px;border-color:var(--gold);color:var(--gold-light);" onclick="_pvSwitchTab(\'inventory\')">Open Bag →</button>' +
+    '</div>';
+    if (equippedNames.length) {
+      html += '<div style="font-size:11px;color:var(--text-dim);margin-top:6px;"><span style="color:var(--gold-light);">Equipped:</span> ' + equippedNames.join(' · ') + '</div>';
+    } else if (!myInv.length) {
+      html += '<div style="font-size:12px;color:#555;font-style:italic;margin-top:6px;">Empty — loot and gifts from the DM show up here.</div>';
+    } else {
+      html += '<div style="font-size:11px;color:#666;margin-top:6px;">Nothing equipped yet — open your Bag to equip gear.</div>';
     }
-    const slotIcons = { weapon: '⚔', armor: '🛡', shield: '🛡', light: '🕯', gear: '🎒', potion: '🧪', ammo: '🏹' };
-    myInv.forEach(it => {
-      const extra = [];
-      if (it.dice) extra.push(it.dice + (it.damageType ? ' ' + it.damageType : ''));
-      if (it.acBonus) extra.push('+' + it.acBonus + ' AC');
-      if (it.lightFt) extra.push('💡 ' + it.lightFt + ' ft');
-      if (it.healDice) extra.push('heals ' + it.healDice);
-      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid ' + (it.equipped ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.07)') + ';border-radius:5px;margin-bottom:4px;background:' + (it.equipped ? 'rgba(212,175,55,0.05)' : 'rgba(0,0,0,0.15)') + ';">' +
-        '<span>' + (slotIcons[it.slot] || '🎒') + '</span>' +
-        '<div style="flex:1;min-width:0;">' +
-          '<span style="font-size:13px;color:var(--parchment);">' + esc(it.name) + (it.qty > 1 ? ' ×' + it.qty : '') + '</span>' +
-          (extra.length ? '<span style="font-size:10px;color:var(--text-dim);margin-left:6px;">' + extra.join(' · ') + '</span>' : '') +
-        '</div>' +
-        (it.slot === 'potion' ? '<button class="btn-pv" style="font-size:10px;padding:3px 10px;border-color:#64b4ff;color:#90c8ff;" onclick="_pvUseItem(' + it.id + ')">🧪 Drink</button>' :
-         it.slot !== 'gear' && it.slot !== 'ammo' ? '<button class="btn-pv" style="font-size:10px;padding:3px 10px;' + (it.equipped ? 'border-color:var(--gold);color:var(--gold-light);' : '') + '" onclick="_pvEquip(' + it.id + ',' + (it.equipped ? 'false' : 'true') + ')">' + (it.equipped ? '✓ Equipped' : 'Equip') + '</button>' : '') +
-      '</div>';
-    });
     html += '</div>';
   }
 
