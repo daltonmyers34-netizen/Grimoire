@@ -131,15 +131,21 @@ function cvCrNum(c) {
   return parseFloat(cr) || 1;
 }
 
+// Natural weapons / innate attacks — never drop as lootable items
+var CV_NATURAL_WEAPON = /^(bite|claw|claws|fang|fangs|talon|talons|tail|tail\s|slam|gore|sting|stinger|tentacle|tentacles|hoof|hooves|horn|horns|beak|pincer|pincers|stomp|wing|wings|constrict|ram|tusk|tusks|pseudopod|fist|fists|unarmed|kick|punch|maul|rend|swallow|breath|acid|fire breath|frost breath|spit|gaze|multiattack)/i;
+
 function generateDropLoot(c) {
   var cr = cvCrNum(c);
   var theme = CV_LOOT_THEMES.find(function(t) { return t.match.test(c.name || ''); });
   var pick = function(arr) { return arr[Math.floor(Math.random() * arr.length)]; };
   var items = [];
 
-  // Their weapon: the first attack they actually have
-  var weapon = (c.actions || []).find(function(a) { return a.kind !== 'heal' && a.dice; });
-  if (weapon && Math.random() < 0.75) items.push(weapon.name);
+  // Their weapon — but only a real, lootable one. Natural weapons (a wolf's
+  // Bite, a bear's Claws) aren't items you can pick up.
+  var weapon = (c.actions || []).find(function(a) {
+    return a.kind !== 'heal' && a.dice && !CV_NATURAL_WEAPON.test(a.name || '');
+  });
+  if (weapon && !(theme && theme.noCoins) && Math.random() < 0.7) items.push(weapon.name);
 
   if (theme) {
     items.push(pick(theme.items));

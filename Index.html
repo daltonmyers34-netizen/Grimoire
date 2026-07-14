@@ -1242,10 +1242,15 @@ Use this space freely during your session. Notes auto-save in your browser."></t
         <span><span class="ornament">🎲</span> Roll Results</span>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
           <button onclick="toggleSelectAllLoot(this)" id="select-all-loot-btn" style="display:none;padding:4px 10px;background:rgba(212,175,55,0.1);border:1px solid rgba(212,175,55,0.3);border-radius:4px;color:var(--gold);font-family:Cinzel,serif;font-size:10px;cursor:pointer;">☐ All</button>
-          <button id="give-party-btn" onclick="giveLootToParty()" style="display:none;padding:5px 14px;background:rgba(80,200,80,0.15);border:1px solid rgba(80,200,80,0.4);border-radius:4px;color:#8fd050;font-family:Cinzel,serif;font-size:11px;cursor:pointer;letter-spacing:0.05em;">✓ Give to Party</button>
+          <select id="loot-give-target" style="display:none;font-size:11px;padding:5px 6px;background:rgba(0,0,0,0.35);border:1px solid rgba(212,175,55,0.3);border-radius:4px;color:var(--parchment);"><option value="">Party (shared)</option></select>
+          <button id="give-party-btn" onclick="giveLootToParty()" style="display:none;padding:5px 14px;background:rgba(80,200,80,0.15);border:1px solid rgba(80,200,80,0.4);border-radius:4px;color:#8fd050;font-family:Cinzel,serif;font-size:11px;cursor:pointer;letter-spacing:0.05em;">✓ Give</button>
         </div>
       </div>
       <div id="loot-result" class="loot-result-scroll" style="margin-top:4px;"></div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+        <button class="btn btn-gold btn-sm" onclick="openGrantItemModal()" style="width:100%;">🎁 Grant / Create an Item for a Player</button>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:4px;text-align:center;">Hand any item (real or homebrew) straight to one character — even secretly.</div>
+      </div>
     </div>
 
     <!-- Col 3: Party inventory + session roll log -->
