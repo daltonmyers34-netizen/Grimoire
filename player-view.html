@@ -2694,13 +2694,16 @@ function pvBodySlot(item) {
   if (/amulet|necklace|pendant|periapt|medallion|torc|scarab|brooch|talisman|locket|choker|collar/i.test(n)) return 'neck';
   if (/goggles|lenses|spectacles|eyepatch|monocle|\beyes? of\b/i.test(n)) return 'eyes';
   if (/helm|helmet|crown|circlet|diadem|tiara|coronet|headband|hood|mask|\bhat\b|\bcap\b|veil|mitre/i.test(n)) return 'head';
-  if (/bracers|bracer|bracelet|vambrace|armlet|wristband|wristguard/i.test(n)) return 'arms';
+  if (/bracelet|bangle|wristband/i.test(n)) return 'wrists';
+  if (/bracers|bracer|vambrace|armlet|wristguard/i.test(n)) return 'arms';
   if (/gloves|glove|gauntlet|mittens/i.test(n)) return 'hands';
+  if (/robe|tunic|shirt|vestment|\bvest\b|doublet|jerkin|blouse|chemise|surcoat|tabard/i.test(n)) return 'torso';
   if (/belt|girdle|sash|waistband/i.test(n)) return 'waist';
-  if (/boots|\bboot\b|shoes|sandals|slippers|greaves|footwraps/i.test(n)) return 'feet';
+  if (/pants|trousers|leggings|legging|breeches|\bkilt\b|skirt|greaves|legguards|chausses|culottes/i.test(n)) return 'legs';
+  if (/boots|\bboot\b|shoes|sandals|slippers|footwraps/i.test(n)) return 'feet';
   return 'trinket';
 }
-const PV_BODY_LABELS = { head: 'Head', eyes: 'Eyes', neck: 'Neck', back: 'Cloak', arms: 'Arms', hands: 'Hands', ring: 'Ring', waist: 'Waist', feet: 'Feet', trinket: 'Trinket' };
+const PV_BODY_LABELS = { head: 'Head', eyes: 'Eyes', neck: 'Neck', back: 'Cloak', wrists: 'Wrists', arms: 'Arms', hands: 'Hands', torso: 'Torso', ring: 'Ring', waist: 'Waist', legs: 'Legs', feet: 'Feet', trinket: 'Trinket' };
 function pvSlotLabel(item) {
   if (item.slot === 'weapon') return 'Weapon';
   if (item.slot === 'armor') return 'Armor';
@@ -2714,7 +2717,7 @@ function pvSlotLabel(item) {
 function pvEquipConflict(pc, item) {
   const inv = pc.inventory || [];
   if (item.slot === 'wearable') {
-    const bs = pvBodySlot(item), perBody = bs === 'ring' ? 2 : 1;
+    const bs = pvBodySlot(item), perBody = bs === 'ring' ? 8 : bs === 'wrists' ? 2 : 1;
     const same = inv.filter(i => i.equipped && i.slot === 'wearable' && pvBodySlot(i) === bs && i.id !== item.id);
     return same.length >= perBody ? same[0] : null; // the one that'd be bumped
   }

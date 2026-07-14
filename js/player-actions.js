@@ -1536,22 +1536,25 @@ function itemPresetFor(name) {
 
 // Guess a slot from an item's name so loot/grants arrive in the right category
 // Any name that maps to a body slot in bodySlotFor should also be caught here
-var WEARABLE_NAME_RE = /cloak|cape|mantle|shawl|\bring\b|amulet|necklace|pendant|periapt|medallion|torc|scarab|brooch|talisman|locket|choker|collar|goggles|lenses|spectacles|eyepatch|monocle|helm|helmet|crown|circlet|diadem|tiara|coronet|headband|hood|mask|\bhat\b|\bcap\b|veil|mitre|bracers|bracer|bracelet|vambrace|armlet|wristband|wristguard|gloves|glove|gauntlet|mittens|belt|girdle|sash|waistband|boots|\bboot\b|shoes|sandals|slippers|greaves|footwraps/i;
+var WEARABLE_NAME_RE = /cloak|cape|mantle|shawl|\bring\b|amulet|necklace|pendant|periapt|medallion|torc|scarab|brooch|talisman|locket|choker|collar|goggles|lenses|spectacles|eyepatch|monocle|helm|helmet|crown|circlet|diadem|tiara|coronet|headband|hood|mask|\bhat\b|\bcap\b|veil|mitre|bracers|bracer|bracelet|bangle|vambrace|armlet|wristband|wristguard|gloves|glove|gauntlet|mittens|robe|tunic|shirt|vestment|\bvest\b|doublet|jerkin|blouse|chemise|surcoat|tabard|belt|girdle|sash|waistband|pants|trousers|leggings|legging|breeches|\bkilt\b|skirt|greaves|legguards|chausses|culottes|boots|\bboot\b|shoes|sandals|slippers|footwraps/i;
 var WEAPON_NAME_RE = /sword|axe|bow|dagger|mace|hammer|spear|blade|staff|wand|whip|flail|crossbow|halberd|glaive|scimitar|rapier|club|maul|javelin|sling|trident|scythe|pike|morningstar/i;
 // Which body slot a wearable occupies — so you can't wear two cloaks at once
 // (but you can wear a cloak + amulet + 2 rings + boots simultaneously).
 function bodySlotFor(item) {
   if (item && item.bodySlot) return item.bodySlot;
   var n = String((item && item.name) || item || '');
-  if (/\bring\b/i.test(n)) return 'ring';                                                     // two allowed
+  if (/\bring\b/i.test(n)) return 'ring';                                                     // up to 8
   if (/cloak|cape|mantle|shawl/i.test(n)) return 'back';
   if (/amulet|necklace|pendant|periapt|medallion|torc|scarab|brooch|talisman|locket|choker|collar/i.test(n)) return 'neck';
   if (/goggles|lenses|spectacles|eyepatch|monocle|\beyes? of\b/i.test(n)) return 'eyes';
   if (/helm|helmet|crown|circlet|diadem|tiara|coronet|headband|hood|mask|\bhat\b|\bcap\b|veil|mitre/i.test(n)) return 'head';
-  if (/bracers|bracer|bracelet|vambrace|armlet|wristband|wristguard/i.test(n)) return 'arms';
+  if (/bracelet|bangle|wristband/i.test(n)) return 'wrists';                                   // two allowed
+  if (/bracers|bracer|vambrace|armlet|wristguard/i.test(n)) return 'arms';
   if (/gloves|glove|gauntlet|mittens/i.test(n)) return 'hands';
+  if (/robe|tunic|shirt|vestment|\bvest\b|doublet|jerkin|blouse|chemise|surcoat|tabard/i.test(n)) return 'torso';
   if (/belt|girdle|sash|waistband/i.test(n)) return 'waist';
-  if (/boots|\bboot\b|shoes|sandals|slippers|greaves|footwraps/i.test(n)) return 'feet';
+  if (/pants|trousers|leggings|legging|breeches|\bkilt\b|skirt|greaves|legguards|chausses|culottes/i.test(n)) return 'legs';
+  if (/boots|\bboot\b|shoes|sandals|slippers|footwraps/i.test(n)) return 'feet';
   return 'trinket';                                                                            // generic wondrous item
 }
 
@@ -1638,7 +1641,7 @@ function enforceSlotLimits(pc, item) {
   // Wearables limit by body slot (one cloak, one amulet, two rings, …)
   if (item.slot === 'wearable') {
     var bs = bodySlotFor(item);
-    var perBody = bs === 'ring' ? 2 : 1;
+    var perBody = bs === 'ring' ? 8 : bs === 'wrists' ? 2 : 1;
     var same = (pc.inventory || []).filter(function(i) { return i.equipped && i.slot === 'wearable' && bodySlotFor(i) === bs; });
     while (same.length > perBody) {
       var o = same.find(function(i) { return i.id !== item.id; });
