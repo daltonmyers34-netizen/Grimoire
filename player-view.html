@@ -1448,6 +1448,69 @@ function readySend() {
 }
 window._pvReadySend = readySend;
 
+// ── Saving throw prompt: you roll your own d20 (manual or animated auto) ──
+function showSavePrompt(ps) {
+  const advNote = ps.adv < 0
+    ? '<div style="background:rgba(224,80,80,0.12);border:1px solid rgba(224,80,80,0.4);border-radius:6px;padding:6px 10px;margin-bottom:8px;text-align:center;font-size:12px;color:#ff8080;">⬇ DISADVANTAGE — roll two d20s, enter the LOWER</div>'
+    : '';
+  const html = '<div style="text-align:center;font-family:Cinzel,serif;font-size:18px;color:#c8a8ff;margin-bottom:4px;">🎲 SAVING THROW</div>' +
+    '<div style="font-size:13px;color:var(--text-dim);text-align:center;margin-bottom:6px;">' + (ps.source ? esc(ps.source) + ' — ' : '') + esc(String(ps.ability).toUpperCase()) + ' save · DC ' + ps.dc + (ps.condition ? ' or be <strong style="color:#ff9090;">' + esc(ps.condition) + '</strong>' : '') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-dim);text-align:center;margin-bottom:10px;">Your bonus <strong style="color:#8fd050;">' + (ps.bonus >= 0 ? '+' : '') + ps.bonus + '</strong> is added automatically.</div>' +
+    advNote +
+    '<div id="pv-save-face" style="font-size:46px;font-family:Cinzel,serif;text-align:center;color:var(--gold);min-height:56px;line-height:56px;transition:transform 0.08s;">—</div>' +
+    '<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:6px;">' +
+      '<input id="pv-save-roll" type="number" min="1" max="20" placeholder="d20" style="width:84px;font-size:22px;text-align:center;padding:8px;background:rgba(0,0,0,0.4);border:2px solid rgba(200,168,255,0.5);border-radius:8px;color:var(--parchment);">' +
+      '<button class="btn-pv" style="border-color:var(--gold);color:var(--gold-light);" onclick="_pvSaveAuto()">🎲 Auto-roll</button>' +
+    '</div>' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;border-color:#c8a8ff;color:#c8a8ff;" onclick="_pvSaveSubmit()">✓ Submit Save</button>';
+  showOverlay(html);
+}
+
+function pvSaveAuto() {
+  const face = document.getElementById('pv-save-face');
+  const input = document.getElementById('pv-save-roll');
+  const final = Math.ceil(Math.random() * 20);
+  pvAnimateRoll(face, final, 20, () => { if (input) input.value = final; });
+}
+window._pvSaveAuto = pvSaveAuto;
+
+function pvSaveSubmit() {
+  const d = latestData;
+  const me = myCombatant(d);
+  const ps = d && d.pendingSave;
+  if (!me || !ps) return;
+  let roll = parseInt((document.getElementById('pv-save-roll') || {}).value);
+  if (!roll || roll < 1 || roll > 20) roll = Math.ceil(Math.random() * 20);
+  closeOverlay();
+  sendPlayerRequest({ type: 'saveRoll', combatantId: me.id, saveId: ps.id, roll, ts: Date.now() });
+  showWaiting('🎲 You rolled a ' + roll + ' — resolving…');
+}
+window._pvSaveSubmit = pvSaveSubmit;
+
+// Slot-machine roll: numbers flicker fast, then slow and settle (with suspense)
+function pvAnimateRoll(el, finalValue, sides, onDone) {
+  if (!el) { if (onDone) onDone(); return; }
+  sides = sides || 20;
+  let ticks = 0; const total = 20;
+  const spin = () => {
+    ticks++;
+    const done = ticks >= total;
+    el.textContent = done ? finalValue : Math.ceil(Math.random() * sides);
+    const scale = 1 + Math.min(0.5, (ticks / total) * 0.5);
+    el.style.transform = 'scale(' + scale + ')';
+    el.style.color = done ? (finalValue === sides ? '#8fd050' : finalValue === 1 ? '#ff6060' : 'var(--gold)') : 'var(--gold-light)';
+    if (done) {
+      el.style.transform = 'scale(1.35)';
+      setTimeout(() => { el.style.transform = 'scale(1)'; }, 160);
+      if (typeof pvSound === 'function') pvSound(finalValue === sides ? 'crit' : 'hit');
+      if (onDone) onDone();
+      return;
+    }
+    setTimeout(spin, Math.min(40 + ticks * ticks * 0.9, 280));
+  };
+  spin();
+}
+
 function endMyTurn() {
   const d = latestData;
   if (!d || !isMyTurn(d)) return;
@@ -2954,6 +3017,21 @@ if (dmUid) {
     if (!d.pendingSmite && window._shownSmiteId) {
       const cardS = document.querySelector('.pv-overlay-card');
       if (cardS && cardS.textContent.includes('DIVINE SMITE?')) { closeOverlay(); window._shownSmiteId = null; }
+    }
+
+    // 🎲 Saving throw — the player rolls their own d20
+    if (!tableMode && d.pendingSave && selectedPcId) {
+      const meSv = myCombatant(d);
+      if (meSv && d.pendingSave.combatantId === meSv.id && String(d.pendingSave.id) !== String(window._shownSaveId)) {
+        window._shownSaveId = d.pendingSave.id;
+        pvSound('turn');
+        showSavePrompt(d.pendingSave);
+      }
+    }
+    if (!d.pendingSave && window._shownSaveId) {
+      const cardV = document.querySelector('.pv-overlay-card');
+      if (cardV && cardV.textContent.includes('SAVING THROW')) closeOverlay();
+      window._shownSaveId = null;
     }
 
     // ⚡ Reaction offer: Shield / Hellish Rebuke on the victim's phone
