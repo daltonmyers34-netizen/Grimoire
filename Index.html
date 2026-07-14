@@ -243,7 +243,6 @@
   </div>
 </div>
 
-<!-- COMBAT LOG PANEL (inside initiative section, added via JS) -->
 <!-- Save Preset Modal -->
 <div class="modal-overlay" id="preset-modal">
   <div class="modal" style="max-width:380px;">
@@ -271,9 +270,16 @@
   <div class="battle-controls">
     <button class="btn btn-gold" onclick="startCombat()">▶ Start Combat</button>
     <button class="btn btn-blood" onclick="enterCombatView()" title="Full-screen combat mode — initiative, map, and enemy loot in one place">🎬 Combat View</button>
+    <button class="btn btn-ghost" onclick="prevTurn()" title="Step back one turn (fix a mistake)">◁ Prev</button>
     <button class="btn btn-ghost" onclick="nextTurn()">Next Turn ▷</button>
+    <button class="btn btn-ghost" onclick="rollInitiativeAll()" title="Roll initiative for every combatant that doesn't have one set">🎲 Roll All Init</button>
+    <button class="btn btn-ghost" id="turn-timer-btn" onclick="toggleTurnTimer()" title="Time how long each turn takes — resets every turn">⏱ Turn Timer</button>
+    <span id="turn-timer-display" style="display:none;font-family:'Cinzel',serif;font-size:13px;color:var(--gold-light);align-self:center;">Turn: <span id="turn-timer-value">0s</span></span>
     <button class="btn btn-ghost" id="undo-action-btn" onclick="undoLastAction()" style="display:none;border-color:rgba(255,180,80,0.4);color:#ffb450;">↶ Undo Action</button>
     <button class="btn btn-ghost" onclick="resetCombat()">↺ Reset</button>
+    <button class="btn btn-ghost" onclick="calcEncounterDifficulty()" title="Rate this encounter vs the party's level (easy → deadly)">⚖ Difficulty</button>
+    <button class="btn btn-ghost" onclick="shortRest()" title="Short rest — spend Hit Dice, recharge Second Wind / Action Surge / Bardic">🌗 Short Rest</button>
+    <button class="btn btn-ghost" onclick="longRest()" title="Long rest — full HP + spell slots, drop one exhaustion level">🌙 Long Rest</button>
     <button class="btn btn-blood" onclick="openEncounterModal()" style="margin-left:auto;">⚡ Random Encounter</button>
     <span id="turn-indicator" style="font-family:'Cinzel',serif;font-size:13px;color:var(--gold-light);"></span>
   </div>
@@ -328,6 +334,17 @@
   <ul class="combatant-list" id="combatant-list">
     <li class="empty-state"><div class="icon">⚔</div>No combatants yet. Add some above!</li>
   </ul>
+
+  <!-- Combat Log -->
+  <div class="panel">
+    <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span><span class="ornament">📜</span> Combat Log</span>
+      <button class="btn btn-ghost btn-sm" onclick="combatLog=[];renderCombatLog();">Clear</button>
+    </div>
+    <div id="combat-log-list" style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;background:rgba(0,0,0,0.2);">
+      <div style="text-align:center;padding:20px;color:var(--text-dim);font-style:italic;font-size:13px;">No events yet — start combat to see the log</div>
+    </div>
+  </div>
 
   <!-- Battle Presets -->
   <div class="panel">
@@ -1549,21 +1566,6 @@ Use this space freely during your session. Notes auto-save in your browser."></t
 </div>
 
 
-<!-- ═══ PARTY INITIATIVE MODAL ═══ -->
-<div id="party-init-modal" class="modal-overlay" onclick="if(event.target===this)this.classList.remove('show')">
-  <div class="modal" style="max-width:460px;width:95vw;max-height:85vh;display:flex;flex-direction:column;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 style="margin:0;">⚔️ Party Initiative</h3>
-      <button onclick="document.getElementById('party-init-modal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:22px;cursor:pointer;">✕</button>
-    </div>
-    <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px;">Check each player to include. Enter their d20 roll — bonus is added automatically. Leave blank to auto-roll.</div>
-    <div id="party-init-rows" style="overflow-y:auto;flex:1;margin-bottom:14px;"></div>
-    <div style="display:flex;gap:8px;">
-      <button onclick="confirmPartyInit()" style="flex:1;padding:12px;background:linear-gradient(135deg,var(--gold-dim),var(--gold));color:var(--ink);border:none;border-radius:5px;font-family:Cinzel,serif;font-size:12px;font-weight:bold;cursor:pointer;letter-spacing:0.08em;">⚔ ADD TO INITIATIVE</button>
-      <button onclick="document.getElementById('party-init-modal').classList.remove('show')" style="padding:12px 18px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:5px;color:var(--text-dim);font-family:Cinzel,serif;font-size:11px;cursor:pointer;">Cancel</button>
-    </div>
-  </div>
-</div>
 
 
 <!-- ═══ FLOATING PARTY SIDEBAR ═══ -->
