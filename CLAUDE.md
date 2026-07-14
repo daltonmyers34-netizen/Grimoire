@@ -42,8 +42,10 @@ Key globals (js/app.js): `party`, `combatants`, `currentTurn`, `round` (NOT `cur
 ### Sync model
 
 - Campaign state: `users/{uid}/data/state` (all of `collectState`), localStorage backup `dm_grimoire_session`, onSnapshot echo guard (`lastWriteTime`, 5s window).
-- Player snapshot: `playerView/{uid}` — written by `doCloudWrite` with the **pvSnap**: `party`, `combatants`, `currentRound/currentTurn/combatActive`, `mapState` (null when `hiddenFromPlayers`), `worldMap`, `partyInventory`, `pvMessages`, `pvPartyMessage`, `actionFeed`, `pendingReaction`, `pendingSmite`, `lastRejection`, `recentLog` (25).
-- Player requests: `playerActions/{uid}/requests` docs → `processPlayerAction(req)` dispatcher. Types: `move, action, castSpell, endTurn, addCharacter, deathSave, toggleFeature, equipItem, journal, useItem, reaction, smite, inspire, standUp`. After processing a batch, `cloudSaveNow()` flushes so player latency stays ~1s.
+- Player snapshot: `playerView/{uid}` — written by `doCloudWrite` with the **pvSnap**: `party`, `combatants`, `currentRound/currentTurn/combatActive`, `mapState` (null when `hiddenFromPlayers`), `worldMap`, `partyInventory`, `pvMessages`, `pvPartyMessage`, `actionFeed`, `pendingReaction`, `pendingSmite`, `pendingSave`, `lastRejection`, `recentLog` (25).
+- Player requests: `playerActions/{uid}/requests` docs → `processPlayerAction(req)` dispatcher. Types: `move, action, castSpell, endTurn, addCharacter, deathSave, toggleFeature, equipItem, journal, useItem, reaction, smite, inspire, standUp, help, ready, saveRoll`. After processing a batch, `cloudSaveNow()` flushes so player latency stays ~1s.
+- Saving throws route to whoever rolls: `promptSave(target, ability, dc, meta)` sets `pendingSave` for a player ally (they roll on their phone → `saveRoll` → `processPlayerSaveRoll` → `resolveSaveOutcome`) or opens the DM roll modal for a monster. DM fallback bar: `dmRollPendingSave`.
+- DM monster attacks are two-step: `dmExecuteAction` → to-hit modal → `dmShowHitReveal` (neutral then HIT/MISS) → `dmShowDamageStep` (manual or `dmDamageAuto` animated) → `resolveCombatAction(..., {damageRoll})`. `resolveCombatAction` uses `opts.damageRoll` verbatim (crit dice already folded in).
 - Account-level homebrew spellbook: `users/{uid}/data/homebrew` (survives `newCampaign`).
 
 ### Rules engine cheat sheet
