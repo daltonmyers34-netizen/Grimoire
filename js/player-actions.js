@@ -644,9 +644,15 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
     }
 
     if (hit) {
-      var dmg = rollDiceExpr(a.dice);
-      var amount = dmg.total;
-      if (result.crit) amount += rollDiceExpr(String(a.dice).replace(/[+-]\s*\d+$/, '')).total;
+      var amount;
+      if (opts.damageRoll !== null && opts.damageRoll !== undefined) {
+        // Damage entered/animated at the table already includes the crit dice
+        amount = Math.max(0, parseInt(opts.damageRoll) || 0);
+      } else {
+        var dmg = rollDiceExpr(a.dice);
+        amount = dmg.total;
+        if (result.crit) amount += rollDiceExpr(String(a.dice).replace(/[+-]\s*\d+$/, '')).total;
+      }
       if (ctx.isMelee) {
         (attacker.conditions || []).forEach(function(cn) {
           var bmd = (CONDITION_EFFECTS[cn] || {}).bonusMeleeDamage;
@@ -1024,8 +1030,109 @@ function dmExecuteAction(attackerId, targetId, actionIdx) {
   requestRolls('⚔ ' + (attacker ? attacker.name : '?') + ' — ' + a.name + ' vs ' + (target ? target.name : '?'),
     [{ id: 'r', label: 'Attack roll', sub: '+' + (a.bonus || 0) + ' to hit' + (ctx.notes.length ? ' · ' + ctx.notes.join(', ') : ''), adv: ctx.net }],
     function(results) {
-      resolveCombatAction(attackerId, targetId, a, { roll: results.r, source: 'dm' });
+      dmShowHitReveal(attackerId, targetId, actionIdx, results.r);
     });
+}
+
+// Two-step attack: reveal HIT/MISS (neutral until it lands), then roll damage.
+function dmShowHitReveal(attackerId, targetId, actionIdx, roll) {
+  var a = (window.__dmActActions || [])[actionIdx];
+  var attacker = combatants.find(function(x) { return x.id === attackerId; });
+  var target = combatants.find(function(x) { return x.id === targetId; });
+  if (!a || !attacker || !target) return;
+  var ctx = computeAttackContext(attacker, target, a);
+  roll = Math.max(1, Math.min(20, parseInt(roll) || 1));
+  var bonus = (parseInt(a.bonus) || 0) + conditionAttackMod(attacker);
+  var total = roll + bonus;
+  var effAC = (target.ac || 10) + conditionACMod(target);
+  var crit = roll === 20 || (ctx.autoCrit && total >= effAC);
+  var hit = roll === 20 ? true : roll === 1 ? false : total >= effAC;
+
+  var ov = document.createElement('div');
+  ov.id = 'dm-hit-modal';
+  ov.className = 'modal-overlay show';
+  ov.style.zIndex = '2700';
+  ov.innerHTML = '<div class="modal" style="max-width:400px;width:94%;text-align:center;">' +
+    '<div style="font-family:Cinzel,serif;font-size:15px;color:var(--gold);margin-bottom:4px;">' + esc(attacker.name) + ' → ' + esc(target.name) + '</div>' +
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">' + esc(a.name) + ' · ' + roll + (bonus >= 0 ? '+' : '') + bonus + ' = <strong>' + total + '</strong> vs AC ' + effAC + '</div>' +
+    '<div id="dm-hit-verdict" style="font-family:Cinzel,serif;font-size:30px;letter-spacing:0.15em;color:var(--text-dim);min-height:40px;">…</div>' +
+    '<div id="dm-hit-body" style="margin-top:10px;"></div>' +
+  '</div>';
+  document.body.appendChild(ov);
+
+  // Neutral for a beat, then reveal
+  setTimeout(function() {
+    var v = document.getElementById('dm-hit-verdict');
+    if (!v) return;
+    if (hit) {
+      v.textContent = crit ? '💥 CRITICAL HIT!' : '⚔ HIT!';
+      v.style.color = crit ? '#ffd700' : '#8fd050';
+      dmShowDamageStep(attackerId, targetId, actionIdx, roll, crit);
+    } else {
+      v.textContent = '🛡 MISS';
+      v.style.color = '#ff8080';
+      var body = document.getElementById('dm-hit-body');
+      if (body) body.innerHTML = '<button class="btn btn-ghost" onclick="document.getElementById(\'dm-hit-modal\').remove()">OK</button>';
+      resolveCombatAction(attackerId, targetId, a, { roll: roll, source: 'dm' });
+    }
+  }, 450);
+}
+
+// The damage-roll step: enter it, or animated auto-roll for suspense.
+function dmShowDamageStep(attackerId, targetId, actionIdx, roll, crit) {
+  var a = (window.__dmActActions || [])[actionIdx];
+  if (!a) return;
+  // Crit doubles the dice count for the roll the DM makes
+  var dice = a.dice || '1d6';
+  var critDice = dice;
+  if (crit) {
+    var m = String(dice).match(/^(\d*)d(\d+)(.*)$/i);
+    if (m) critDice = ((parseInt(m[1]) || 1) * 2) + 'd' + m[2] + (m[3] || '');
+  }
+  var body = document.getElementById('dm-hit-body');
+  if (!body) return;
+  body.innerHTML =
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">Roll damage: <strong style="color:var(--parchment);">' + esc(critDice) + '</strong>' + (crit ? ' <span style="color:#ffd700;">(crit — dice doubled)</span>' : '') + '</div>' +
+    '<div id="dm-dmg-face" style="font-size:38px;font-family:Cinzel,serif;color:var(--blood-light);min-height:46px;line-height:46px;transition:transform 0.08s;">—</div>' +
+    '<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:6px;">' +
+      '<input id="dm-dmg-input" type="number" min="0" placeholder="dmg" style="width:80px;font-size:20px;text-align:center;padding:6px;background:rgba(0,0,0,0.4);border:2px solid rgba(224,80,80,0.45);border-radius:8px;color:var(--parchment);">' +
+      '<button class="btn btn-ghost btn-sm" onclick="dmDamageAuto(\'' + critDice.replace(/'/g, "") + '\')">🎲 Auto-roll</button>' +
+    '</div>' +
+    '<button class="btn btn-blood" style="margin-top:12px;" onclick="dmDamageApply(' + attackerId + ',' + targetId + ',' + actionIdx + ',' + roll + ')">💥 Apply Damage</button>';
+  var inp = document.getElementById('dm-dmg-input');
+  if (inp) inp.focus();
+}
+
+function dmDamageAuto(diceExpr) {
+  var face = document.getElementById('dm-dmg-face');
+  var input = document.getElementById('dm-dmg-input');
+  var total = rollDiceExpr(diceExpr).total;
+  // slot-machine: flicker high, slow, settle
+  var ticks = 0, max = 18;
+  var spin = function() {
+    ticks++;
+    var done = ticks >= max;
+    if (face) {
+      face.textContent = done ? total : Math.max(1, Math.floor(Math.random() * (total + 6)));
+      face.style.transform = 'scale(' + (1 + Math.min(0.5, ticks / max * 0.5)) + ')';
+      if (done) { face.style.transform = 'scale(1.3)'; setTimeout(function() { if (face) face.style.transform = 'scale(1)'; }, 150); }
+    }
+    if (done) { if (input) input.value = total; return; }
+    setTimeout(spin, Math.min(35 + ticks * ticks * 0.8, 260));
+  };
+  spin();
+}
+
+function dmDamageApply(attackerId, targetId, actionIdx, roll) {
+  var a = (window.__dmActActions || [])[actionIdx];
+  var input = document.getElementById('dm-dmg-input');
+  var dmgVal = input ? parseInt(input.value) : NaN;
+  var m = document.getElementById('dm-hit-modal');
+  if (m) m.remove();
+  if (!a) return;
+  var opts = { roll: roll, source: 'dm' };
+  if (!isNaN(dmgVal)) opts.damageRoll = dmgVal; // else resolveCombatAction rolls it
+  resolveCombatAction(attackerId, targetId, a, opts);
 }
 
 // ─── Monster tactics hint ────────────────────────────────────
