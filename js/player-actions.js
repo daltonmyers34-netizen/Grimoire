@@ -388,6 +388,106 @@ function saveAdvFor(combatant) {
   return exhaustionLevel(combatant) >= 3 ? -1 : 0;
 }
 
+// ─── Saving throws — routed to the player who has to make them ───
+// A player-controlled ally gets the prompt on THEIR phone (they roll their
+// own d20); monsters roll at the DM's table via the roll modal.
+function resolveSaveOutcome(c, ability, dc, roll, meta) {
+  meta = meta || {};
+  var sb = saveBonusFor(c, ability);
+  var total = (parseInt(roll) || 10) + sb;
+  var passed = total >= dc;
+  if (!passed && typeof maybeLegendaryResist === 'function' && maybeLegendaryResist(c, ability)) passed = true;
+  var kind = meta.kind || 'apply';
+  if (kind === 'shake') {
+    // Re-save to throw off an ongoing condition (success removes it)
+    if (passed) {
+      c.conditions = (c.conditions || []).filter(function(x) { return x !== meta.condition; });
+      if (c.condMeta) delete c.condMeta[meta.condition];
+      logCombat('✓ ' + c.name + ' shakes off ' + meta.condition + ' (' + total + ' vs DC ' + dc + ')', 'heal');
+      showToast('✓ ' + c.name + ' is no longer ' + meta.condition, 'success');
+    } else {
+      logCombat('✗ ' + c.name + ' still ' + meta.condition + ' (' + total + ' vs DC ' + dc + ')', 'info');
+    }
+  } else {
+    // Save-or-suffer (apply the condition on a failure)
+    if (passed) {
+      logCombat('✓ ' + c.name + ' saves' + (meta.condition ? ' vs ' + meta.condition : '') + ' (' + total + ' vs DC ' + dc + ')', 'info');
+      showToast('✓ ' + c.name + ' saves!', 'info');
+    } else if (meta.condition) {
+      c.conditions = c.conditions || [];
+      if (c.conditions.indexOf(meta.condition) < 0) c.conditions.push(meta.condition);
+      c.condMeta = c.condMeta || {};
+      c.condMeta[meta.condition] = { saveAbility: ability, saveDC: dc };
+      logCombat('⚡ ' + c.name + ' FAILS (' + total + ' vs DC ' + dc + ') — now ' + meta.condition, 'damage');
+      showToast('⚡ ' + c.name + ' is ' + meta.condition + '!', 'danger');
+    } else {
+      logCombat('✗ ' + c.name + ' fails the save (' + total + ' vs DC ' + dc + ')', 'damage');
+    }
+  }
+  renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+  return passed;
+}
+
+function promptSave(target, ability, dc, meta) {
+  meta = meta || {};
+  var pc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === target.name; });
+  var sb = saveBonusFor(target, ability);
+  var adv = saveAdvFor(target);
+  if (pc && target.type === 'ally') {
+    window.pendingSave = {
+      id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()),
+      combatantId: target.id, pcName: target.name, ability: ability, dc: dc,
+      bonus: sb, adv: adv, kind: meta.kind || 'apply', condition: meta.condition || '',
+      source: meta.source || '', prompt: meta.prompt || ''
+    };
+    logCombat('🎲 ' + target.name + ' must make a DC ' + dc + ' ' + ability.toUpperCase() + ' save — prompted on their phone', 'info');
+    if (window.cloudSaveNow) window.cloudSaveNow(); else if (window.cloudSave) window.cloudSave();
+    showSaveWaitBar(target, ability, dc);
+  } else {
+    requestRolls('⚡ ' + (meta.source || 'Save') + ' — ' + target.name + ' saves' + (meta.condition ? ' vs ' + meta.condition : ''),
+      [{ id: 'r', label: target.name + ' — ' + ability.toUpperCase() + ' save', sub: 'DC ' + dc + ' · bonus ' + (sb >= 0 ? '+' : '') + sb + (adv < 0 ? ' · disadvantage' : ''), adv: adv }],
+      function(results) { resolveSaveOutcome(target, ability, dc, results.r, meta); });
+  }
+}
+
+// Floating DM bar while a player's save is pending — lets the DM roll it if the player is away
+function showSaveWaitBar(target, ability, dc) {
+  var old = document.getElementById('save-wait-bar'); if (old) old.remove();
+  var bar = document.createElement('div');
+  bar.id = 'save-wait-bar';
+  bar.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:5000;display:flex;gap:10px;align-items:center;background:linear-gradient(135deg,rgba(40,30,60,0.97),rgba(25,18,40,0.97));border:1px solid rgba(150,110,230,0.5);border-radius:10px;padding:12px 18px;box-shadow:0 8px 30px rgba(0,0,0,0.7);';
+  bar.innerHTML = '<span style="font-family:Cinzel,serif;font-size:13px;color:#c8a8ff;">⏳ Waiting for ' + esc(target.name) + '\'s DC ' + dc + ' ' + String(ability).toUpperCase() + ' save…</span>' +
+    '<button class="btn btn-gold btn-sm" onclick="dmRollPendingSave()">🎲 Roll for them</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'save-wait-bar\').remove()">Dismiss</button>';
+  document.body.appendChild(bar);
+}
+
+function dmRollPendingSave() {
+  var ps = window.pendingSave; if (!ps) return;
+  var c = combatants.find(function(x) { return x.id === ps.combatantId; });
+  var bar = document.getElementById('save-wait-bar'); if (bar) bar.remove();
+  if (!c) { window.pendingSave = null; return; }
+  requestRolls('⚡ ' + c.name + ' saves', [{ id: 'r', label: c.name + ' — ' + String(ps.ability).toUpperCase() + ' save', sub: 'DC ' + ps.dc, adv: ps.adv }],
+    function(results) {
+      resolveSaveOutcome(c, ps.ability, ps.dc, results.r, { kind: ps.kind, condition: ps.condition, source: ps.source });
+      window.pendingSave = null;
+      if (window.cloudSaveNow) window.cloudSaveNow();
+    });
+}
+
+// The player rolled their save on their phone
+function processPlayerSaveRoll(req) {
+  var ps = window.pendingSave;
+  if (!ps || ps.combatantId !== req.combatantId) return;
+  var c = combatants.find(function(x) { return x.id === req.combatantId; });
+  var bar = document.getElementById('save-wait-bar'); if (bar) bar.remove();
+  if (!c) { window.pendingSave = null; return; }
+  resolveSaveOutcome(c, ps.ability, ps.dc, req.roll, { kind: ps.kind, condition: ps.condition, source: ps.source });
+  window.pendingSave = null;
+  if (window.cloudSaveNow) window.cloudSaveNow();
+}
+
 // Attack roll modifier from conditions (Bless +2, Bane -2)
 function conditionAttackMod(c) {
   var m = 0;
@@ -577,32 +677,9 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
       // Condition rider: on-hit save-or-suffer
       if (a.applyCondition && CONDITION_EFFECTS[a.applyCondition] !== undefined) {
         if (a.saveAbility && a.saveDC) {
-          // Save entered at the table (or auto) via the DM roll modal
+          // Player targets roll on their own phone; monsters roll at the table
           result.notes.push(target.name + ' must make a DC ' + a.saveDC + ' ' + a.saveAbility.toUpperCase() + ' save or be ' + a.applyCondition);
-          (function(tgt, act) {
-            var sb = saveBonusFor(tgt, act.saveAbility);
-            var cAdv = saveAdvFor(tgt);
-            requestRolls('⚡ ' + act.name + ' — ' + tgt.name + ' saves vs ' + act.applyCondition,
-              [{ id: 'r', label: tgt.name + ' — ' + act.saveAbility.toUpperCase() + ' save', sub: 'DC ' + act.saveDC + ' · their bonus ' + (sb >= 0 ? '+' : '') + sb + (cAdv < 0 ? ' · exhausted: disadvantage' : ''), adv: cAdv }],
-              function(results) {
-                var total = (results.r || 10) + sb;
-                var passed = total >= act.saveDC;
-                if (!passed && typeof maybeLegendaryResist === 'function' && maybeLegendaryResist(tgt, act.saveAbility)) passed = true;
-                if (passed) {
-                  logCombat('✓ ' + tgt.name + ' saves vs ' + act.applyCondition + ' (' + total + ' vs DC ' + act.saveDC + ')', 'info');
-                  showToast('✓ ' + tgt.name + ' resists ' + act.applyCondition, 'info');
-                } else {
-                  tgt.conditions = tgt.conditions || [];
-                  if (tgt.conditions.indexOf(act.applyCondition) < 0) tgt.conditions.push(act.applyCondition);
-                  tgt.condMeta = tgt.condMeta || {};
-                  tgt.condMeta[act.applyCondition] = { saveAbility: act.saveAbility, saveDC: act.saveDC };
-                  logCombat('⚡ ' + tgt.name + ' FAILS (' + total + ' vs DC ' + act.saveDC + ') — now ' + act.applyCondition + ' (repeats save at end of turn)', 'damage');
-                  showToast('⚡ ' + tgt.name + ' is ' + act.applyCondition + '!', 'danger');
-                }
-                renderCombatants();
-                if (window.cloudSave) window.cloudSave();
-              });
-          })(target, a);
+          promptSave(target, a.saveAbility, a.saveDC, { kind: 'apply', condition: a.applyCondition, source: a.name });
         } else {
           target.conditions = target.conditions || [];
           if (target.conditions.indexOf(a.applyCondition) < 0) target.conditions.push(a.applyCondition);
@@ -777,6 +854,7 @@ function processPlayerAction(req) {
     else if (req.type === 'standUp') processPlayerStandUp(req);
     else if (req.type === 'help') processPlayerHelp(req);
     else if (req.type === 'ready') processPlayerReady(req);
+    else if (req.type === 'saveRoll') processPlayerSaveRoll(req);
   } catch(e) {
     console.error('processPlayerAction', e);
   }

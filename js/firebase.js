@@ -185,6 +185,7 @@ async function doCloudWrite() {
       actionFeed: window.lastActionResult || null,
       pendingReaction: window.pendingReaction || null,
       pendingSmite: window.pendingSmite || null,
+      pendingSave: window.pendingSave || null,
       lastRejection: window.lastRejection || null,
       recentLog: (typeof combatLog !== 'undefined' ? combatLog : []).slice(0, 25).map(l => ({ text: l.text, time: l.time, type: l.type, round: l.round })),
       updatedAt: new Date().toISOString()
