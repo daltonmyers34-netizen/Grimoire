@@ -201,16 +201,90 @@ function executeTrade(t) {
   return { ok: true };
 }
 
+// ─── Player ⇄ player swap ────────────────────────────────────
+function executeP2P(t) {
+  var a = party.find(function(p) { return p.id === t.aPcId; });
+  var b = party.find(function(p) { return p.id === t.bPcId; });
+  if (!a || !b) return { ok: false, reason: 'a trader is gone' };
+  if ((a.gold || 0) < (t.aGold || 0)) return { ok: false, reason: a.name + ' lacks the gold' };
+  if ((b.gold || 0) < (t.bGold || 0)) return { ok: false, reason: b.name + ' lacks the gold' };
+  var aIds = (t.aItems || []).map(function(x) { return x.id; });
+  var bIds = (t.bItems || []).map(function(x) { return x.id; });
+  var aObjs = (a.inventory || []).filter(function(i) { return aIds.indexOf(i.id) >= 0; });
+  var bObjs = (b.inventory || []).filter(function(i) { return bIds.indexOf(i.id) >= 0; });
+  if (aObjs.length !== aIds.length || bObjs.length !== bIds.length) return { ok: false, reason: 'a traded item is missing' };
+  a.gold = (a.gold || 0) - (t.aGold || 0) + (t.bGold || 0);
+  b.gold = (b.gold || 0) - (t.bGold || 0) + (t.aGold || 0);
+  a.inventory = (a.inventory || []).filter(function(i) { return aIds.indexOf(i.id) < 0; });
+  b.inventory = (b.inventory || []).filter(function(i) { return bIds.indexOf(i.id) < 0; });
+  aObjs.forEach(function(it) { b.inventory.push(Object.assign({}, it, { id: uniqueId(), equipped: false })); });
+  bObjs.forEach(function(it) { a.inventory.push(Object.assign({}, it, { id: uniqueId(), equipped: false })); });
+  if (typeof recomputePcCombat === 'function') { recomputePcCombat(a); recomputePcCombat(b); }
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+  if (typeof renderParty === 'function') renderParty();
+  return { ok: true };
+}
+
+function processTradeProposeP2P(req) {
+  var a = party.find(function(p) { return p.id === req.fromPcId; });
+  var b = party.find(function(p) { return p.id === req.toPcId; });
+  if (!a || !b || a.id === b.id) return;
+  var pick = function(pc, ids) { return (ids || []).map(function(iid) { var it = (pc.inventory || []).find(function(i) { return i.id === iid; }); return it ? { id: it.id, name: it.name } : null; }).filter(Boolean); };
+  var aItems = pick(a, req.giveItems), bItems = pick(b, req.wantItems);
+  if (!aItems.length && !bItems.length && !req.giveGold && !req.wantGold) return;
+  trades.push({ id: uniqueId(), kind: 'p2p', origin: 'player', status: 'pending',
+    aPcId: a.id, aName: a.name, bPcId: b.id, bName: b.name,
+    aItems: aItems, aGold: Math.max(0, parseInt(req.giveGold) || 0),
+    bItems: bItems, bGold: Math.max(0, parseInt(req.wantGold) || 0), ts: Date.now() });
+  showToast('🤝 ' + a.name + ' proposes a swap with ' + b.name, 'info');
+  renderTradeInbox();
+  if (window.cloudSaveNow) window.cloudSaveNow();
+}
+
+// Player counters a DM-pushed offer with different payment → back to DM inbox
+function processTradeCounter(req) {
+  var orig = trades.find(function(x) { return x.id === req.tradeId && x.status === 'awaiting-player'; });
+  if (!orig || orig.pcId !== req.pcId) return;
+  var pc = party.find(function(p) { return p.id === req.pcId; });
+  if (!pc) return;
+  orig.status = 'countered';
+  var payItems = (req.payItems || []).map(function(iid) { var it = (pc.inventory || []).find(function(i) { return i.id === iid; }); return it ? { id: it.id, name: it.name } : null; }).filter(Boolean);
+  trades.push({ id: uniqueId(), origin: 'player', status: 'pending', pcId: pc.id, pcName: pc.name,
+    shopId: orig.shopId, shopName: orig.shopName + ' (counter)', get: orig.get, payGold: Math.max(0, parseInt(req.payGold) || 0), payItems: payItems, ts: Date.now() });
+  showToast('🤝 ' + pc.name + ' counter-offered', 'info');
+  renderTradeInbox();
+  if (window.cloudSaveNow) window.cloudSaveNow();
+}
+
+// DM counters a player's offer: re-push the same goods at a new price
+function dmCounterTrade(id) {
+  var t = trades.find(function(x) { return x.id === id; });
+  if (!t || t.kind === 'p2p') return;
+  var suggested = window.prompt('Counter-offer to ' + t.pcName + ' — new price in gold for ' + (t.get || []).map(function(g) { return g.name; }).join(', ') + ':', String(t.payGold || 0));
+  if (suggested === null) return;
+  t.status = 'countered';
+  trades.push({ id: uniqueId(), origin: 'dm', status: 'awaiting-player', pcId: t.pcId, pcName: t.pcName,
+    shopName: (t.shopName || 'the DM') + ' (counter)', get: t.get, payGold: Math.max(0, parseInt(suggested) || 0), payItems: [], ts: Date.now() });
+  showToast('🤝 Counter sent to ' + t.pcName, 'info');
+  renderTradeInbox();
+  if (window.cloudSaveNow) window.cloudSaveNow();
+}
+
 // ─── DM inbox: accept / decline player offers ────────────────
 function acceptTrade(id) {
   var t = trades.find(function(x) { return x.id === id; });
   if (!t) return;
-  var res = executeTrade(t);
+  var res = t.kind === 'p2p' ? executeP2P(t) : executeTrade(t);
   if (!res.ok) { showToast('🚫 ' + res.reason, 'warn'); return; }
   t.status = 'accepted';
-  var names = (t.get || []).map(function(g) { return g.name; }).join(', ');
-  showToast('✅ Trade done — ' + t.pcName + ' got ' + names, 'success');
-  if (typeof logCombat === 'function') logCombat('🤝 Trade: ' + t.pcName + ' bought ' + names + ' for ' + (t.payGold || 0) + ' gp' + ((t.payItems || []).length ? ' + ' + t.payItems.map(function(x) { return x.name; }).join(', ') : ''), 'info');
+  if (t.kind === 'p2p') {
+    showToast('✅ Swap done — ' + t.aName + ' ⇄ ' + t.bName, 'success');
+    if (typeof logCombat === 'function') logCombat('🤝 Swap: ' + t.aName + ' ⇄ ' + t.bName, 'info');
+  } else {
+    var names = (t.get || []).map(function(g) { return g.name; }).join(', ');
+    showToast('✅ Trade done — ' + t.pcName + ' got ' + names, 'success');
+    if (typeof logCombat === 'function') logCombat('🤝 Trade: ' + t.pcName + ' bought ' + names + ' for ' + (t.payGold || 0) + ' gp' + ((t.payItems || []).length ? ' + ' + t.payItems.map(function(x) { return x.name; }).join(', ') : ''), 'info');
+  }
   renderTradeInbox();
   if (window.cloudSaveNow) window.cloudSaveNow();
 }
@@ -236,19 +310,30 @@ function renderTradeInbox() {
   if (badge) { badge.style.display = pending.length ? '' : 'none'; badge.textContent = pending.length; }
   if (!trades.length) { wrap.innerHTML = '<div style="color:var(--text-dim);font-style:italic;padding:8px 0;">No trade offers yet.</div>'; return; }
   wrap.innerHTML = trades.slice().reverse().map(function(t) {
-    var goods = (t.get || []).map(function(g) { return esc(g.name) + (g.qty > 1 ? ' ×' + g.qty : ''); }).join(', ');
-    var pay = [];
-    if (t.payGold) pay.push('🪙 ' + t.payGold);
-    (t.payItems || []).forEach(function(x) { pay.push(esc(x.name)); });
-    var statusColor = t.status === 'accepted' ? '#8fd050' : t.status === 'declined' ? '#e05050' : t.status === 'awaiting-player' ? '#c8a8ff' : 'var(--gold)';
+    var statusColor = t.status === 'accepted' ? '#8fd050' : t.status === 'declined' ? '#e05050' : t.status === 'countered' ? '#888' : t.status === 'awaiting-player' ? '#c8a8ff' : 'var(--gold)';
+    var body;
+    if (t.kind === 'p2p') {
+      var aGives = (t.aItems || []).map(function(x) { return esc(x.name); }).concat(t.aGold ? ['🪙 ' + t.aGold] : []);
+      var bGives = (t.bItems || []).map(function(x) { return esc(x.name); }).concat(t.bGold ? ['🪙 ' + t.bGold] : []);
+      body = '<div style="font-size:12px;color:var(--text-dim);margin-bottom:4px;">🤝 Player swap</div>' +
+        '<div style="font-size:13px;color:var(--gold-light);"><strong>' + esc(t.aName) + '</strong> gives: ' + (aGives.length ? aGives.join(', ') : 'nothing') + '</div>' +
+        '<div style="font-size:13px;color:var(--gold-light);"><strong>' + esc(t.bName) + '</strong> gives: ' + (bGives.length ? bGives.join(', ') : 'nothing') + '</div>';
+    } else {
+      var goods = (t.get || []).map(function(g) { return esc(g.name) + (g.qty > 1 ? ' ×' + g.qty : ''); }).join(', ');
+      var pay = [];
+      if (t.payGold) pay.push('🪙 ' + t.payGold);
+      (t.payItems || []).forEach(function(x) { pay.push(esc(x.name)); });
+      body = '<div style="font-size:12px;color:var(--text-dim);margin-bottom:4px;"><strong style="color:var(--parchment);">' + esc(t.pcName) + '</strong> ' + (t.origin === 'dm' ? 'was offered' : 'wants to buy') + ' from ' + esc(t.shopName || 'a shop') + '</div>' +
+        '<div style="font-size:13px;color:var(--gold-light);">Gets: ' + goods + '</div>' +
+        '<div style="font-size:13px;color:#ffd700;">Pays: ' + (pay.length ? pay.join(' + ') : 'nothing') + '</div>';
+    }
     return '<div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;background:rgba(0,0,0,0.2);">' +
-      '<div style="font-size:12px;color:var(--text-dim);margin-bottom:4px;"><strong style="color:var(--parchment);">' + esc(t.pcName) + '</strong> ' + (t.origin === 'dm' ? 'was offered' : 'wants to buy') + ' from ' + esc(t.shopName || 'a shop') + '</div>' +
-      '<div style="font-size:13px;color:var(--gold-light);">Gets: ' + goods + '</div>' +
-      '<div style="font-size:13px;color:#ffd700;">Pays: ' + (pay.length ? pay.join(' + ') : 'nothing') + '</div>' +
+      body +
       '<div style="display:flex;gap:6px;align-items:center;margin-top:6px;">' +
         (t.status === 'pending' ?
           '<button class="btn btn-gold btn-sm" onclick="acceptTrade(' + t.id + ')">✅ Accept</button>' +
-          '<button class="btn btn-blood btn-sm" onclick="declineTrade(' + t.id + ')">❌ Decline</button>'
+          '<button class="btn btn-blood btn-sm" onclick="declineTrade(' + t.id + ')">❌ Decline</button>' +
+          (t.kind !== 'p2p' ? '<button class="btn btn-ghost btn-sm" onclick="dmCounterTrade(' + t.id + ')">↔ Counter</button>' : '')
           : '<span style="font-family:Cinzel,serif;font-size:12px;color:' + statusColor + ';">' + t.status.replace('-', ' ') + '</span>') +
       '</div>' +
     '</div>';
