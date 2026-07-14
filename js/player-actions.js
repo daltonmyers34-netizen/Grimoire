@@ -1537,6 +1537,21 @@ function itemPresetFor(name) {
 // Guess a slot from an item's name so loot/grants arrive in the right category
 var WEARABLE_NAME_RE = /cloak|cape|mantle|ring|amulet|necklace|pendant|talisman|brooch|boots|shoes|gloves|gauntlet|bracers|bracer|belt|girdle|circlet|crown|diadem|tiara|goggles|lenses|periapt|scarab|medallion|torc/i;
 var WEAPON_NAME_RE = /sword|axe|bow|dagger|mace|hammer|spear|blade|staff|wand|whip|flail|crossbow|halberd|glaive|scimitar|rapier|club|maul|javelin|sling|trident|scythe|pike|morningstar/i;
+// Which body slot a wearable occupies — so you can't wear two cloaks at once
+// (but you can wear a cloak + amulet + 2 rings + boots simultaneously).
+function bodySlotFor(item) {
+  if (item && item.bodySlot) return item.bodySlot;
+  var n = String((item && item.name) || item || '');
+  if (/\bring\b/i.test(n)) return 'ring';           // two allowed
+  if (/cloak|cape|mantle/i.test(n)) return 'back';
+  if (/amulet|necklace|pendant|periapt|medallion|torc|scarab|brooch|talisman/i.test(n)) return 'neck';
+  if (/boots|shoes|sandals|slippers/i.test(n)) return 'feet';
+  if (/gloves|gauntlet|bracers|bracer/i.test(n)) return 'hands';
+  if (/belt|girdle|sash/i.test(n)) return 'waist';
+  if (/helm|crown|circlet|diadem|tiara|\bhat\b|\bcap\b|mask|goggles|lenses|hood|headband/i.test(n)) return 'head';
+  return 'trinket';
+}
+
 function inferItemSlot(name) {
   var n = String(name || '');
   var preset = itemPresetFor(n);
@@ -1616,10 +1631,23 @@ function recomputePcAC(pc) {
 // (1 armor, 1 shield, 1 light source, up to 2 weapons)
 function enforceSlotLimits(pc, item) {
   if (!item.equipped) return [];
+  var unequipped = [];
+  // Wearables limit by body slot (one cloak, one amulet, two rings, …)
+  if (item.slot === 'wearable') {
+    var bs = bodySlotFor(item);
+    var perBody = bs === 'ring' ? 2 : 1;
+    var same = (pc.inventory || []).filter(function(i) { return i.equipped && i.slot === 'wearable' && bodySlotFor(i) === bs; });
+    while (same.length > perBody) {
+      var o = same.find(function(i) { return i.id !== item.id; });
+      if (!o) break;
+      o.equipped = false; unequipped.push(o.name);
+      same = same.filter(function(i) { return i.id !== o.id; });
+    }
+    return unequipped;
+  }
   var limits = { armor: 1, shield: 1, light: 1, weapon: 2 };
   var limit = limits[item.slot];
   if (!limit) return [];
-  var unequipped = [];
   var equippedSame = (pc.inventory || []).filter(function(i) { return i.slot === item.slot && i.equipped; });
   while (equippedSame.length > limit) {
     var other = equippedSame.find(function(i) { return i.id !== item.id; });
