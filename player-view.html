@@ -2690,15 +2690,17 @@ function pvBodySlot(item) {
   if (item && item.bodySlot) return item.bodySlot;
   const n = String((item && item.name) || '');
   if (/\bring\b/i.test(n)) return 'ring';
-  if (/cloak|cape|mantle/i.test(n)) return 'back';
-  if (/amulet|necklace|pendant|periapt|medallion|torc|scarab|brooch|talisman/i.test(n)) return 'neck';
-  if (/boots|shoes|sandals|slippers/i.test(n)) return 'feet';
-  if (/gloves|gauntlet|bracers|bracer/i.test(n)) return 'hands';
-  if (/belt|girdle|sash/i.test(n)) return 'waist';
-  if (/helm|crown|circlet|diadem|tiara|\bhat\b|\bcap\b|mask|goggles|lenses|hood|headband/i.test(n)) return 'head';
+  if (/cloak|cape|mantle|shawl/i.test(n)) return 'back';
+  if (/amulet|necklace|pendant|periapt|medallion|torc|scarab|brooch|talisman|locket|choker|collar/i.test(n)) return 'neck';
+  if (/goggles|lenses|spectacles|eyepatch|monocle|\beyes? of\b/i.test(n)) return 'eyes';
+  if (/helm|helmet|crown|circlet|diadem|tiara|coronet|headband|hood|mask|\bhat\b|\bcap\b|veil|mitre/i.test(n)) return 'head';
+  if (/bracers|bracer|bracelet|vambrace|armlet|wristband|wristguard/i.test(n)) return 'arms';
+  if (/gloves|glove|gauntlet|mittens/i.test(n)) return 'hands';
+  if (/belt|girdle|sash|waistband/i.test(n)) return 'waist';
+  if (/boots|\bboot\b|shoes|sandals|slippers|greaves|footwraps/i.test(n)) return 'feet';
   return 'trinket';
 }
-const PV_BODY_LABELS = { back: 'Cloak', neck: 'Amulet', ring: 'Ring', feet: 'Boots', hands: 'Gloves', waist: 'Belt', head: 'Headwear', trinket: 'Trinket' };
+const PV_BODY_LABELS = { head: 'Head', eyes: 'Eyes', neck: 'Neck', back: 'Cloak', arms: 'Arms', hands: 'Hands', ring: 'Ring', waist: 'Waist', feet: 'Feet', trinket: 'Trinket' };
 function pvSlotLabel(item) {
   if (item.slot === 'weapon') return 'Weapon';
   if (item.slot === 'armor') return 'Armor';
