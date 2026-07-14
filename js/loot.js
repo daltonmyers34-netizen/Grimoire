@@ -204,18 +204,118 @@ function updateGiveBtn() {
   const anyChecked = document.querySelectorAll('#loot-result input[type=checkbox]:checked').length > 0;
   btn.style.display = anyChecked ? 'block' : 'none';
   // "Give to..." target dropdown: party stash or a specific character
-  let sel = document.getElementById('loot-give-target');
-  if (!sel) {
-    sel = document.createElement('select');
-    sel.id = 'loot-give-target';
-    sel.style.cssText = 'width:100%;margin-bottom:6px;font-size:12px;padding:6px;';
-    btn.parentNode.insertBefore(sel, btn);
+  const sel = document.getElementById('loot-give-target');
+  if (sel) {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">🎒 Party stash</option>' +
+      (typeof party !== 'undefined' ? party : []).map(p => '<option value="' + p.id + '">🧝 ' + esc(p.name) + '</option>').join('');
+    if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+    sel.style.display = anyChecked ? 'inline-block' : 'none';
   }
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">🎒 Party stash</option>' +
-    (typeof party !== 'undefined' ? party : []).map(p => '<option value="' + p.id + '">🧝 ' + esc(p.name) + ' (their inventory)</option>').join('');
-  if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
-  sel.style.display = anyChecked ? 'block' : 'none';
+}
+
+// ─── Grant / create any item straight into a player's inventory ──
+var GRANT_SLOTS = ['gear', 'weapon', 'armor', 'shield', 'potion', 'light', 'ammo'];
+function openGrantItemModal() {
+  if (typeof party === 'undefined' || !party.length) { showToast('Add a party member first', 'warn'); return; }
+  var ov = document.getElementById('grant-item-modal');
+  if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'grant-item-modal';
+  ov.className = 'modal-overlay show';
+  ov.style.zIndex = '2600';
+  var dmgTypes = (typeof DAMAGE_TYPES !== 'undefined') ? DAMAGE_TYPES : ['slashing','piercing','bludgeoning','fire','cold','lightning','thunder','poison','acid','necrotic','radiant','force','psychic'];
+  ov.innerHTML = '<div class="modal" style="max-width:460px;width:96%;max-height:88vh;overflow-y:auto;">' +
+    '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:4px;">🎁 Grant an Item</h3>' +
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">Creates the item in one character\'s inventory. Nothing is announced — hand it over in secret if you like.</div>' +
+    '<div class="field-group" style="margin-bottom:8px;"><label class="gi-lbl">To</label>' +
+      '<select id="gi-player">' + party.map(function(p){ return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('') + '</select></div>' +
+    '<div class="field-group" style="margin-bottom:8px;"><label class="gi-lbl">Item name</label>' +
+      '<input id="gi-name" placeholder="Flametongue Longsword, Potion of Healing…" oninput="grantItemAutofill()" autocomplete="off"></div>' +
+    '<div class="grid-2" style="gap:8px;margin-bottom:8px;">' +
+      '<div class="field-group" style="margin:0;"><label class="gi-lbl">Quantity</label><input id="gi-qty" type="number" min="1" value="1"></div>' +
+      '<div class="field-group" style="margin:0;"><label class="gi-lbl">Type</label><select id="gi-slot" onchange="grantItemSlotFields()">' + GRANT_SLOTS.map(function(s){ return '<option value="' + s + '">' + s + '</option>'; }).join('') + '</select></div>' +
+    '</div>' +
+    '<div id="gi-extra"></div>' +
+    '<div class="field-group" style="margin-bottom:12px;"><label class="gi-lbl">Description / flavor <span style="color:#666;">(optional)</span></label>' +
+      '<textarea id="gi-desc" style="height:52px;" placeholder="A blade that bursts into flame at a word…"></textarea></div>' +
+    '<div class="modal-btns">' +
+      '<button class="btn btn-gold" onclick="grantItemConfirm()">🎁 Grant</button>' +
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'grant-item-modal\').remove()">Cancel</button>' +
+    '</div></div>';
+  ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+  grantItemSlotFields();
+}
+
+// Slot-specific stat fields (weapon dice, armor AC, potion heal, …)
+function grantItemSlotFields() {
+  var slot = (document.getElementById('gi-slot') || {}).value || 'gear';
+  var wrap = document.getElementById('gi-extra');
+  if (!wrap) return;
+  var dmgTypes = (typeof DAMAGE_TYPES !== 'undefined') ? DAMAGE_TYPES : ['slashing','piercing','bludgeoning','fire','cold','lightning','thunder','poison','acid','necrotic','radiant','force','psychic'];
+  var html = '';
+  if (slot === 'weapon') {
+    html = '<div class="grid-2" style="gap:8px;margin-bottom:8px;">' +
+      '<div class="field-group" style="margin:0;"><label class="gi-lbl">Damage dice</label><input id="gi-dice" placeholder="1d8+1"></div>' +
+      '<div class="field-group" style="margin:0;"><label class="gi-lbl">Damage type</label><select id="gi-dtype"><option value="">—</option>' + dmgTypes.map(function(t){ return '<option value="' + t + '">' + t + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field-group" style="margin:0;"><label class="gi-lbl">Range (ft)</label><input id="gi-range" type="number" value="5"></div>' +
+      '<div style="font-size:10px;color:#666;grid-column:1/-1;">Magic bonus? Fold it into the dice, e.g. <code>1d8+1</code>.</div>' +
+    '</div>';
+  } else if (slot === 'armor' || slot === 'shield') {
+    html = '<div class="field-group" style="margin-bottom:8px;"><label class="gi-lbl">AC bonus</label><input id="gi-acbonus" type="number" placeholder="' + (slot === 'shield' ? '2' : '1') + '"></div>';
+  } else if (slot === 'potion') {
+    html = '<div class="field-group" style="margin-bottom:8px;"><label class="gi-lbl">Heals (dice)</label><input id="gi-heal" placeholder="2d4+2"></div>';
+  } else if (slot === 'light') {
+    html = '<div class="field-group" style="margin-bottom:8px;"><label class="gi-lbl">Light radius (ft)</label><input id="gi-light" type="number" placeholder="20"></div>';
+  }
+  wrap.innerHTML = html;
+}
+
+// Typing a known item name auto-fills its slot + stats
+function grantItemAutofill() {
+  var name = (document.getElementById('gi-name') || {}).value || '';
+  var preset = (typeof itemPresetFor === 'function') ? itemPresetFor(name) : null;
+  if (!preset) return;
+  var slotSel = document.getElementById('gi-slot');
+  if (slotSel && preset.slot && GRANT_SLOTS.indexOf(preset.slot) >= 0) { slotSel.value = preset.slot; grantItemSlotFields(); }
+  if (preset.dice) { var d = document.getElementById('gi-dice'); if (d) d.value = preset.dice; }
+  if (preset.damageType) { var dt = document.getElementById('gi-dtype'); if (dt) dt.value = preset.damageType; }
+  if (preset.range) { var r = document.getElementById('gi-range'); if (r) r.value = preset.range; }
+  if (preset.acBonus) { var ac = document.getElementById('gi-acbonus'); if (ac) ac.value = preset.acBonus; }
+  if (preset.healDice) { var h = document.getElementById('gi-heal'); if (h) h.value = preset.healDice; }
+  if (preset.lightFt) { var l = document.getElementById('gi-light'); if (l) l.value = preset.lightFt; }
+}
+
+function grantItemConfirm() {
+  var pcId = parseInt((document.getElementById('gi-player') || {}).value);
+  var pc = party.find(function(p){ return p.id === pcId; });
+  var name = ((document.getElementById('gi-name') || {}).value || '').trim();
+  if (!pc || !name) { showToast('Pick a player and name the item', 'warn'); return; }
+  var slot = (document.getElementById('gi-slot') || {}).value || 'gear';
+  var qty = Math.max(1, parseInt((document.getElementById('gi-qty') || {}).value) || 1);
+  var item = { id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()), name: name, qty: qty, slot: slot, equipped: false,
+    desc: ((document.getElementById('gi-desc') || {}).value || '').trim() };
+  var gv = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
+  if (slot === 'weapon') {
+    item.dice = gv('gi-dice') || '1d6';
+    var dt = gv('gi-dtype'); if (dt) item.damageType = dt; else if (typeof inferDamageType === 'function') { var inf = inferDamageType(name); if (inf) item.damageType = inf; }
+    item.range = parseInt(gv('gi-range')) || 5;
+  } else if (slot === 'armor' || slot === 'shield') {
+    var acb = parseInt(gv('gi-acbonus')); item.acBonus = acb || (slot === 'shield' ? 2 : 1);
+  } else if (slot === 'potion') {
+    var hd = gv('gi-heal'); if (hd) item.healDice = hd;
+  } else if (slot === 'light') {
+    var lf = parseInt(gv('gi-light')); if (lf) item.lightFt = lf;
+  }
+  pc.inventory = pc.inventory || [];
+  pc.inventory.push(item);
+  if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+  if (typeof renderParty === 'function') renderParty();
+  if (window.cloudSave) window.cloudSave();
+  var m = document.getElementById('grant-item-modal'); if (m) m.remove();
+  showToast('🎁 ' + (qty > 1 ? qty + '× ' : '') + name + ' → ' + pc.name + '\'s inventory', 'success');
 }
 
 function giveLootToParty() {
