@@ -861,6 +861,7 @@ function processPlayerAction(req) {
     else if (req.type === 'help') processPlayerHelp(req);
     else if (req.type === 'ready') processPlayerReady(req);
     else if (req.type === 'saveRoll') processPlayerSaveRoll(req);
+    else if (req.type === 'damageRoll') processPlayerDamageRoll(req);
   } catch(e) {
     console.error('processPlayerAction', e);
   }
@@ -925,9 +926,70 @@ function processPlayerMove(req) {
 
 function processPlayerCombatAction(req) {
   var attacker = combatants.find(function(x) { return x.id === req.combatantId; });
+  var target = combatants.find(function(x) { return x.id === req.targetId; });
   if (!attacker) return;
   if (!requireTurn(attacker)) return;
-  resolveCombatAction(req.combatantId, req.targetId, req.action, { roll: req.roll, source: 'player' });
+  var a = req.action || {};
+  // Attacks: confirm the hit automatically, then the PLAYER rolls their own
+  // damage on their phone. Heals and misses resolve straight away.
+  if (a.kind !== 'heal' && target) {
+    // Economy pre-check so a blocked attack doesn't leave a dangling prompt —
+    // if they can't attack, let resolveCombatAction reject + notify the player.
+    var cost = a.cost === 'bonus' ? 'bonus' : 'action';
+    var per = attacksPerActionFor(attacker);
+    var tuE = ensureTurnUsed(attacker);
+    var midSwing = per > 1 && (tuE.attacksMade || 0) > 0;
+    if (combatActive && a.cost !== 'legendary' && a.cost !== 'reaction' && !midSwing && !actionAvailable(attacker, cost)) {
+      resolveCombatAction(req.combatantId, req.targetId, a, { roll: req.roll, source: 'player' });
+      return;
+    }
+    var hr = attackHitResult(attacker, target, a, req.roll);
+    if (hr.hit) {
+      window.pendingDamage = {
+        id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()),
+        combatantId: attacker.id, targetId: target.id, pcName: attacker.name, targetName: target.name,
+        action: a, roll: hr.roll, crit: hr.crit,
+        dice: critDiceExpr(a.dice, hr.crit), damageType: a.damageType || ''
+      };
+      logCombat('⚔ ' + attacker.name + (hr.crit ? ' CRITS ' : ' hits ') + target.name + ' with ' + a.name + ' (' + hr.total + ' vs AC ' + hr.effAC + ') — waiting for their damage roll', 'info');
+      if (window.cloudSaveNow) window.cloudSaveNow(); else if (window.cloudSave) window.cloudSave();
+      showDamageWaitBar(attacker, target, hr.crit);
+      return;
+    }
+  }
+  resolveCombatAction(req.combatantId, req.targetId, a, { roll: req.roll, source: 'player' });
+}
+
+// Player rolled their damage on their phone
+function processPlayerDamageRoll(req) {
+  var pd = window.pendingDamage;
+  if (!pd || pd.combatantId !== req.combatantId) return;
+  var bar = document.getElementById('damage-wait-bar'); if (bar) bar.remove();
+  var amount = Math.max(0, parseInt(req.damage) || 0);
+  window.pendingDamage = null;
+  resolveCombatAction(pd.combatantId, pd.targetId, pd.action, { roll: pd.roll, source: 'player', damageRoll: amount });
+  if (window.cloudSaveNow) window.cloudSaveNow();
+}
+
+// DM fallback bar while a player rolls their damage
+function showDamageWaitBar(attacker, target, crit) {
+  var old = document.getElementById('damage-wait-bar'); if (old) old.remove();
+  var bar = document.createElement('div');
+  bar.id = 'damage-wait-bar';
+  bar.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:5000;display:flex;gap:10px;align-items:center;background:linear-gradient(135deg,rgba(60,20,15,0.97),rgba(40,12,8,0.97));border:1px solid rgba(224,80,80,0.5);border-radius:10px;padding:12px 18px;box-shadow:0 8px 30px rgba(0,0,0,0.7);';
+  bar.innerHTML = '<span style="font-family:Cinzel,serif;font-size:13px;color:#ffb0a0;">' + (crit ? '💥 CRIT — ' : '⚔ Hit — ') + esc(attacker.name) + ' is rolling damage on ' + esc(target.name) + '…</span>' +
+    '<button class="btn btn-gold btn-sm" onclick="dmRollPendingDamage()">🎲 Roll for them</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'damage-wait-bar\').remove()">Dismiss</button>';
+  document.body.appendChild(bar);
+}
+
+function dmRollPendingDamage() {
+  var pd = window.pendingDamage; if (!pd) return;
+  var bar = document.getElementById('damage-wait-bar'); if (bar) bar.remove();
+  var amount = rollDiceExpr(pd.dice).total;
+  window.pendingDamage = null;
+  resolveCombatAction(pd.combatantId, pd.targetId, pd.action, { roll: pd.roll, source: 'player', damageRoll: amount });
+  if (window.cloudSaveNow) window.cloudSaveNow();
 }
 
 function processPlayerEndTurn(req) {
@@ -1034,12 +1096,8 @@ function dmExecuteAction(attackerId, targetId, actionIdx) {
     });
 }
 
-// Two-step attack: reveal HIT/MISS (neutral until it lands), then roll damage.
-function dmShowHitReveal(attackerId, targetId, actionIdx, roll) {
-  var a = (window.__dmActActions || [])[actionIdx];
-  var attacker = combatants.find(function(x) { return x.id === attackerId; });
-  var target = combatants.find(function(x) { return x.id === targetId; });
-  if (!a || !attacker || !target) return;
+// Shared hit math (no side effects) — used by the DM reveal and player damage routing
+function attackHitResult(attacker, target, a, roll) {
   var ctx = computeAttackContext(attacker, target, a);
   roll = Math.max(1, Math.min(20, parseInt(roll) || 1));
   var bonus = (parseInt(a.bonus) || 0) + conditionAttackMod(attacker);
@@ -1047,6 +1105,23 @@ function dmShowHitReveal(attackerId, targetId, actionIdx, roll) {
   var effAC = (target.ac || 10) + conditionACMod(target);
   var crit = roll === 20 || (ctx.autoCrit && total >= effAC);
   var hit = roll === 20 ? true : roll === 1 ? false : total >= effAC;
+  return { ctx: ctx, roll: roll, bonus: bonus, total: total, effAC: effAC, crit: crit, hit: hit };
+}
+function critDiceExpr(dice, crit) {
+  if (!crit) return dice || '1d6';
+  var m = String(dice || '1d6').match(/^(\d*)d(\d+)(.*)$/i);
+  return m ? (((parseInt(m[1]) || 1) * 2) + 'd' + m[2] + (m[3] || '')) : (dice || '1d6');
+}
+
+// Two-step attack: reveal HIT/MISS (neutral until it lands), then roll damage.
+function dmShowHitReveal(attackerId, targetId, actionIdx, roll) {
+  var a = (window.__dmActActions || [])[actionIdx];
+  var attacker = combatants.find(function(x) { return x.id === attackerId; });
+  var target = combatants.find(function(x) { return x.id === targetId; });
+  if (!a || !attacker || !target) return;
+  var hr = attackHitResult(attacker, target, a, roll);
+  var ctx = hr.ctx, bonus = hr.bonus, total = hr.total, effAC = hr.effAC, crit = hr.crit, hit = hr.hit;
+  roll = hr.roll;
 
   var ov = document.createElement('div');
   ov.id = 'dm-hit-modal';
