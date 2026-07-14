@@ -2184,10 +2184,21 @@ function renderInventoryTab(d) {
     '<div style="font-family:Cinzel,serif;font-size:18px;color:var(--gold);">🎒 ' + esc(pc.name) + '’s Bag</div>' +
     '<div style="font-size:15px;color:#ffd700;">🪙 ' + (pc.gold || 0) + ' gold</div>' +
   '</div>';
-  if (equipped.length) {
-    html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;padding:8px 10px;border:1px solid rgba(212,175,55,0.25);border-radius:6px;background:rgba(212,175,55,0.05);">' +
-      '<span style="color:var(--gold-light);">Equipped:</span> ' + equipped.map(it => esc(it.name)).join(' · ') + '</div>';
+  // Currently-equipped panel — shows what's worn in each slot, tap to remove
+  html += '<div style="border:1px solid rgba(212,175,55,0.3);border-radius:8px;background:rgba(212,175,55,0.05);padding:10px 12px;margin-bottom:14px;">' +
+    '<div style="font-family:Cinzel,serif;font-size:11px;letter-spacing:0.12em;color:var(--gold);margin-bottom:8px;">✦ CURRENTLY EQUIPPED</div>';
+  if (!equipped.length) {
+    html += '<div style="font-size:12px;color:#666;font-style:italic;">Nothing equipped — tap Equip on any gear below.</div>';
+  } else {
+    equipped.forEach(it => {
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">' +
+        '<span style="font-size:10px;font-family:Cinzel,serif;color:var(--text-dim);width:64px;flex-shrink:0;">' + esc(pvSlotLabel(it)) + '</span>' +
+        '<span style="flex:1;font-size:13px;color:var(--gold-light);">' + esc(it.name) + (it.acBonus ? ' <span style="color:var(--text-dim);font-size:11px;">+' + it.acBonus + ' AC</span>' : '') + '</span>' +
+        '<button class="btn-pv" style="font-size:10px;padding:2px 9px;" onclick="_pvEquip(' + it.id + ',false)">Remove</button>' +
+      '</div>';
+    });
   }
+  html += '</div>';
   if (!inv.length) {
     html += '<div style="font-size:13px;color:#555;font-style:italic;padding:20px 0;text-align:center;">Your bag is empty. Loot and gifts from the DM land here.</div></div>';
     return html;
@@ -2675,12 +2686,69 @@ function useItemReq(itemId) {
 }
 window._pvUseItem = useItemReq;
 
+function pvBodySlot(item) {
+  if (item && item.bodySlot) return item.bodySlot;
+  const n = String((item && item.name) || '');
+  if (/\bring\b/i.test(n)) return 'ring';
+  if (/cloak|cape|mantle/i.test(n)) return 'back';
+  if (/amulet|necklace|pendant|periapt|medallion|torc|scarab|brooch|talisman/i.test(n)) return 'neck';
+  if (/boots|shoes|sandals|slippers/i.test(n)) return 'feet';
+  if (/gloves|gauntlet|bracers|bracer/i.test(n)) return 'hands';
+  if (/belt|girdle|sash/i.test(n)) return 'waist';
+  if (/helm|crown|circlet|diadem|tiara|\bhat\b|\bcap\b|mask|goggles|lenses|hood|headband/i.test(n)) return 'head';
+  return 'trinket';
+}
+const PV_BODY_LABELS = { back: 'Cloak', neck: 'Amulet', ring: 'Ring', feet: 'Boots', hands: 'Gloves', waist: 'Belt', head: 'Headwear', trinket: 'Trinket' };
+function pvSlotLabel(item) {
+  if (item.slot === 'weapon') return 'Weapon';
+  if (item.slot === 'armor') return 'Armor';
+  if (item.slot === 'shield') return 'Shield';
+  if (item.slot === 'light') return 'Light';
+  if (item.slot === 'wearable') return PV_BODY_LABELS[pvBodySlot(item)] || 'Wearable';
+  return '';
+}
+
+// What (if anything) a new equip would replace — for the swap confirm
+function pvEquipConflict(pc, item) {
+  const inv = pc.inventory || [];
+  if (item.slot === 'wearable') {
+    const bs = pvBodySlot(item), perBody = bs === 'ring' ? 2 : 1;
+    const same = inv.filter(i => i.equipped && i.slot === 'wearable' && pvBodySlot(i) === bs && i.id !== item.id);
+    return same.length >= perBody ? same[0] : null; // the one that'd be bumped
+  }
+  const limits = { armor: 1, shield: 1, light: 1, weapon: 2 };
+  const limit = limits[item.slot];
+  if (!limit) return null;
+  const same = inv.filter(i => i.slot === item.slot && i.equipped && i.id !== item.id);
+  return same.length >= limit ? same[0] : null;
+}
+
 function sendEquip(itemId, equipped) {
   const d = latestData;
   const pc = myPC(d);
   if (!pc) return;
+  const item = (pc.inventory || []).find(i => i.id === itemId);
+  if (equipped && item) {
+    const conflict = pvEquipConflict(pc, item);
+    if (conflict) {
+      showOverlay(
+        '<div style="text-align:center;font-family:Cinzel,serif;font-size:16px;color:var(--gold);margin-bottom:6px;">Swap ' + esc(pvSlotLabel(item).toLowerCase()) + '?</div>' +
+        '<div style="font-size:13px;color:var(--text-dim);text-align:center;margin-bottom:14px;">You\'re already wearing <strong style="color:var(--parchment);">' + esc(conflict.name) + '</strong>. Take it off and put on <strong style="color:var(--gold-light);">' + esc(item.name) + '</strong> instead?</div>' +
+        '<button class="btn-pv" style="width:100%;justify-content:center;border-color:var(--gold);color:var(--gold-light);" onclick="_pvConfirmEquip(' + itemId + ')">↔ Swap it</button>' +
+        '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:6px;" onclick="_pvCloseOverlay()">Keep ' + esc(conflict.name) + '</button>'
+      );
+      return;
+    }
+  }
   sendPlayerRequest({ type: 'equipItem', pcId: pc.id, itemId, equipped, ts: Date.now() });
 }
+function pvConfirmEquip(itemId) {
+  const pc = myPC(latestData);
+  if (!pc) return;
+  closeOverlay();
+  sendPlayerRequest({ type: 'equipItem', pcId: pc.id, itemId, equipped: true, ts: Date.now() });
+}
+window._pvConfirmEquip = pvConfirmEquip;
 window._pvEquip = sendEquip;
 
 function renderMapPanel(d) {
