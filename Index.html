@@ -1293,6 +1293,31 @@ Use this space freely during your session. Notes auto-save in your browser."></t
     </div>
 
   </div>
+
+  <!-- Shops & Trading -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-top:14px;" class="loot-layout-grid">
+    <div class="panel">
+      <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+        <span><span class="ornament">🏪</span> Shops &amp; Merchants</span>
+        <button class="btn btn-gold btn-sm" onclick="dmOpenOffer()">🤝 Offer a Sale to a Player</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+        <input id="shop-new-name" placeholder="Shop name (e.g. Grunda's Forge)" style="flex:1;min-width:160px;font-size:13px;padding:6px;" onkeypress="if(event.key==='Enter')createShop()">
+        <select id="shop-new-npc" style="font-size:12px;padding:6px;"><option value="">— no NPC —</option></select>
+        <button class="btn btn-ghost btn-sm" onclick="createShop()">+ Create</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">Stock a shop, set a buyback % (what it pays for trade-ins), then toggle it <strong>Open</strong> — players can browse open shops on their phones.</div>
+      <div id="shops-list"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span><span class="ornament">🤝</span> Trade Requests <span id="trade-inbox-badge" style="display:none;background:#b02020;color:#fff;border-radius:9px;font-size:11px;padding:1px 7px;margin-left:4px;font-family:sans-serif;"></span></span>
+        <button class="btn btn-ghost btn-sm" onclick="clearResolvedTrades()">Clear resolved</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">Players' offers land here — Accept to complete the swap (gold + items change hands automatically) or Decline.</div>
+      <div id="trade-inbox"></div>
+    </div>
+  </div>
 </div>
 
 <!-- ============================================================ -->
@@ -1599,6 +1624,7 @@ Use this space freely during your session. Notes auto-save in your browser."></t
 <script src="js/party.js"></script>
 <script src="js/dice.js"></script>
 <script src="js/loot.js"></script>
+<script src="js/trade.js"></script>
 <script src="js/world.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/session.js"></script>

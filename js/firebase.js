@@ -187,6 +187,8 @@ async function doCloudWrite() {
       pendingSmite: window.pendingSmite || null,
       pendingSave: window.pendingSave || null,
       pendingDamage: window.pendingDamage || null,
+      shops: (typeof shops !== 'undefined' ? shops : []).filter(function(s) { return s.open; }).map(function(s) { return { id: s.id, name: s.name, npcName: s.npcName, buyback: s.buyback, items: s.items }; }),
+      trades: (typeof trades !== 'undefined' ? trades : []).filter(function(t) { return t.status === 'pending' || t.status === 'awaiting-player' || (Date.now() - (t.ts || 0) < 60000); }),
       lastRejection: window.lastRejection || null,
       recentLog: (typeof combatLog !== 'undefined' ? combatLog : []).slice(0, 25).map(l => ({ text: l.text, time: l.time, type: l.type, round: l.round })),
       updatedAt: new Date().toISOString()

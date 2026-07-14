@@ -10,6 +10,8 @@ let condTargetId = null;
 let partySidebarOpen = false;
 let hoverCardTimeout = null;
 let npcs = [];
+let shops = [];   // merchant inventories (trading)
+let trades = [];  // trade offers in flight (DM inbox + player-facing)
 let locations = [];
 let party = JSON.parse(localStorage.getItem('dm_party') || '[]');
 let battlePresets = JSON.parse(localStorage.getItem('dm_presets') || '[]');
@@ -70,6 +72,7 @@ function switchTab(name) {
   if (name === 'map' && typeof initMapTab === 'function') initMapTab();
   if (name === 'worldmap' && typeof renderWorldMapTab === 'function') renderWorldMapTab();
   if (name === 'sounds' && typeof renderAmbientToggle === 'function') renderAmbientToggle();
+  if (name === 'loot') { if (typeof renderShopsPanel === 'function') renderShopsPanel(); if (typeof renderTradeInbox === 'function') renderTradeInbox(); }
 }
 
 // ============================================================

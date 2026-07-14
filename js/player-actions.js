@@ -864,6 +864,9 @@ function processPlayerAction(req) {
     else if (req.type === 'damageRoll') processPlayerDamageRoll(req);
     else if (req.type === 'recategorize') processRecategorizeItem(req);
     else if (req.type === 'dropItem') processDropItem(req);
+    else if (req.type === 'tradeOffer') processTradeOffer(req);
+    else if (req.type === 'tradeAccept') processTradeAccept(req);
+    else if (req.type === 'tradeDecline') processTradeDecline(req);
   } catch(e) {
     console.error('processPlayerAction', e);
   }

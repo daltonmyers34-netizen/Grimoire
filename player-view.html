@@ -2113,6 +2113,7 @@ function renderTwoColumnView(d) {
     html += '<div class="pv-tabs">' +
       '<button class="pv-tab' + (activeTab === 'character' ? ' active' : '') + '" onclick="_pvSwitchTab(\'character\')">My Character</button>' +
       (tableMode ? '' : '<button class="pv-tab' + (activeTab === 'inventory' ? ' active' : '') + '" onclick="_pvSwitchTab(\'inventory\')">\ud83c\udf92 Bag</button>') +
+      ((!tableMode && pvHasShopping(d)) ? '<button class="pv-tab' + (activeTab === 'shop' ? ' active' : '') + '" onclick="_pvSwitchTab(\'shop\')">\ud83c\udfea Shop' + (pvMyOffers(d).length ? ' <span style="background:#b02020;color:#fff;border-radius:8px;font-size:9px;padding:0 5px;">' + pvMyOffers(d).length + '</span>' : '') + '</button>' : '') +
       (hasCombat ? '<button class="pv-tab' + (activeTab === 'initiative' ? ' active' : '') + '" onclick="_pvSwitchTab(\'initiative\')">\u2694 Initiative</button>' : '') +
       (hasMap ? '<button class="pv-tab' + (activeTab === 'map' ? ' active' : '') + '" onclick="_pvSwitchTab(\'map\')">\ud83d\uddfa Map</button>' : '') +
       (hasWorld ? '<button class="pv-tab' + (activeTab === 'world' ? ' active' : '') + '" onclick="_pvSwitchTab(\'world\')">🌍 World</button>' : '') +
@@ -2121,7 +2122,9 @@ function renderTwoColumnView(d) {
   }
 
   // Tab content
-  if (activeTab === 'inventory') {
+  if (activeTab === 'shop') {
+    html += renderShopTab(d);
+  } else if (activeTab === 'inventory') {
     html += renderInventoryTab(d);
   } else if (activeTab === 'initiative' && hasCombat) {
     html += renderInitiativePanel(d);
@@ -2158,6 +2161,131 @@ function renderTwoColumnView(d) {
   html += '</div>'; // close pv-layout
   return html;
 }
+
+// ══════════════════════════════════════════════════════════════
+// RENDER: Shop tab — browse merchants, build a cart, offer to trade
+// ══════════════════════════════════════════════════════════════
+let pvShopId = null;                 // which shop is open
+let pvCart = { items: [], gold: 0, tradeIns: [] }; // items:[{id,qty}], tradeIns:[invId]
+
+function pvOpenShops(d) { return (d.shops || []); }
+function pvMyOffers(d) { return (d.trades || []).filter(t => t.pcId && String(t.pcId) === selectedPcId && t.status === 'awaiting-player'); }
+function pvHasShopping(d) { return pvOpenShops(d).length > 0 || pvMyOffers(d).length > 0; }
+
+function renderShopTab(d) {
+  const pc = (d.party || []).find(p => String(p.id) === selectedPcId);
+  if (!pc) return '<div class="card">Select a character first.</div>';
+  let html = '';
+
+  // DM-pushed offers waiting on you
+  pvMyOffers(d).forEach(t => {
+    const goods = (t.get || []).map(g => esc(g.name) + (g.qty > 1 ? ' ×' + g.qty : '')).join(', ');
+    html += '<div class="card" style="border:1px solid rgba(200,168,255,0.5);background:rgba(120,90,200,0.08);">' +
+      '<div style="font-family:Cinzel,serif;font-size:16px;color:#c8a8ff;margin-bottom:4px;">🤝 The DM offers you a deal</div>' +
+      '<div style="font-size:14px;color:var(--gold-light);margin-bottom:2px;">Get: ' + goods + '</div>' +
+      '<div style="font-size:14px;color:#ffd700;margin-bottom:10px;">Price: 🪙 ' + (t.payGold || 0) + ' gold <span style="color:var(--text-dim);font-size:12px;">(you have ' + (pc.gold || 0) + ')</span></div>' +
+      '<div style="display:flex;gap:8px;">' +
+        '<button class="btn-pv" style="flex:1;justify-content:center;border-color:' + ((pc.gold || 0) >= (t.payGold || 0) ? 'var(--gold)' : '#e05050') + ';color:' + ((pc.gold || 0) >= (t.payGold || 0) ? 'var(--gold-light)' : '#ff8080') + ';" onclick="_pvAcceptOffer(' + t.id + ')">' + ((pc.gold || 0) >= (t.payGold || 0) ? '✓ Buy it' : 'Can’t afford') + '</button>' +
+        '<button class="btn-pv" style="flex:1;justify-content:center;" onclick="_pvDeclineOffer(' + t.id + ')">Decline</button>' +
+      '</div></div>';
+  });
+
+  // Your pending/resolved offers
+  const mine = (d.trades || []).filter(t => t.pcId && String(t.pcId) === selectedPcId && (t.status === 'pending' || (t.status === 'accepted' || t.status === 'declined')));
+  if (mine.some(t => t.status === 'pending')) {
+    html += '<div class="card" style="border-color:rgba(212,175,55,0.3);"><div style="font-size:13px;color:var(--gold-light);">⏳ Waiting on the DM to approve your offer…</div></div>';
+  }
+
+  const shops = pvOpenShops(d);
+  if (!shops.length && !pvMyOffers(d).length) {
+    return html + '<div class="card"><div style="color:#555;font-style:italic;text-align:center;padding:20px 0;">No shops are open right now.</div></div>';
+  }
+
+  // Shop picker
+  if (!pvShopId || !shops.find(s => s.id === pvShopId)) pvShopId = shops.length ? shops[0].id : null;
+  if (shops.length > 1) {
+    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">' +
+      shops.map(s => '<button class="btn-pv" style="font-size:12px;' + (s.id === pvShopId ? 'border-color:var(--gold);color:var(--gold-light);' : '') + '" onclick="_pvOpenShop(' + s.id + ')">🏪 ' + esc(s.name) + '</button>').join('') + '</div>';
+  }
+  const shop = shops.find(s => s.id === pvShopId);
+  if (!shop) return html;
+
+  html += '<div class="card">';
+  html += '<div style="font-family:Cinzel,serif;font-size:18px;color:var(--gold);margin-bottom:2px;">🏪 ' + esc(shop.name) + '</div>' +
+    (shop.npcName ? '<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">tended by ' + esc(shop.npcName) + '</div>' : '') +
+    '<div style="font-size:12px;color:#ffd700;margin-bottom:12px;">Your gold: 🪙 ' + (pc.gold || 0) + '</div>';
+
+  // Stock
+  (shop.items || []).forEach(it => {
+    const inCart = pvCart.items.find(c => c.id === it.id);
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.07);border-radius:5px;margin-bottom:4px;background:rgba(0,0,0,0.15);">' +
+      '<div style="flex:1;min-width:0;"><span style="font-size:13px;color:var(--parchment);">' + esc(it.name) + '</span>' +
+        '<span style="font-size:10px;color:#555;"> · ' + esc(it.slot) + (it.qty > 1 ? ' · ' + it.qty + ' in stock' : '') + '</span></div>' +
+      '<span style="color:#ffd700;font-size:13px;">🪙 ' + it.price + '</span>' +
+      (inCart ? '<span style="color:#8fd050;font-size:12px;">✓ ×' + inCart.qty + '</span><button class="btn-pv" style="font-size:11px;padding:2px 8px;" onclick="_pvCartRemove(' + it.id + ')">−</button>'
+              : '<button class="btn-pv" style="font-size:11px;padding:2px 10px;border-color:var(--gold);" onclick="_pvCartAdd(' + it.id + ')">Add</button>') +
+    '</div>';
+  });
+  if (!(shop.items || []).length) html += '<div style="font-size:12px;color:#555;font-style:italic;">Nothing in stock.</div>';
+
+  // Cart + payment
+  const cartItems = pvCart.items.map(c => ({ ...c, item: shop.items.find(i => i.id === c.id) })).filter(c => c.item);
+  const cartTotal = cartItems.reduce((n, c) => n + c.item.price * c.qty, 0);
+  const tradeCredit = pvCart.tradeIns.reduce((n, iid) => {
+    const it = (pc.inventory || []).find(i => i.id === iid);
+    return n + (it ? Math.round(pvItemVal(it) * (shop.buyback || 0.5)) : 0);
+  }, 0);
+  if (cartItems.length) {
+    html += '<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.1);">' +
+      '<div class="card-section-label" style="border:none;padding:0;margin-bottom:6px;">🛒 Your Offer</div>' +
+      '<div style="font-size:13px;color:var(--text-dim);">Buying: ' + cartItems.map(c => esc(c.item.name) + (c.qty > 1 ? ' ×' + c.qty : '')).join(', ') + '</div>' +
+      '<div style="font-size:13px;color:#ffd700;margin:4px 0;">Total: 🪙 ' + cartTotal + '</div>';
+    // Trade-in items
+    const sellable = (pc.inventory || []).filter(i => !i.equipped);
+    if (sellable.length) {
+      html += '<div style="font-size:11px;color:var(--text-dim);margin:8px 0 4px;">Offer items as part of the payment (credited at ' + Math.round((shop.buyback || 0.5) * 100) + '%):</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:5px;">' +
+        sellable.map(i => '<button class="btn-pv" style="font-size:11px;padding:2px 8px;' + (pvCart.tradeIns.includes(i.id) ? 'border-color:#8fd050;color:#8fd050;' : '') + '" onclick="_pvToggleTradeIn(' + i.id + ')">' + esc(i.name) + ' <span style="color:#ffd700;">+' + Math.round(pvItemVal(i) * (shop.buyback || 0.5)) + '</span></button>').join('') +
+        '</div>';
+    }
+    const owed = Math.max(0, cartTotal - tradeCredit);
+    html += '<div style="font-size:13px;margin-top:10px;">Trade-in credit: <span style="color:#8fd050;">🪙 ' + tradeCredit + '</span> · Gold still owed: <strong style="color:#ffd700;">🪙 ' + owed + '</strong></div>' +
+      '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:10px;border-color:' + ((pc.gold || 0) >= owed ? 'var(--gold)' : '#e05050') + ';color:' + ((pc.gold || 0) >= owed ? 'var(--gold-light)' : '#ff8080') + ';" onclick="_pvSubmitOffer(' + owed + ')">' +
+        ((pc.gold || 0) >= owed ? '🤝 Send Offer to DM' : 'Not enough gold (need ' + owed + ')') + '</button>' +
+      '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:6px;" onclick="_pvCartClear()">Clear cart</button>' +
+    '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// Local value estimate for trade-in credit (mirrors itemValue)
+function pvItemVal(item) {
+  if (!item) return 0;
+  if (typeof item.price === 'number' && item.price > 0) return item.price;
+  let base = { weapon: 25, armor: 60, shield: 15, wearable: 80, potion: 50, light: 2, ammo: 1, gear: 5 }[item.slot] || 5;
+  if (item.acBonus) base += item.acBonus * 100;
+  if (item.healDice) base = Math.max(base, 50);
+  if (/\+\d/.test(item.name || '')) base *= 2;
+  return Math.round(base);
+}
+
+function pvReShop() { if (latestData) renderRoot(latestData); }
+window._pvOpenShop = (id) => { pvShopId = id; pvCart = { items: [], gold: 0, tradeIns: [] }; pvReShop(); };
+window._pvCartAdd = (itemId) => { const c = pvCart.items.find(x => x.id === itemId); if (c) c.qty++; else pvCart.items.push({ id: itemId, qty: 1 }); pvReShop(); };
+window._pvCartRemove = (itemId) => { const c = pvCart.items.find(x => x.id === itemId); if (c) { c.qty--; if (c.qty <= 0) pvCart.items = pvCart.items.filter(x => x.id !== itemId); } pvReShop(); };
+window._pvToggleTradeIn = (invId) => { const i = pvCart.tradeIns.indexOf(invId); if (i >= 0) pvCart.tradeIns.splice(i, 1); else pvCart.tradeIns.push(invId); pvReShop(); };
+window._pvCartClear = () => { pvCart = { items: [], gold: 0, tradeIns: [] }; pvReShop(); };
+function pvSubmitOffer(owed) {
+  const d = latestData; const pc = (d.party || []).find(p => String(p.id) === selectedPcId);
+  if (!pc || !pvShopId || !pvCart.items.length) return;
+  sendPlayerRequest({ type: 'tradeOffer', pcId: pc.id, shopId: pvShopId, get: pvCart.items.slice(), payGold: owed, payItems: pvCart.tradeIns.slice(), ts: Date.now() });
+  pvCart = { items: [], gold: 0, tradeIns: [] };
+  showWaiting('🤝 Offer sent — waiting on the DM…');
+}
+window._pvSubmitOffer = pvSubmitOffer;
+window._pvAcceptOffer = (id) => { const pc = myPC(latestData); if (pc) sendPlayerRequest({ type: 'tradeAccept', pcId: pc.id, tradeId: id, ts: Date.now() }); showWaiting('🤝 Accepting…'); };
+window._pvDeclineOffer = (id) => { const pc = myPC(latestData); if (pc) sendPlayerRequest({ type: 'tradeDecline', pcId: pc.id, tradeId: id, ts: Date.now() }); };
 
 // ══════════════════════════════════════════════════════════════
 // RENDER: Inventory tab — categorized, equip/unequip, use, re-file

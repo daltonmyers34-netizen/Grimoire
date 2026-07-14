@@ -27,6 +27,8 @@ function collectState() {
     savedMaps: (typeof savedMaps !== 'undefined' && savedMaps) ? savedMaps : [],
     worldMap: (typeof worldMap !== 'undefined' && worldMap) ? worldMap : null,
     battlefieldLoot: (typeof battlefieldLoot !== 'undefined') ? battlefieldLoot : [],
+    shops: (typeof shops !== 'undefined') ? shops : [],
+    trades: (typeof trades !== 'undefined') ? trades : [],
     quests: (typeof quests !== 'undefined' && quests) ? quests : [],
     pvMessages: window.pvMessages || {},
     pvPartyMessage: window.pvPartyMessage || '',
@@ -59,6 +61,8 @@ function applyState(s) {
   if (s.savedMaps && typeof savedMaps !== 'undefined') { savedMaps = s.savedMaps; if(typeof renderSavedMaps==='function') renderSavedMaps(); }
   if (s.worldMap && typeof worldMap !== 'undefined') { worldMap = s.worldMap; }
   if (s.battlefieldLoot && typeof battlefieldLoot !== 'undefined') { battlefieldLoot = s.battlefieldLoot; }
+  if (typeof shops !== 'undefined') { shops = s.shops || []; if (typeof renderShopsPanel === 'function') renderShopsPanel(); }
+  if (typeof trades !== 'undefined') { trades = s.trades || []; if (typeof renderTradeInbox === 'function') renderTradeInbox(); }
   if (s.quests && typeof quests !== 'undefined') { quests = s.quests; if (typeof renderQuests === 'function') renderQuests(); }
   if (s.pvMessages) { window.pvMessages = s.pvMessages; }
   if (s.pvPartyMessage) { window.pvPartyMessage = s.pvPartyMessage; }
@@ -236,6 +240,8 @@ function newCampaign() {
   // XP, world clock, encounters, messages, map
   totalXP = 0; xpLog = [];
   if (typeof pendingXP !== 'undefined') pendingXP = [];
+  if (typeof shops !== 'undefined') shops = [];
+  if (typeof trades !== 'undefined') trades = [];
   worldTotalHours = 6; worldSeason = 0;
   savedEncounters = [];
   quests = [];
