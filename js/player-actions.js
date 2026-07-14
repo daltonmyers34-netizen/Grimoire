@@ -1558,14 +1558,17 @@ function bodySlotFor(item) {
   return 'trinket';                                                                            // generic wondrous item
 }
 
+// Body armor — worn on the torso (one at a time). Checked before clothing so
+// "Chain Shirt" / "Scale Mail" file as armor, while "Silk Shirt" stays clothing.
+var ARMOR_NAME_RE = /\barmou?r\b|padded|studded leather|leather armou?r|hide armou?r|chain shirt|chainshirt|scale mail|breastplate|half.?plate|ring mail|chain.?mail|splint|banded|brigandine|lamellar|cuirass|gambeson|\bplate\b|\bmail\b/i;
 function inferItemSlot(name) {
   var n = String(name || '');
   var preset = itemPresetFor(n);
   if (preset && preset.slot) return preset.slot;
   if (/potion|elixir|philter|oil of/i.test(n)) return 'potion';
-  if (WEARABLE_NAME_RE.test(n)) return 'wearable';
   if (/shield/i.test(n)) return 'shield';
-  if (/armor|mail|plate|breastplate|leather|hide|cuirass/i.test(n)) return 'armor';
+  if (ARMOR_NAME_RE.test(n)) return 'armor';        // body armor → torso group
+  if (WEARABLE_NAME_RE.test(n)) return 'wearable';
   if (WEAPON_NAME_RE.test(n)) return 'weapon';
   if (/torch|lantern|candle|lamp/i.test(n)) return 'light';
   if (/arrow|bolt|bullet|ammunition|dart/i.test(n)) return 'ammo';
@@ -1633,34 +1636,37 @@ function recomputePcAC(pc) {
   if (c) c.ac = effectiveAC(pc);
 }
 
-// You only have one body: equipping enforces slot limits
-// (1 armor, 1 shield, 1 light source, up to 2 weapons)
+// The body region an item competes for, and how many can be worn there.
+// Body armor and torso clothing share 'torso' — you wear one or the other.
+function equipGroupFor(item) {
+  switch (item.slot) {
+    case 'weapon': return { key: 'weapon', max: 2 };
+    case 'shield': return { key: 'shield', max: 1 };
+    case 'light':  return { key: 'light',  max: 1 };
+    case 'armor':  return { key: 'torso',  max: 1 }; // body armor is worn on the torso
+    case 'wearable':
+      var bs = bodySlotFor(item);
+      return { key: bs, max: bs === 'ring' ? 8 : bs === 'wrists' ? 2 : 1 };
+    default: return null; // gear / potion / ammo — not equippable
+  }
+}
+
+// You only have one body: equipping bumps whatever else fills that region.
 function enforceSlotLimits(pc, item) {
   if (!item.equipped) return [];
+  var g = equipGroupFor(item);
+  if (!g) return [];
   var unequipped = [];
-  // Wearables limit by body slot (one cloak, one amulet, two rings, …)
-  if (item.slot === 'wearable') {
-    var bs = bodySlotFor(item);
-    var perBody = bs === 'ring' ? 8 : bs === 'wrists' ? 2 : 1;
-    var same = (pc.inventory || []).filter(function(i) { return i.equipped && i.slot === 'wearable' && bodySlotFor(i) === bs; });
-    while (same.length > perBody) {
-      var o = same.find(function(i) { return i.id !== item.id; });
-      if (!o) break;
-      o.equipped = false; unequipped.push(o.name);
-      same = same.filter(function(i) { return i.id !== o.id; });
-    }
-    return unequipped;
-  }
-  var limits = { armor: 1, shield: 1, light: 1, weapon: 2 };
-  var limit = limits[item.slot];
-  if (!limit) return [];
-  var equippedSame = (pc.inventory || []).filter(function(i) { return i.slot === item.slot && i.equipped; });
-  while (equippedSame.length > limit) {
-    var other = equippedSame.find(function(i) { return i.id !== item.id; });
-    if (!other) break;
-    other.equipped = false;
-    unequipped.push(other.name);
-    equippedSame = equippedSame.filter(function(i) { return i.id !== other.id; });
+  var same = (pc.inventory || []).filter(function(i) {
+    if (!i.equipped) return false;
+    var gg = equipGroupFor(i);
+    return gg && gg.key === g.key;
+  });
+  while (same.length > g.max) {
+    var o = same.find(function(i) { return i.id !== item.id; });
+    if (!o) break;
+    o.equipped = false; unequipped.push(o.name);
+    same = same.filter(function(i) { return i.id !== o.id; });
   }
   return unequipped;
 }
