@@ -1487,6 +1487,51 @@ function pvSaveSubmit() {
 }
 window._pvSaveSubmit = pvSaveSubmit;
 
+// ── Damage prompt: your hit landed, roll the weapon dice yourself ──
+function showDamagePrompt(pd) {
+  const html = '<div style="text-align:center;font-family:Cinzel,serif;font-size:20px;color:' + (pd.crit ? '#ffd700' : '#8fd050') + ';margin-bottom:4px;">' + (pd.crit ? '💥 CRITICAL HIT!' : '⚔ HIT!') + '</div>' +
+    '<div style="font-size:13px;color:var(--text-dim);text-align:center;margin-bottom:8px;">You struck <strong style="color:#ff9090;">' + esc(pd.targetName) + '</strong> — ROLL DAMAGE</div>' +
+    '<div style="font-size:13px;color:var(--parchment);text-align:center;margin-bottom:10px;">Roll <strong style="color:var(--gold-light);">' + esc(pd.dice) + '</strong>' + (pd.crit ? ' <span style="color:#ffd700;">(crit — dice doubled!)</span>' : '') + (pd.damageType ? ' <span style="color:var(--text-dim);">' + esc(pd.damageType) + '</span>' : '') + '</div>' +
+    '<div id="pv-dmg-face" style="font-size:46px;font-family:Cinzel,serif;text-align:center;color:var(--blood-light);min-height:56px;line-height:56px;transition:transform 0.08s;">—</div>' +
+    '<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:6px;">' +
+      '<input id="pv-dmg-roll" type="number" min="0" placeholder="dmg" style="width:90px;font-size:22px;text-align:center;padding:8px;background:rgba(0,0,0,0.4);border:2px solid rgba(224,80,80,0.5);border-radius:8px;color:var(--parchment);">' +
+      '<button class="btn-pv" style="border-color:var(--gold);color:var(--gold-light);" onclick="_pvDamageAuto(\'' + String(pd.dice).replace(/'/g, "") + '\')">🎲 Auto-roll</button>' +
+    '</div>' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;border-color:#ff9090;color:#ff9090;" onclick="_pvDamageSubmit()">💥 Deal Damage</button>';
+  showOverlay(html);
+}
+
+function pvDamageAuto(diceExpr) {
+  const face = document.getElementById('pv-dmg-face');
+  const input = document.getElementById('pv-dmg-roll');
+  const final = pvRollDiceLocal(diceExpr);
+  pvAnimateRoll(face, final, Math.max(20, final + 6), () => { if (input) input.value = final; });
+}
+window._pvDamageAuto = pvDamageAuto;
+
+function pvDamageSubmit() {
+  const d = latestData;
+  const me = myCombatant(d);
+  const pd = d && d.pendingDamage;
+  if (!me || !pd) return;
+  let dmg = parseInt((document.getElementById('pv-dmg-roll') || {}).value);
+  if (isNaN(dmg) || dmg < 0) dmg = pvRollDiceLocal(pd.dice);
+  closeOverlay();
+  sendPlayerRequest({ type: 'damageRoll', combatantId: me.id, damageId: pd.id, damage: dmg, ts: Date.now() });
+  showWaiting('💥 ' + dmg + ' damage!');
+}
+window._pvDamageSubmit = pvDamageSubmit;
+
+// Local dice roll for the auto button (e.g. "2d12+4")
+function pvRollDiceLocal(expr) {
+  const m = String(expr || '1d6').match(/^(\d*)d(\d+)\s*([+-]\s*\d+)?$/i);
+  if (!m) return 0;
+  const count = Math.min(parseInt(m[1]) || 1, 40), sides = parseInt(m[2]);
+  const mod = m[3] ? parseInt(m[3].replace(/\s/g, '')) : 0;
+  let t = 0; for (let i = 0; i < count; i++) t += Math.ceil(Math.random() * sides);
+  return Math.max(0, t + mod);
+}
+
 // Slot-machine roll: numbers flicker fast, then slow and settle (with suspense)
 function pvAnimateRoll(el, finalValue, sides, onDone) {
   if (!el) { if (onDone) onDone(); return; }
@@ -3032,6 +3077,21 @@ if (dmUid) {
       const cardV = document.querySelector('.pv-overlay-card');
       if (cardV && cardV.textContent.includes('SAVING THROW')) closeOverlay();
       window._shownSaveId = null;
+    }
+
+    // 💥 Your attack HIT — roll your own damage
+    if (!tableMode && d.pendingDamage && selectedPcId) {
+      const meDmg = myCombatant(d);
+      if (meDmg && d.pendingDamage.combatantId === meDmg.id && String(d.pendingDamage.id) !== String(window._shownDamageId)) {
+        window._shownDamageId = d.pendingDamage.id;
+        pvSound(d.pendingDamage.crit ? 'crit' : 'hit');
+        showDamagePrompt(d.pendingDamage);
+      }
+    }
+    if (!d.pendingDamage && window._shownDamageId) {
+      const cardD = document.querySelector('.pv-overlay-card');
+      if (cardD && cardD.textContent.includes('ROLL DAMAGE')) closeOverlay();
+      window._shownDamageId = null;
     }
 
     // ⚡ Reaction offer: Shield / Hellish Rebuke on the victim's phone
