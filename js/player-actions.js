@@ -867,6 +867,8 @@ function processPlayerAction(req) {
     else if (req.type === 'tradeOffer') processTradeOffer(req);
     else if (req.type === 'tradeAccept') processTradeAccept(req);
     else if (req.type === 'tradeDecline') processTradeDecline(req);
+    else if (req.type === 'tradeP2P') processTradeProposeP2P(req);
+    else if (req.type === 'tradeCounter') processTradeCounter(req);
   } catch(e) {
     console.error('processPlayerAction', e);
   }

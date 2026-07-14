@@ -2184,10 +2184,16 @@ function renderShopTab(d) {
       '<div style="font-family:Cinzel,serif;font-size:16px;color:#c8a8ff;margin-bottom:4px;">🤝 The DM offers you a deal</div>' +
       '<div style="font-size:14px;color:var(--gold-light);margin-bottom:2px;">Get: ' + goods + '</div>' +
       '<div style="font-size:14px;color:#ffd700;margin-bottom:10px;">Price: 🪙 ' + (t.payGold || 0) + ' gold <span style="color:var(--text-dim);font-size:12px;">(you have ' + (pc.gold || 0) + ')</span></div>' +
-      '<div style="display:flex;gap:8px;">' +
-        '<button class="btn-pv" style="flex:1;justify-content:center;border-color:' + ((pc.gold || 0) >= (t.payGold || 0) ? 'var(--gold)' : '#e05050') + ';color:' + ((pc.gold || 0) >= (t.payGold || 0) ? 'var(--gold-light)' : '#ff8080') + ';" onclick="_pvAcceptOffer(' + t.id + ')">' + ((pc.gold || 0) >= (t.payGold || 0) ? '✓ Buy it' : 'Can’t afford') + '</button>' +
-        '<button class="btn-pv" style="flex:1;justify-content:center;" onclick="_pvDeclineOffer(' + t.id + ')">Decline</button>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+        '<button class="btn-pv" style="flex:1;min-width:90px;justify-content:center;border-color:' + ((pc.gold || 0) >= (t.payGold || 0) ? 'var(--gold)' : '#e05050') + ';color:' + ((pc.gold || 0) >= (t.payGold || 0) ? 'var(--gold-light)' : '#ff8080') + ';" onclick="_pvAcceptOffer(' + t.id + ')">' + ((pc.gold || 0) >= (t.payGold || 0) ? '✓ Buy it' : 'Can’t afford') + '</button>' +
+        '<button class="btn-pv" style="flex:1;min-width:80px;justify-content:center;border-color:#c8a8ff;color:#c8a8ff;" onclick="_pvCounterOffer(' + t.id + ')">↔ Counter</button>' +
+        '<button class="btn-pv" style="flex:1;min-width:80px;justify-content:center;" onclick="_pvDeclineOffer(' + t.id + ')">Decline</button>' +
       '</div></div>';
+  });
+
+  // My player-to-player swaps in flight
+  (d.trades || []).filter(t => t.kind === 'p2p' && (String(t.aPcId) === selectedPcId || String(t.bPcId) === selectedPcId) && t.status === 'pending').forEach(t => {
+    html += '<div class="card" style="border-color:rgba(212,175,55,0.3);"><div style="font-size:13px;color:var(--gold-light);">⏳ Swap with ' + esc(String(t.aPcId) === selectedPcId ? t.bName : t.aName) + ' — waiting on the DM to approve.</div></div>';
   });
 
   // Your pending/resolved offers
@@ -2196,10 +2202,16 @@ function renderShopTab(d) {
     html += '<div class="card" style="border-color:rgba(212,175,55,0.3);"><div style="font-size:13px;color:var(--gold-light);">⏳ Waiting on the DM to approve your offer…</div></div>';
   }
 
+  // Player-to-player trade launcher (needs at least one other party member)
+  if ((d.party || []).length > 1) {
+    html += '<div style="text-align:center;margin-bottom:10px;"><button class="btn-pv" style="border-color:#c8a8ff;color:#c8a8ff;" onclick="_pvOpenP2P()">🤝 Trade with a party member</button></div>';
+  }
+
   const shops = pvOpenShops(d);
-  if (!shops.length && !pvMyOffers(d).length) {
+  if (!shops.length && !pvMyOffers(d).length && (d.party || []).length <= 1) {
     return html + '<div class="card"><div style="color:#555;font-style:italic;text-align:center;padding:20px 0;">No shops are open right now.</div></div>';
   }
+  if (!shops.length) return html;
 
   // Shop picker
   if (!pvShopId || !shops.find(s => s.id === pvShopId)) pvShopId = shops.length ? shops[0].id : null;
@@ -2286,6 +2298,87 @@ function pvSubmitOffer(owed) {
 window._pvSubmitOffer = pvSubmitOffer;
 window._pvAcceptOffer = (id) => { const pc = myPC(latestData); if (pc) sendPlayerRequest({ type: 'tradeAccept', pcId: pc.id, tradeId: id, ts: Date.now() }); showWaiting('🤝 Accepting…'); };
 window._pvDeclineOffer = (id) => { const pc = myPC(latestData); if (pc) sendPlayerRequest({ type: 'tradeDecline', pcId: pc.id, tradeId: id, ts: Date.now() }); };
+
+// ── Counter a DM offer: pay with items and/or a different gold amount ──
+let pvCounter = { tradeId: null, gold: 0, items: [] };
+function pvCounterOffer(id) {
+  const d = latestData; const pc = (d.party || []).find(p => String(p.id) === selectedPcId);
+  const t = (d.trades || []).find(x => x.id === id);
+  if (!pc || !t) return;
+  pvCounter = { tradeId: id, gold: t.payGold || 0, items: [] };
+  const sellable = (pc.inventory || []).filter(i => !i.equipped);
+  let html = '<div style="font-family:Cinzel,serif;font-size:16px;color:#c8a8ff;margin-bottom:4px;">↔ Counter-offer</div>' +
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">For: ' + (t.get || []).map(g => esc(g.name)).join(', ') + '. Propose your own terms.</div>' +
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:4px;">Gold you\'ll pay:</div>' +
+    '<input id="pv-counter-gold" type="number" min="0" value="' + (t.payGold || 0) + '" style="width:100px;font-size:16px;padding:6px;margin-bottom:10px;">' +
+    (sellable.length ? '<div style="font-size:12px;color:var(--text-dim);margin-bottom:4px;">…plus items from your bag:</div><div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;">' +
+      sellable.map(i => '<button class="btn-pv" id="pvc-' + i.id + '" style="font-size:11px;padding:2px 8px;" onclick="_pvCounterToggle(' + i.id + ')">' + esc(i.name) + '</button>').join('') + '</div>' : '') +
+    '<button class="btn-pv" style="width:100%;justify-content:center;border-color:#c8a8ff;color:#c8a8ff;" onclick="_pvSendCounter()">↔ Send Counter</button>' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:6px;" onclick="_pvCloseOverlay()">Cancel</button>';
+  showOverlay(html);
+}
+window._pvCounterOffer = pvCounterOffer;
+window._pvCounterToggle = (iid) => {
+  const i = pvCounter.items.indexOf(iid);
+  const btn = document.getElementById('pvc-' + iid);
+  if (i >= 0) { pvCounter.items.splice(i, 1); if (btn) { btn.style.borderColor = ''; btn.style.color = ''; } }
+  else { pvCounter.items.push(iid); if (btn) { btn.style.borderColor = '#8fd050'; btn.style.color = '#8fd050'; } }
+};
+window._pvSendCounter = () => {
+  const pc = myPC(latestData); if (!pc || !pvCounter.tradeId) return;
+  const gold = parseInt((document.getElementById('pv-counter-gold') || {}).value) || 0;
+  closeOverlay();
+  sendPlayerRequest({ type: 'tradeCounter', pcId: pc.id, tradeId: pvCounter.tradeId, payGold: gold, payItems: pvCounter.items.slice(), ts: Date.now() });
+  showWaiting('🤝 Counter sent to the DM…');
+};
+
+// ── Player-to-player swap builder ──
+let pvP2P = { toId: null, give: [], giveGold: 0, want: [], wantGold: 0 };
+function pvOpenP2P() {
+  const d = latestData; const me = (d.party || []).find(p => String(p.id) === selectedPcId);
+  const others = (d.party || []).filter(p => String(p.id) !== selectedPcId);
+  if (!me || !others.length) return;
+  pvP2P = { toId: others[0].id, give: [], giveGold: 0, want: [], wantGold: 0 };
+  renderP2POverlay();
+}
+window._pvOpenP2P = pvOpenP2P;
+function renderP2POverlay() {
+  const d = latestData; const me = (d.party || []).find(p => String(p.id) === selectedPcId);
+  const others = (d.party || []).filter(p => String(p.id) !== selectedPcId);
+  const them = others.find(p => p.id === pvP2P.toId) || others[0];
+  pvP2P.toId = them.id;
+  const chip = (i, list, side) => '<button class="btn-pv" style="font-size:11px;padding:2px 8px;' + (list.includes(i.id) ? 'border-color:#8fd050;color:#8fd050;' : '') + '" onclick="_pvP2PToggle(\'' + side + '\',' + i.id + ')">' + esc(i.name) + '</button>';
+  const myItems = (me.inventory || []).filter(i => !i.equipped);
+  const theirItems = (them.inventory || []).filter(i => !i.equipped);
+  let html = '<div style="font-family:Cinzel,serif;font-size:16px;color:#c8a8ff;margin-bottom:8px;">🤝 Trade with a party member</div>' +
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">Trading with:</div>' +
+    '<select id="pv-p2p-who" onchange="_pvP2PWho(this.value)" style="width:100%;font-size:14px;padding:6px;margin-bottom:12px;">' +
+      others.map(p => '<option value="' + p.id + '"' + (p.id === them.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select>' +
+    '<div style="font-size:12px;color:var(--gold-light);margin-bottom:4px;">You give:</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;">' + (myItems.length ? myItems.map(i => chip(i, pvP2P.give, 'give')).join('') : '<span style="font-size:11px;color:#555;">no spare items</span>') + '</div>' +
+    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;"><span style="font-size:12px;color:var(--text-dim);">+ gold:</span><input id="pv-p2p-givegold" type="number" min="0" value="' + pvP2P.giveGold + '" style="width:80px;font-size:14px;padding:4px;"></div>' +
+    '<div style="font-size:12px;color:var(--gold-light);margin-bottom:4px;">You want (from ' + esc(them.name) + '):</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;">' + (theirItems.length ? theirItems.map(i => chip(i, pvP2P.want, 'want')).join('') : '<span style="font-size:11px;color:#555;">no spare items</span>') + '</div>' +
+    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;"><span style="font-size:12px;color:var(--text-dim);">+ gold:</span><input id="pv-p2p-wantgold" type="number" min="0" value="' + pvP2P.wantGold + '" style="width:80px;font-size:14px;padding:4px;"></div>' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;border-color:var(--gold);color:var(--gold-light);" onclick="_pvSubmitP2P()">🤝 Propose Swap (DM approves)</button>' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:6px;" onclick="_pvCloseOverlay()">Cancel</button>';
+  showOverlay(html);
+}
+window._pvP2PWho = (id) => { pvP2P.toId = parseFloat(id); pvP2P.want = []; renderP2POverlay(); };
+window._pvP2PToggle = (side, iid) => { const arr = side === 'give' ? pvP2P.give : pvP2P.want; const i = arr.indexOf(iid); if (i >= 0) arr.splice(i, 1); else arr.push(iid);
+  // preserve gold inputs across re-render
+  pvP2P.giveGold = parseInt((document.getElementById('pv-p2p-givegold') || {}).value) || 0;
+  pvP2P.wantGold = parseInt((document.getElementById('pv-p2p-wantgold') || {}).value) || 0;
+  renderP2POverlay(); };
+window._pvSubmitP2P = () => {
+  const me = myPC(latestData); if (!me || !pvP2P.toId) return;
+  const giveGold = parseInt((document.getElementById('pv-p2p-givegold') || {}).value) || 0;
+  const wantGold = parseInt((document.getElementById('pv-p2p-wantgold') || {}).value) || 0;
+  if (!pvP2P.give.length && !pvP2P.want.length && !giveGold && !wantGold) { return; }
+  closeOverlay();
+  sendPlayerRequest({ type: 'tradeP2P', fromPcId: me.id, toPcId: pvP2P.toId, giveItems: pvP2P.give.slice(), giveGold, wantItems: pvP2P.want.slice(), wantGold, ts: Date.now() });
+  showWaiting('🤝 Swap proposed — waiting on the DM…');
+};
 
 // ══════════════════════════════════════════════════════════════
 // RENDER: Inventory tab — categorized, equip/unequip, use, re-file
