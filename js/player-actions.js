@@ -1535,21 +1535,24 @@ function itemPresetFor(name) {
 }
 
 // Guess a slot from an item's name so loot/grants arrive in the right category
-var WEARABLE_NAME_RE = /cloak|cape|mantle|ring|amulet|necklace|pendant|talisman|brooch|boots|shoes|gloves|gauntlet|bracers|bracer|belt|girdle|circlet|crown|diadem|tiara|goggles|lenses|periapt|scarab|medallion|torc/i;
+// Any name that maps to a body slot in bodySlotFor should also be caught here
+var WEARABLE_NAME_RE = /cloak|cape|mantle|shawl|\bring\b|amulet|necklace|pendant|periapt|medallion|torc|scarab|brooch|talisman|locket|choker|collar|goggles|lenses|spectacles|eyepatch|monocle|helm|helmet|crown|circlet|diadem|tiara|coronet|headband|hood|mask|\bhat\b|\bcap\b|veil|mitre|bracers|bracer|bracelet|vambrace|armlet|wristband|wristguard|gloves|glove|gauntlet|mittens|belt|girdle|sash|waistband|boots|\bboot\b|shoes|sandals|slippers|greaves|footwraps/i;
 var WEAPON_NAME_RE = /sword|axe|bow|dagger|mace|hammer|spear|blade|staff|wand|whip|flail|crossbow|halberd|glaive|scimitar|rapier|club|maul|javelin|sling|trident|scythe|pike|morningstar/i;
 // Which body slot a wearable occupies — so you can't wear two cloaks at once
 // (but you can wear a cloak + amulet + 2 rings + boots simultaneously).
 function bodySlotFor(item) {
   if (item && item.bodySlot) return item.bodySlot;
   var n = String((item && item.name) || item || '');
-  if (/\bring\b/i.test(n)) return 'ring';           // two allowed
-  if (/cloak|cape|mantle/i.test(n)) return 'back';
-  if (/amulet|necklace|pendant|periapt|medallion|torc|scarab|brooch|talisman/i.test(n)) return 'neck';
-  if (/boots|shoes|sandals|slippers/i.test(n)) return 'feet';
-  if (/gloves|gauntlet|bracers|bracer/i.test(n)) return 'hands';
-  if (/belt|girdle|sash/i.test(n)) return 'waist';
-  if (/helm|crown|circlet|diadem|tiara|\bhat\b|\bcap\b|mask|goggles|lenses|hood|headband/i.test(n)) return 'head';
-  return 'trinket';
+  if (/\bring\b/i.test(n)) return 'ring';                                                     // two allowed
+  if (/cloak|cape|mantle|shawl/i.test(n)) return 'back';
+  if (/amulet|necklace|pendant|periapt|medallion|torc|scarab|brooch|talisman|locket|choker|collar/i.test(n)) return 'neck';
+  if (/goggles|lenses|spectacles|eyepatch|monocle|\beyes? of\b/i.test(n)) return 'eyes';
+  if (/helm|helmet|crown|circlet|diadem|tiara|coronet|headband|hood|mask|\bhat\b|\bcap\b|veil|mitre/i.test(n)) return 'head';
+  if (/bracers|bracer|bracelet|vambrace|armlet|wristband|wristguard/i.test(n)) return 'arms';
+  if (/gloves|glove|gauntlet|mittens/i.test(n)) return 'hands';
+  if (/belt|girdle|sash|waistband/i.test(n)) return 'waist';
+  if (/boots|\bboot\b|shoes|sandals|slippers|greaves|footwraps/i.test(n)) return 'feet';
+  return 'trinket';                                                                            // generic wondrous item
 }
 
 function inferItemSlot(name) {
