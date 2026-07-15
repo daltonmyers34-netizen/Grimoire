@@ -1405,6 +1405,26 @@ function inspireReq() {
 }
 window._pvInspire = inspireReq;
 
+function useInspirationReq() {
+  const d = latestData;
+  const pc = myPC(d);
+  if (!pc || (parseInt(pc.inspiration) || 0) <= 0) return;
+  showOverlay('<div style="font-family:Cinzel,serif;font-size:16px;color:#ffd700;margin-bottom:10px;">★ Spend Inspiration?</div>' +
+    '<div style="font-size:13px;color:#bbb;margin-bottom:14px;">Roll with advantage on your next attack, check, or save. Your DM will be notified.</div>' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;margin-bottom:8px;background:rgba(255,215,0,0.18);border-color:rgba(255,215,0,0.5);color:#ffd700;" onclick="_pvConfirmUseInspiration()">★ Use it</button>' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;" onclick="_pvCloseOverlay()">Cancel</button>');
+}
+window._pvUseInspiration = useInspirationReq;
+
+function confirmUseInspiration() {
+  const d = latestData;
+  const pc = myPC(d);
+  closeOverlay();
+  if (!pc || (parseInt(pc.inspiration) || 0) <= 0) return;
+  sendPlayerRequest({ type: 'useInspiration', pcId: pc.id, pcName: pc.name, ts: Date.now() });
+}
+window._pvConfirmUseInspiration = confirmUseInspiration;
+
 function helpReq() {
   const d = latestData;
   const me = myCombatant(d);
@@ -2113,7 +2133,7 @@ function renderTwoColumnView(d) {
     html += '<div class="pv-tabs">' +
       '<button class="pv-tab' + (activeTab === 'character' ? ' active' : '') + '" onclick="_pvSwitchTab(\'character\')">My Character</button>' +
       (tableMode ? '' : '<button class="pv-tab' + (activeTab === 'inventory' ? ' active' : '') + '" onclick="_pvSwitchTab(\'inventory\')">\ud83c\udf92 Bag</button>') +
-      ((!tableMode && pvHasShopping(d)) ? '<button class="pv-tab' + (activeTab === 'shop' ? ' active' : '') + '" onclick="_pvSwitchTab(\'shop\')">\ud83c\udfea Shop' + (pvMyOffers(d).length ? ' <span style="background:#b02020;color:#fff;border-radius:8px;font-size:9px;padding:0 5px;">' + pvMyOffers(d).length + '</span>' : '') + '</button>' : '') +
+      ((!tableMode && pvHasShopping(d)) ? '<button class="pv-tab' + (activeTab === 'shop' ? ' active' : '') + '" onclick="_pvSwitchTab(\'shop\')">\ud83c\udfea Shop' + ((pvMyOffers(d).length + pvIncomingSwaps(d).length) ? ' <span style="background:#b02020;color:#fff;border-radius:8px;font-size:9px;padding:0 5px;">' + (pvMyOffers(d).length + pvIncomingSwaps(d).length) + '</span>' : '') + '</button>' : '') +
       (hasCombat ? '<button class="pv-tab' + (activeTab === 'initiative' ? ' active' : '') + '" onclick="_pvSwitchTab(\'initiative\')">\u2694 Initiative</button>' : '') +
       (hasMap ? '<button class="pv-tab' + (activeTab === 'map' ? ' active' : '') + '" onclick="_pvSwitchTab(\'map\')">\ud83d\uddfa Map</button>' : '') +
       (hasWorld ? '<button class="pv-tab' + (activeTab === 'world' ? ' active' : '') + '" onclick="_pvSwitchTab(\'world\')">🌍 World</button>' : '') +
@@ -2170,7 +2190,10 @@ let pvCart = { items: [], gold: 0, tradeIns: [] }; // items:[{id,qty}], tradeIns
 
 function pvOpenShops(d) { return (d.shops || []); }
 function pvMyOffers(d) { return (d.trades || []).filter(t => t.pcId && String(t.pcId) === selectedPcId && t.status === 'awaiting-player'); }
-function pvHasShopping(d) { return pvOpenShops(d).length > 0 || pvMyOffers(d).length > 0; }
+// P2P swaps proposed TO me (I'm the recipient) — I get to accept/decline
+function pvIncomingSwaps(d) { return (d.trades || []).filter(t => t.kind === 'p2p' && String(t.bPcId) === selectedPcId && t.status === 'pending'); }
+function pvHasShopping(d) { return pvOpenShops(d).length > 0 || pvMyOffers(d).length > 0 || pvIncomingSwaps(d).length > 0 ||
+  (d.trades || []).some(t => t.kind === 'p2p' && String(t.aPcId) === selectedPcId && t.status === 'pending'); }
 
 function renderShopTab(d) {
   const pc = (d.party || []).find(p => String(p.id) === selectedPcId);
@@ -2191,9 +2214,22 @@ function renderShopTab(d) {
       '</div></div>';
   });
 
-  // My player-to-player swaps in flight
-  (d.trades || []).filter(t => t.kind === 'p2p' && (String(t.aPcId) === selectedPcId || String(t.bPcId) === selectedPcId) && t.status === 'pending').forEach(t => {
-    html += '<div class="card" style="border-color:rgba(212,175,55,0.3);"><div style="font-size:13px;color:var(--gold-light);">⏳ Swap with ' + esc(String(t.aPcId) === selectedPcId ? t.bName : t.aName) + ' — waiting on the DM to approve.</div></div>';
+  // Incoming swaps — another player wants to trade WITH me (I accept/decline)
+  pvIncomingSwaps(d).forEach(t => {
+    const aGives = (t.aItems || []).map(x => esc(x.name)).concat(t.aGold ? ['🪙 ' + t.aGold] : []);
+    const iGive = (t.bItems || []).map(x => esc(x.name)).concat(t.bGold ? ['🪙 ' + t.bGold] : []);
+    html += '<div class="card" style="border:1px solid rgba(200,168,255,0.5);background:rgba(120,90,200,0.08);">' +
+      '<div style="font-family:Cinzel,serif;font-size:16px;color:#c8a8ff;margin-bottom:4px;">🤝 ' + esc(t.aName) + ' wants to trade with you</div>' +
+      '<div style="font-size:14px;color:var(--gold-light);">You get: ' + (aGives.length ? aGives.join(', ') : 'nothing') + '</div>' +
+      '<div style="font-size:14px;color:#ffd700;margin-bottom:10px;">You give: ' + (iGive.length ? iGive.join(', ') : 'nothing') + '</div>' +
+      '<div style="display:flex;gap:8px;">' +
+        '<button class="btn-pv" style="flex:1;justify-content:center;border-color:var(--gold);color:var(--gold-light);" onclick="_pvAcceptOffer(' + t.id + ')">✓ Accept swap</button>' +
+        '<button class="btn-pv" style="flex:1;justify-content:center;" onclick="_pvDeclineOffer(' + t.id + ')">Decline</button>' +
+      '</div></div>';
+  });
+  // Swaps I proposed, waiting on the other player
+  (d.trades || []).filter(t => t.kind === 'p2p' && String(t.aPcId) === selectedPcId && t.status === 'pending').forEach(t => {
+    html += '<div class="card" style="border-color:rgba(212,175,55,0.3);"><div style="font-size:13px;color:var(--gold-light);">⏳ Swap proposed to ' + esc(t.bName) + ' — waiting for them to accept.</div></div>';
   });
 
   // Your pending/resolved offers
@@ -2271,15 +2307,22 @@ function renderShopTab(d) {
   return html;
 }
 
-// Local value estimate for trade-in credit (mirrors itemValue)
+// Local value estimate for trade-in credit (mirrors itemValue in trade.js)
+const PV_PRICE_DB = { 'dagger':2,'shortsword':10,'longsword':15,'greatsword':50,'rapier':25,'scimitar':25,'battleaxe':10,'greataxe':30,'warhammer':15,'maul':10,'mace':5,'handaxe':5,'spear':1,'quarterstaff':1,'club':1,'javelin':1,'glaive':20,'halberd':20,'morningstar':15,'flail':10,'whip':2,'trident':5,'light crossbow':25,'heavy crossbow':50,'hand crossbow':75,'longbow':50,'shortbow':25,'sling':1,'net':1,'padded armor':5,'leather armor':10,'studded leather':45,'hide armor':10,'chain shirt':50,'scale mail':50,'breastplate':400,'half plate':750,'ring mail':30,'chain mail':75,'splint armor':200,'plate armor':1500,'shield':10,'potion of healing':50,'potion of greater healing':150,'potion of superior healing':450,'torch':1,'lantern':5,'rope':1,'rations':1,'holy water':25,'antitoxin':50,'arrows':1,'crossbow bolts':1 };
+const PV_RARITY_VALUE = { common:75, uncommon:400, rare:4000, 'very rare':40000, legendary:100000 };
 function pvItemVal(item) {
   if (!item) return 0;
   if (typeof item.price === 'number' && item.price > 0) return item.price;
-  let base = { weapon: 25, armor: 60, shield: 15, wearable: 80, potion: 50, light: 2, ammo: 1, gear: 5 }[item.slot] || 5;
-  if (item.acBonus) base += item.acBonus * 100;
-  if (item.healDice) base = Math.max(base, 50);
-  if (/\+\d/.test(item.name || '')) base *= 2;
-  return Math.round(base);
+  const name = String(item.name || '').toLowerCase().trim();
+  if (PV_PRICE_DB[name] !== undefined) return PV_PRICE_DB[name];
+  let rarity = null;
+  if (/legendary|artifact|vorpal|holy avenger/i.test(name)) rarity = 'legendary';
+  else if (/\+3\b|very rare/i.test(name)) rarity = 'very rare';
+  else if (/\+2\b|\brare\b|flame ?tongue|frost brand|dragon slayer/i.test(name)) rarity = 'rare';
+  else if (/\+1\b|\bof \b|uncommon|bag of holding|cloak of|boots of|gauntlets of|amulet of|ring of/i.test(name)) rarity = 'uncommon';
+  if (rarity) { let v = PV_RARITY_VALUE[rarity]; if (item.slot === 'potion' || /potion|scroll|oil|dust|elixir/i.test(name)) v = Math.round(v / 2); return v; }
+  for (const k in PV_PRICE_DB) { if (name.indexOf(k) >= 0) return PV_PRICE_DB[k]; }
+  return { weapon:10, armor:50, shield:10, wearable:25, potion:50, light:2, ammo:1, gear:5 }[item.slot] || 5;
 }
 
 function pvReShop() { if (latestData) renderRoot(latestData); }
@@ -2377,7 +2420,7 @@ window._pvSubmitP2P = () => {
   if (!pvP2P.give.length && !pvP2P.want.length && !giveGold && !wantGold) { return; }
   closeOverlay();
   sendPlayerRequest({ type: 'tradeP2P', fromPcId: me.id, toPcId: pvP2P.toId, giveItems: pvP2P.give.slice(), giveGold, wantItems: pvP2P.want.slice(), wantGold, ts: Date.now() });
-  showWaiting('🤝 Swap proposed — waiting on the DM…');
+  showWaiting('🤝 Swap proposed — waiting for the other player…');
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -2462,35 +2505,26 @@ function renderInventoryTab(d) {
   return html;
 }
 
-// Item menu: re-categorize or drop
+// Item menu: item details + drop (category is set automatically; only the DM can change it)
 function pvItemMenu(itemId) {
   const d = latestData;
   const pc = (d.party || []).find(p => String(p.id) === selectedPcId);
   const it = pc && (pc.inventory || []).find(i => i.id === itemId);
   if (!it) return;
-  const cats = [['weapon','⚔ Weapon'],['armor','🛡 Armor'],['shield','🛡 Shield'],['wearable','🧣 Wearable'],['potion','🧪 Potion'],['light','🕯 Light'],['ammo','🏹 Ammo'],['gear','🎒 Misc']];
+  const facts = [];
+  if (it.dice) facts.push(it.dice + (it.damageType ? ' ' + it.damageType : ''));
+  if (it.acBonus) facts.push('+' + it.acBonus + ' AC');
+  if (it.healDice) facts.push('heals ' + it.healDice);
+  if (it.lightFt) facts.push('💡 ' + it.lightFt + ' ft');
   let html = '<div style="font-family:Cinzel,serif;font-size:16px;color:var(--gold);margin-bottom:4px;">' + esc(it.name) + '</div>' +
-    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">Move to a category — then you can equip it if it’s wearable.</div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
-  cats.forEach(c => {
-    const on = (it.slot || 'gear') === c[0];
-    html += '<button class="btn-pv" style="font-size:12px;justify-content:center;' + (on ? 'border-color:var(--gold);color:var(--gold-light);' : '') + '" onclick="_pvRecategorize(' + itemId + ',\'' + c[0] + '\')">' + c[1] + (on ? ' ✓' : '') + '</button>';
-  });
-  html += '</div>' +
-    '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;border-color:#e05050;color:#ff8080;" onclick="_pvDropItem(' + itemId + ')">🗑 Drop this item</button>' +
+    '<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">' + esc(pvSlotLabel(it) || it.slot) + (facts.length ? ' · ' + facts.join(' · ') : '') + '</div>' +
+    (it.desc ? '<div style="font-size:12px;color:#888;font-style:italic;margin-bottom:10px;">' + esc(it.desc) + '</div>' : '') +
+    '<div style="font-size:11px;color:#555;margin-bottom:10px;">Its category is set automatically. If it looks wrong, ask your DM to fix it.</div>' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;border-color:#e05050;color:#ff8080;" onclick="_pvDropItem(' + itemId + ')">🗑 Drop this item</button>' +
     '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:6px;" onclick="_pvCloseOverlay()">Close</button>';
   showOverlay(html);
 }
 window._pvItemMenu = pvItemMenu;
-
-function pvRecategorize(itemId, slot) {
-  const d = latestData;
-  const pc = (d.party || []).find(p => String(p.id) === selectedPcId);
-  if (!pc) return;
-  closeOverlay();
-  sendPlayerRequest({ type: 'recategorize', pcId: pc.id, itemId, slot, ts: Date.now() });
-}
-window._pvRecategorize = pvRecategorize;
 
 function pvDropItem(itemId) {
   const d = latestData;
@@ -2541,7 +2575,7 @@ function renderCharacterCard(d) {
   html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;">' +
     '<span style="padding:5px 14px;border-radius:5px;font-size:13px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#aaa;">🛡 AC <strong style="color:var(--parchment);">' + pvEffectiveAC(pc) + '</strong></span>' +
     '<span style="padding:5px 14px;border-radius:5px;font-size:13px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#aaa;">\u26A1 Init <strong style="color:var(--parchment);">' + fmtMod(pc.initBonus || 0) + '</strong></span>' +
-    (pc.inspiration ? '<span class="insp-badge">\u2605 Inspired</span>' : '') +
+    (( parseInt(pc.inspiration) || 0) > 0 ? '<span class="insp-badge" style="cursor:pointer;" title="Spend Inspiration for advantage on a roll" onclick="_pvUseInspiration()">\u2605 Inspired' + ((parseInt(pc.inspiration) || 0) > 1 ? ' \u00d7' + (parseInt(pc.inspiration) || 0) : '') + ' \u2014 tap to use</span>' : '') +
   '</div>';
 
   // Conditions

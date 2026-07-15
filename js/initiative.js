@@ -54,22 +54,42 @@ function addCombatantFromDB(m) {
   showToast(m.name + ' added to initiative!', 'success');
 }
 
+// Inspiration is a POINT COUNT — the ★ button grants one; the badge / player spends one.
 function toggleCombatantInspiration(id) {
   var c = combatants.find(function(x) { return x.id === id; });
   if (!c) return;
-  c.inspiration = !c.inspiration;
+  c.inspiration = (parseInt(c.inspiration) || 0) + 1;
+  var pc = party.find(function(p) { return p.name === c.name && c.type === 'ally'; });
+  if (pc) { pc.inspiration = c.inspiration; savePartyStorage(); }
   renderCombatants();
   syncCombatState();
-  showToast(c.inspiration ? '★ ' + c.name + ' has Inspiration!' : c.name + ' — Inspiration spent', c.inspiration ? 'success' : 'info');
+  if (typeof logCombat === 'function') logCombat('✨ ' + c.name + ' gains Inspiration (now ×' + c.inspiration + ')', 'heal');
+  showToast('✨ ' + c.name + ' gains Inspiration! (×' + c.inspiration + ')', 'success');
+}
+
+function spendCombatantInspiration(id) {
+  var c = combatants.find(function(x) { return x.id === id; });
+  if (!c) return;
+  var n = parseInt(c.inspiration) || 0;
+  if (n <= 0) return;
+  c.inspiration = n - 1;
+  var pc = party.find(function(p) { return p.name === c.name && c.type === 'ally'; });
+  if (pc) { pc.inspiration = c.inspiration; savePartyStorage(); }
+  renderCombatants();
+  syncCombatState();
+  if (typeof logCombat === 'function') logCombat('✨ ' + c.name + ' spends Inspiration — advantage on a roll', 'info');
+  showToast('✨ ' + c.name + ' spent Inspiration (' + c.inspiration + ' left)', 'info');
 }
 
 function togglePartyInspiration(id) {
   var pc = party.find(function(p) { return p.id === id; });
   if (!pc) return;
-  pc.inspiration = !pc.inspiration;
+  pc.inspiration = (parseInt(pc.inspiration) || 0) + 1;
+  var c = combatants.find(function(x) { return x.name === pc.name && x.type === 'ally'; });
+  if (c) { c.inspiration = pc.inspiration; if (typeof renderCombatants === 'function') renderCombatants(); if (typeof syncCombatState === 'function') syncCombatState(); }
   savePartyStorage();
   renderParty();
-  showToast(pc.inspiration ? '★ ' + pc.name + ' has Inspiration!' : pc.name + ' — Inspiration spent', pc.inspiration ? 'success' : 'info');
+  showToast('★ ' + pc.name + ' gains Inspiration! (×' + pc.inspiration + ')', 'success');
 }
 
 function setCombatantConc(id) {
@@ -455,7 +475,8 @@ function renderCombatants() {
       return '<span class="cond-badge" onclick="removeCondition(' + c.id + ',\'' + cond + '\')" title="Click to remove">' + cond + (rd !== null ? ' <span style="color:#e0a860;">' + rd + 'r</span>' : '') + ' ✕</span>';
     }).join('');
     var typeColor = c.type === 'enemy' ? '#c0392b' : c.type === 'ally' ? '#27ae60' : '#888';
-    var inspBadge = c.inspiration ? '<span style="color:#ffe066;font-size:13px;margin-left:4px;" title="Inspired">★</span>' : '';
+    var inspN = parseInt(c.inspiration) || 0;
+    var inspBadge = inspN > 0 ? '<span onclick="spendCombatantInspiration(' + c.id + ')" style="color:#ffe066;font-size:13px;margin-left:4px;cursor:pointer;" title="Inspiration ×' + inspN + ' — click to spend one">★' + (inspN > 1 ? '×' + inspN : '') + '</span>' : '';
     var concBadge = c.concentrating ? '<span style="background:rgba(100,50,200,0.2);border:1px solid rgba(150,80,255,0.4);color:#b080ff;font-size:9px;font-family:Cinzel,serif;border-radius:3px;padding:1px 5px;margin-left:4px;" title="' + c.concentrating + '">CONC</span>' : '';
     var hiddenBadge = c.hidden ? '<span style="color:#888;font-size:10px;margin-left:4px;" title="Hidden from players">👁</span>' : '';
     var exLvl = (typeof exhaustionLevel === 'function') ? exhaustionLevel(c) : (c.exhaustion || 0);
@@ -488,7 +509,7 @@ function renderCombatants() {
           '<button onclick="dmOpenActMenu(' + c.id + ')" title="Act as this combatant (attacks/heals through the rules engine)" style="background:none;border:1px solid rgba(212,175,55,0.35);color:var(--gold);width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">⚔</button>' +
           '<button onclick="openHPModal(' + c.id + ')" title="Modify HP" style="background:none;border:1px solid var(--border);color:var(--text-dim);width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">❤</button>' +
           '<button onclick="openCondModal(' + c.id + ')" title="Add Condition" style="background:none;border:1px solid var(--border);color:var(--text-dim);width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">⚡</button>' +
-          '<button onclick="toggleCombatantInspiration(' + c.id + ')" title="Toggle Inspiration" style="background:none;border:1px solid var(--border);color:' + (c.inspiration ? '#ffe066' : 'var(--text-dim)') + ';width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">★</button>' +
+          '<button onclick="toggleCombatantInspiration(' + c.id + ')" title="Grant Inspiration (+1)" style="background:none;border:1px solid var(--border);color:' + (inspN > 0 ? '#ffe066' : 'var(--text-dim)') + ';width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;">★</button>' +
           '<button onclick="setCombatantConc(' + c.id + ')" title="Set Concentration" style="background:none;border:1px solid var(--border);color:' + (c.concentrating ? '#b080ff' : 'var(--text-dim)') + ';width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;">C</button>' +
           '<button onclick="toggleCombatantVisibility(' + c.id + ')" title="Toggle Visibility" style="background:none;border:1px solid var(--border);color:' + (c.hidden ? '#e74c3c' : 'var(--text-dim)') + ';width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">👁</button>' +
           '<button onclick="toggleSurprise(' + c.id + ')" title="Mark surprised — skips their first turn" style="background:none;border:1px solid var(--border);color:' + (c.surprised ? '#ffb450' : 'var(--text-dim)') + ';width:28px;height:28px;border-radius:3px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">😲</button>' +

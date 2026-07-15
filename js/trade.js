@@ -6,16 +6,50 @@
 // trade-in items. Offers land in the DM inbox for Accept/Decline. The DM can
 // also push a ready-made sale to a player, which they accept or decline.
 
-// ─── Rough gp value (for trade-in credit + default prices) ────
+// ─── Item gp value (PHB prices + DMG magic-item rarity) ──────
+// Real 5e book prices for mundane gear; magic items estimate by rarity.
+var ITEM_PRICE_DB = {
+  // weapons (PHB)
+  'club': 1, 'dagger': 2, 'greatclub': 1, 'handaxe': 5, 'javelin': 1, 'light hammer': 2, 'mace': 5, 'quarterstaff': 1,
+  'sickle': 1, 'spear': 1, 'light crossbow': 25, 'dart': 1, 'shortbow': 25, 'sling': 1, 'battleaxe': 10, 'flail': 10,
+  'glaive': 20, 'greataxe': 30, 'greatsword': 50, 'halberd': 20, 'lance': 10, 'longsword': 15, 'maul': 10, 'morningstar': 15,
+  'pike': 5, 'rapier': 25, 'scimitar': 25, 'shortsword': 10, 'trident': 5, 'war pick': 5, 'warhammer': 15, 'whip': 2,
+  'blowgun': 10, 'hand crossbow': 75, 'heavy crossbow': 50, 'longbow': 50, 'net': 1,
+  // armor (PHB)
+  'padded armor': 5, 'leather armor': 10, 'studded leather': 45, 'hide armor': 10, 'chain shirt': 50, 'scale mail': 50,
+  'breastplate': 400, 'half plate': 750, 'ring mail': 30, 'chain mail': 75, 'splint armor': 200, 'plate armor': 1500,
+  'shield': 10,
+  // gear / consumables
+  'potion of healing': 50, 'potion of greater healing': 150, 'potion of superior healing': 450, 'potion of supreme healing': 1350,
+  'torch': 1, 'lantern': 5, 'hooded lantern': 5, 'candle': 1, 'rope': 1, 'rations': 1, 'bedroll': 1, 'tent': 2,
+  'healer\'s kit': 5, 'thieves\' tools': 25, 'spyglass': 1000, 'holy water': 25, 'antitoxin': 50, 'oil': 1,
+  'arrows': 1, 'crossbow bolts': 1, 'sling bullets': 1, 'blowgun needles': 1
+};
+var RARITY_VALUE = { common: 75, uncommon: 400, rare: 4000, 'very rare': 40000, legendary: 100000 };
+
 function itemValue(item) {
   if (!item) return 0;
   if (typeof item.price === 'number' && item.price > 0) return item.price;
-  var base = { weapon: 25, armor: 60, shield: 15, wearable: 80, potion: 50, light: 2, ammo: 1, gear: 5 }[item.slot] || 5;
-  if (item.acBonus) base += item.acBonus * 100;         // magic protection is pricey
-  if (item.healDice) base = Math.max(base, 50);
-  if (/\+\d/.test(item.name || '')) base *= 2;          // "+1" etc. reads as magic
-  if (item.dice && /d(10|12)/.test(item.dice)) base += 15;
-  return Math.round(base);
+  var name = String(item.name || '').toLowerCase().trim();
+  // exact mundane price (wins even over rarity cues, e.g. "potion of healing")
+  if (ITEM_PRICE_DB[name] !== undefined) return ITEM_PRICE_DB[name];
+  // magic-item estimate by rarity cues — checked BEFORE the mundane substring
+  // fallback so "+1 Longsword" isn't priced as a plain longsword. (5e: +1 = uncommon,
+  // +2 = rare, +3 = very rare.)
+  var rarity = null;
+  if (/legendary|artifact|vorpal|holy avenger/i.test(name)) rarity = 'legendary';
+  else if (/\+3\b|very rare/i.test(name)) rarity = 'very rare';
+  else if (/\+2\b|\brare\b|flame ?tongue|frost brand|dragon slayer/i.test(name)) rarity = 'rare';
+  else if (/\+1\b|\bof \b|uncommon|bag of holding|cloak of|boots of|gauntlets of|amulet of|ring of/i.test(name)) rarity = 'uncommon';
+  if (rarity) {
+    var v = RARITY_VALUE[rarity];
+    if (item.slot === 'potion' || /potion|scroll|oil|dust|elixir/i.test(name)) v = Math.round(v / 2); // consumables ~half
+    return v;
+  }
+  // mundane substring match (only after ruling out magic cues)
+  for (var key in ITEM_PRICE_DB) { if (name.indexOf(key) >= 0) return ITEM_PRICE_DB[key]; }
+  // plain unknown → by category (mundane defaults)
+  return { weapon: 10, armor: 50, shield: 10, wearable: 25, potion: 50, light: 2, ammo: 1, gear: 5 }[item.slot] || 5;
 }
 
 // ─── Shop CRUD (DM) ──────────────────────────────────────────
@@ -361,10 +395,23 @@ function processTradeOffer(req) {
   renderTradeInbox();
   if (window.cloudSaveNow) window.cloudSaveNow();
 }
-// Player accepts a DM-pushed offer → auto-execute (DM set the terms)
+// A player accepts an offer aimed at them:
+//  • DM-pushed sale (awaiting-player) → auto-execute
+//  • player-to-player swap → the RECIPIENT accepting executes it (both consent)
 function processTradeAccept(req) {
-  var t = trades.find(function(x) { return x.id === req.tradeId && x.status === 'awaiting-player'; });
-  if (!t || t.pcId !== req.pcId) return;
+  var t = trades.find(function(x) { return x.id === req.tradeId; });
+  if (!t) return;
+  if (t.kind === 'p2p') {
+    if (t.status !== 'pending' || t.bPcId !== req.pcId) return; // only the recipient
+    var r = executeP2P(t);
+    if (!r.ok) { showToast('🚫 Swap failed — ' + r.reason, 'warn'); renderTradeInbox(); if (window.cloudSaveNow) window.cloudSaveNow(); return; }
+    t.status = 'accepted';
+    showToast('✅ ' + t.bName + ' accepted ' + t.aName + '\'s swap', 'success');
+    if (typeof logCombat === 'function') logCombat('🤝 Swap: ' + t.aName + ' ⇄ ' + t.bName, 'info');
+    renderTradeInbox(); if (window.cloudSaveNow) window.cloudSaveNow();
+    return;
+  }
+  if (t.status !== 'awaiting-player' || t.pcId !== req.pcId) return;
   var res = executeTrade(t);
   if (!res.ok) { t.status = 'pending'; showToast('🚫 ' + t.pcName + '\'s purchase failed — ' + res.reason, 'warn'); renderTradeInbox(); if (window.cloudSaveNow) window.cloudSaveNow(); return; }
   t.status = 'accepted';
@@ -374,9 +421,12 @@ function processTradeAccept(req) {
 }
 function processTradeDecline(req) {
   var t = trades.find(function(x) { return x.id === req.tradeId; });
-  if (!t || t.pcId !== req.pcId) return;
+  if (!t) return;
+  // Either party in a p2p swap can cancel; otherwise only the offer's player
+  if (t.kind === 'p2p') { if (t.aPcId !== req.pcId && t.bPcId !== req.pcId) return; }
+  else if (t.pcId !== req.pcId) return;
   t.status = 'declined';
-  showToast('❌ ' + t.pcName + ' declined the offer', 'info');
+  showToast('❌ ' + (t.kind === 'p2p' ? 'Swap cancelled' : t.pcName + ' declined the offer'), 'info');
   renderTradeInbox();
   if (window.cloudSaveNow) window.cloudSaveNow();
 }

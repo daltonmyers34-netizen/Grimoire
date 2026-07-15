@@ -857,6 +857,7 @@ function processPlayerAction(req) {
     else if (req.type === 'reaction') processPlayerReaction(req);
     else if (req.type === 'smite') processPlayerSmite(req);
     else if (req.type === 'inspire') processPlayerInspire(req);
+    else if (req.type === 'useInspiration') processUseInspiration(req);
     else if (req.type === 'standUp') processPlayerStandUp(req);
     else if (req.type === 'help') processPlayerHelp(req);
     else if (req.type === 'ready') processPlayerReady(req);
@@ -2543,6 +2544,23 @@ function processPlayerInspire(req) {
   logCombat('🎵 ' + bard.name + ' inspires ' + target.name + ' — they hold a Bardic Inspiration die (add it to any roll, then the DM clears the tag)', 'heal');
   showToast('🎵 ' + target.name + ' is INSPIRED!', 'success');
   renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+}
+
+// ─── Player spends an Inspiration point (DM-granted) ─────────
+function processUseInspiration(req) {
+  var pc = party.find(function(p) { return p.id === req.pcId; });
+  if (!pc) return;
+  var n = parseInt(pc.inspiration) || 0;
+  if (n <= 0) { showToast('✨ ' + (pc.name || 'A player') + ' tried to use Inspiration but has none', 'warn'); return; }
+  pc.inspiration = n - 1;
+  var c = combatants.find(function(x) { return x.name === pc.name && x.type === 'ally'; });
+  if (c) c.inspiration = pc.inspiration;
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+  if (typeof logCombat === 'function') logCombat('✨ ' + pc.name + ' spends Inspiration — roll with advantage! (' + pc.inspiration + ' left)', 'heal');
+  showToast('✨ ' + pc.name + ' used Inspiration — advantage on their roll! (' + pc.inspiration + ' left)', 'success');
+  if (typeof renderParty === 'function') renderParty();
+  if (typeof renderCombatants === 'function') renderCombatants();
   if (window.cloudSave) window.cloudSave();
 }
 
