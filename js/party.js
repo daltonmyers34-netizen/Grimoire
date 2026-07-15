@@ -171,10 +171,12 @@ function autoFillSpellSlots() {
 function togglePartyInspiration(id) {
   var pc = party.find(function(p) { return p.id === id; });
   if (!pc) return;
-  pc.inspiration = !pc.inspiration;
+  pc.inspiration = (parseInt(pc.inspiration) || 0) + 1;
+  var c = (typeof combatants !== 'undefined') && combatants.find(function(x) { return x.name === pc.name && x.type === 'ally'; });
+  if (c) { c.inspiration = pc.inspiration; if (typeof renderCombatants === 'function') renderCombatants(); if (typeof syncCombatState === 'function') syncCombatState(); }
   savePartyStorage();
   renderParty();
-  showToast(pc.inspiration ? '★ ' + pc.name + ' has Inspiration!' : pc.name + ' — Inspiration spent', pc.inspiration ? 'success' : 'info');
+  showToast('★ ' + pc.name + ' gains Inspiration! (×' + pc.inspiration + ')', 'success');
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -271,7 +273,8 @@ function buildPlayerViewHTML(uid) {
 '      const pm=msgs[pc.id]||msgs[String(pc.id)]||\'\';\n' +
 '      const mh=pm?\'<div class="msg-banner personal-msg">DM: \'+esc(pm)+\'</div>\':\'\';\n' +
 '      const conds=(cmb&&cmb.conditions||[]).map(c=>\'<span class="cond-tag">\'+esc(c)+\'</span>\').join(\'\');\n' +
-'      const insp=pc.inspiration?\'<span style="padding:2px 8px;border-radius:3px;font-size:11px;background:rgba(255,215,0,0.18);border:1px solid rgba(255,215,0,0.5);color:#ffd700;margin:2px;">Inspired</span>\':\'\';\n' +
+'      const inspN=parseInt(pc.inspiration)||0;\n' +
+'      const insp=inspN>0?\'<span style="padding:2px 8px;border-radius:3px;font-size:11px;background:rgba(255,215,0,0.18);border:1px solid rgba(255,215,0,0.5);color:#ffd700;margin:2px;">★ Inspired\'+(inspN>1?\' ×\'+inspN:\'\')+\'</span>\':\'\';\n' +
 '      const rest=pc.lastRest?\'<span class="rest-badge">\'+(pc.lastRest===\'long\'?\'Long Rest\':\'Short Rest\')+\'</span>\':\'\';\n' +
 '      const slots=(pc.spellSlots||[]).length?\'<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.07);"><div style="font-size:10px;color:#555;margin-bottom:5px;">SPELL SLOTS</div>\'\n' +
 '        +pc.spellSlots.map((sl,i)=>{const av=sl.max-sl.used,lv=[\'1st\',\'2nd\',\'3rd\',\'4th\',\'5th\',\'6th\',\'7th\',\'8th\',\'9th\'];\n' +
@@ -912,8 +915,11 @@ function renderInventoryModal(pcId) {
           '<span style="font-size:14px;color:var(--parchment);">' + esc(it.name) + (it.qty > 1 ? ' ×' + it.qty : '') + '</span>' +
           (extra.length ? '<span style="font-size:11px;color:var(--text-dim);margin-left:8px;">' + extra.join(' · ') + '</span>' : '') +
         '</div>' +
+        '<select title="Category" onchange="dmSetItemSlot(' + pcId + ',' + it.id + ',this.value)" style="font-size:11px;padding:3px;">' +
+          ['weapon','armor','shield','wearable','potion','light','ammo','gear'].map(function(s){ return '<option value="' + s + '"' + ((it.slot||'gear')===s?' selected':'') + '>' + s + '</option>'; }).join('') +
+        '</select>' +
         '<button class="btn btn-ghost btn-sm" title="Edit magical effects (+stats, resistances, special attacks...)" onclick="editItemEffects(' + pcId + ',' + it.id + ')">✨</button>' +
-        (it.slot !== 'gear' ? '<button class="btn btn-ghost btn-sm" style="' + (it.equipped ? 'border-color:var(--gold);color:var(--gold);' : '') + '" onclick="dmToggleEquip(' + pcId + ',' + it.id + ')">' + (it.equipped ? '✓ Equipped' : 'Equip') + '</button>' : '') +
+        (['weapon','armor','shield','wearable','light'].indexOf(it.slot) >= 0 ? '<button class="btn btn-ghost btn-sm" style="' + (it.equipped ? 'border-color:var(--gold);color:var(--gold);' : '') + '" onclick="dmToggleEquip(' + pcId + ',' + it.id + ')">' + (it.equipped ? '✓ Equipped' : 'Equip') + '</button>' : '') +
         '<button onclick="deleteInventoryItem(' + pcId + ',' + it.id + ')" style="background:none;border:1px solid var(--border);color:var(--blood-light);border-radius:3px;cursor:pointer;width:24px;height:24px;font-size:11px;">✕</button>' +
       '</div>';
     });
@@ -975,6 +981,20 @@ function dmToggleEquip(pcId, itemId) {
   renderParty();
   renderCombatants();
   renderInventoryModal(pcId);
+}
+
+// DM fixes an item's category in a player's bag
+function dmSetItemSlot(pcId, itemId, slot) {
+  var pc = party.find(function(p) { return p.id === pcId; });
+  var it = pc && (pc.inventory || []).find(function(i) { return i.id === itemId; });
+  if (!it) return;
+  it.slot = slot;
+  if (['weapon', 'armor', 'shield', 'wearable', 'light'].indexOf(slot) < 0) it.equipped = false;
+  if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
+  savePartyStorage();
+  renderParty();
+  renderInventoryModal(pcId);
+  showToast('🎒 ' + it.name + ' → ' + slot, 'info');
 }
 
 function deleteInventoryItem(pcId, itemId) {
