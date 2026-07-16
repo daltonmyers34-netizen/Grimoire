@@ -6,7 +6,7 @@
 // changes, and victory. Toggle + test buttons live on the Sound tab.
 // Device preference (not campaign state), like the player-view mute.
 
-var dmAmbientOn = localStorage.getItem('dm_ambient_sound') !== '0'; // default ON
+var dmAmbientOn = localStorage.getItem('dm_ambient_sound') === '1'; // default OFF (opt-in on the Sound tab)
 var _dmAudioCtx = null;
 
 function dmTone(freq, dur, delay, type, vol) {
