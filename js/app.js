@@ -189,6 +189,9 @@ document.addEventListener('DOMContentLoaded', function() {
       if (s && s.version) applyState(s);
     }
   } catch(e) { console.warn('Auto-restore:', e); }
+  // One-time weapon migration: fixes base dice + magic +X on weapons saved before
+  // magic-weapon support (covers the localStorage-only boot path, not just cloud/session load).
+  try { if (typeof migratePartyWeapons === 'function') migratePartyWeapons(); } catch(e) { console.warn('migratePartyWeapons:', e); }
   try { initNPCs(); } catch(e) { console.warn('initNPCs:', e); }
   try { renderParty(); } catch(e) { console.warn('renderParty:', e); }
   try { renderPresets(); } catch(e) { console.warn('renderPresets:', e); }

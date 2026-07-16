@@ -1575,11 +1575,15 @@ function baseWeaponPreset(name) {
 // its name without clobbering values a DM set by hand. Idempotent — safe to call
 // on every equip/recompute. Ensures the +X and the correct base dice reach the
 // player-view snapshot too (player-view reads item.dice / item.magicBonus).
-function hydrateWeaponStats(item) {
+// aggressive=true (used only by the one-time migration) also corrects the old
+// blanket "1d6" default when the name clearly names a bigger base weapon —
+// e.g. a "+1 Longsword" saved as 1d6 becomes 1d8. It never overrides dice that
+// already differ from that default (a DM's hand-set custom die is preserved).
+function hydrateWeaponStats(item, aggressive) {
   if (!item || item.slot !== 'weapon') return item;
   var preset = baseWeaponPreset(item.name);
   if (preset) {
-    if (!item.dice) item.dice = preset.dice;
+    if (!item.dice || (aggressive && item.dice === '1d6' && preset.dice !== '1d6')) item.dice = preset.dice;
     if (item.range == null) item.range = preset.range;
     if (!item.damageType) item.damageType = preset.damageType;
   }
@@ -1635,6 +1639,17 @@ function inferItemSlot(name) {
 // Effective AC = base AC + everything equipped (armor, shield, magic items)
 function effectiveAC(pc) {
   return (pc.ac || 10) + (typeof equipmentMods === 'function' ? equipmentMods(pc).ac : 0);
+}
+
+// One-time migration: bring every existing weapon in every character's bag up to
+// date (fill base dice from the name, capture a +N magic bonus) so saves created
+// before magic-weapon support fix themselves on load — no need to re-equip.
+function migratePartyWeapons() {
+  if (typeof party === 'undefined' || !Array.isArray(party)) return;
+  party.forEach(function(pc) {
+    (pc.inventory || []).forEach(function(it) { if (it && it.slot === 'weapon') hydrateWeaponStats(it, true); });
+    if (typeof recomputePcCombat === 'function') try { recomputePcCombat(pc); } catch(e) {}
+  });
 }
 
 // An equipped weapon becomes an attack action automatically:
