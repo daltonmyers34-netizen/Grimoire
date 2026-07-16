@@ -1,7 +1,7 @@
 import { initializeApp }        from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
                                 from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, deleteDoc }
+import { getFirestore, initializeFirestore, doc, setDoc, getDoc, onSnapshot, collection, deleteDoc }
                                 from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getStorage, ref as storageRef, uploadString, getDownloadURL }
                                 from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
@@ -18,7 +18,15 @@ const firebaseConfig = {
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db   = getFirestore(app);
+// ignoreUndefinedProperties: Firestore otherwise REJECTS the whole write if any
+// field anywhere is `undefined` (our item editor sets e.g. magicBonus = x || undefined).
+// One undefined = the entire cloudSave fails and nothing reaches players. Skip them instead.
+let db;
+try {
+  db = initializeFirestore(app, { ignoreUndefinedProperties: true });
+} catch (e) {
+  db = getFirestore(app); // already initialized elsewhere — fall back
+}
 const storage = getStorage(app);
 
 // Upload an image to Firebase Storage → tiny URL in the sync instead of
@@ -204,7 +212,7 @@ async function doCloudWrite() {
     showSyncIndicator();
   } catch(e) {
     console.error('Save error', e);
-    showToast('⚠ Cloud save failed', 'warn');
+    showToast('⚠ Cloud save failed: ' + (e && e.message ? e.message.slice(0, 90) : 'unknown'), 'warn');
   }
 }
 

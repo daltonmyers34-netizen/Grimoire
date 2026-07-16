@@ -2770,7 +2770,7 @@ function recomputePcCombat(pc) {
   c.immune = merge(pc.immune, mods.immune);
   c.vuln = merge(pc.vuln, mods.vuln);
   c.conditionImmune = merge(pc.conditionImmune, mods.conditionImmune);
-  c.critImmune = mods.critImmune || pc.critImmune || undefined; // Adamantine armor
+  if (mods.critImmune || pc.critImmune) c.critImmune = true; else delete c.critImmune; // Adamantine armor
 }
 
 // ============================================================
@@ -2893,9 +2893,9 @@ function dmSaveActions(combatantId) {
   var legMax = parseInt(document.getElementById('ae-legmax').value) || 0;
   c.legendary = legMax > 0 ? { max: legMax, used: (c.legendary && c.legendary.used) || 0 } : undefined;
   var ownerEl = document.getElementById('ae-owner');
-  c.owner = (ownerEl && ownerEl.value.trim()) || undefined;
+  var ownerVal = (ownerEl && ownerEl.value.trim()); if (ownerVal) c.owner = ownerVal; else delete c.owner;
   var ctEl = document.getElementById('ae-creaturetype');
-  c.creatureType = (ctEl && ctEl.value) || undefined;
+  var ctVal = (ctEl && ctEl.value); if (ctVal) c.creatureType = ctVal; else delete c.creatureType;
   var multiEl = document.getElementById('ae-multi');
   var multi = multiEl ? parseInt(multiEl.value) || 1 : 1;
   c.multiattack = multi > 1 ? multi : undefined;
