@@ -134,6 +134,31 @@ function cvCrNum(c) {
 // Natural weapons / innate attacks — never drop as lootable items
 var CV_NATURAL_WEAPON = /^(bite|claw|claws|fang|fangs|talon|talons|tail|tail\s|slam|gore|sting|stinger|tentacle|tentacles|hoof|hooves|horn|horns|beak|pincer|pincers|stomp|wing|wings|constrict|ram|tusk|tusks|pseudopod|fist|fists|unarmed|kick|punch|maul|rend|swallow|breath|acid|fire breath|frost breath|spit|gaze|multiattack)/i;
 
+// Rough rarity tier of a library item (1 uncommon … 4 legendary) so drops scale
+// with the monster's danger — you won't find a Vorpal Sword on a goblin.
+function cvItemTier(t) {
+  var blob = JSON.stringify(t).toLowerCase();
+  var setMax = t.statSet ? Math.max.apply(null, Object.keys(t.statSet).map(function(k) { return t.statSet[k]; })) : 0;
+  if ((t.magicBonus || 0) >= 3 || /vorpal|holy avenger|nine lives|storm giant|cloud giant/.test(blob) || setMax >= 27) return 4;
+  if ((t.magicBonus || 0) >= 2 || setMax >= 23 || /8d6|8d8|10d|sharpness|life stealing/.test(blob)) return 3;
+  if ((t.magicBonus || 0) >= 1 || t.riderDamage || t.grantSpell || t.grantAction || t.statSet || t.onHitSave || t.grantsExtraAttack) return 2;
+  return 1;
+}
+// Extremely rare magic-item drop, gated by CR. Legendary gear only from deadly foes.
+function cvMaybeMagicDrop(cr) {
+  if (typeof ITEM_LIBRARY === 'undefined') return null;
+  var chance = 0.015 + cr * 0.006; // ~1.5% at CR0, ~7.5% at CR10, ~13.5% at CR20
+  if (Math.random() > chance) return null;
+  var maxTier = cr < 1 ? 1 : cr < 5 ? 2 : cr < 11 ? 3 : 4;
+  var pool = ITEM_LIBRARY.filter(function(t) { return t.slot !== 'potion' && cvItemTier(t) <= maxTier; });
+  if (!pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)].name;
+}
+// Ordinary gear a defeated foe might have been carrying (non-magical).
+var CV_MUNDANE_DROPS = ['Dagger','Shortsword','Longsword','Handaxe','Mace','Spear','Shortbow','Light Crossbow',
+  'Leather Armor','Studded Leather','Shield','Torch','Rope (50 ft)','Rations (1 day)','Grappling Hook',
+  'Thieves’ Tools', 'Healer’s Kit', 'Crowbar', 'Whetstone', 'Bedroll', 'Waterskin'];
+
 function generateDropLoot(c) {
   var cr = cvCrNum(c);
   var theme = CV_LOOT_THEMES.find(function(t) { return t.match.test(c.name || ''); });
@@ -155,9 +180,14 @@ function generateDropLoot(c) {
   // Anyone humanoid-ish might carry a potion; the tougher, the likelier
   if (!(theme && theme.noCoins) && Math.random() < 0.25 + cr * 0.06) items.push('Potion of Healing');
   if (cr >= 3 && Math.random() < 0.2) items.push('Gem (10 gp)');
+  // A bit of ordinary gear (skip for beasts/oozes that carry nothing)
+  if (!(theme && theme.noCoins) && Math.random() < 0.3) items.push(pick(CV_MUNDANE_DROPS));
+  // …and, very rarely, a real magic item scaled to how dangerous this foe was
+  var magic = cvMaybeMagicDrop(cr);
+  if (magic) items.push(magic);
 
   var gp = (theme && theme.noCoins) ? 0 : Math.max(0, Math.round((Math.random() * 6 + 2) * (cr * 2.5 + 1)));
-  return { items: items.filter(Boolean).slice(0, 4), gp: gp };
+  return { items: items.filter(Boolean).slice(0, 5), gp: gp };
 }
 
 function cvRollLootFor(id) {
@@ -329,10 +359,10 @@ function cvGiveItem(lootId, idx) {
   var pc = party.find(function(p) { return p.id === parseInt(sel.value); });
   if (!pc) return;
   var name = e.items[idx];
-  var slot = (typeof inferItemSlot === 'function') ? inferItemSlot(name) : 'gear';
-  var item = { id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()), name: name, qty: 1, slot: slot, equipped: false };
-  var preset = (typeof itemPresetFor === 'function') ? itemPresetFor(name) : null;
-  if (preset) { for (var k in preset) item[k] = preset[k]; }
+  // Resolve against the item library first so magic drops keep their full effects.
+  var item = (typeof resolveItemFromName === 'function')
+    ? resolveItemFromName(name)
+    : { id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()), name: name, qty: 1, slot: (typeof inferItemSlot === 'function') ? inferItemSlot(name) : 'gear', equipped: false };
   pc.inventory = pc.inventory || [];
   pc.inventory.push(item);
   if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);

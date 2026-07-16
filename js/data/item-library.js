@@ -22,6 +22,9 @@ var ITEM_LIBRARY = [
   { name: '+1 Dagger', slot: 'weapon', dice: '1d4', damageType: 'piercing', magicBonus: 1, range: 20, desc: '+1 finesse/thrown dagger.' },
   { name: '+1 Longbow', slot: 'weapon', dice: '1d8', damageType: 'piercing', magicBonus: 1, range: 150, desc: '+1 to ranged attack and damage.' },
   { name: '+2 Shortbow', slot: 'weapon', dice: '1d6', damageType: 'piercing', magicBonus: 2, range: 80, desc: '+2 ranged.' },
+  { name: '+1 Ammunition (20)', slot: 'ammo', magicBonus: 1, desc: '+1 to attack and damage; a piece is destroyed on use.' },
+  { name: '+2 Ammunition (20)', slot: 'ammo', magicBonus: 2, desc: '+2 arrows/bolts/bullets.' },
+  { name: '+3 Ammunition (20)', slot: 'ammo', magicBonus: 3, desc: '+3 arrows/bolts/bullets.' },
 
   // ─────────── WEAPONS: elemental / rider ───────────
   { name: 'Flame Tongue Longsword', slot: 'weapon', dice: '1d8', damageType: 'slashing',
@@ -94,6 +97,10 @@ var ITEM_LIBRARY = [
   { name: 'Glamoured Studded Leather', slot: 'armor', acBonus: 3, desc: 'Studded leather +1 you can disguise at will.' },
   { name: 'Spellguard Shield', slot: 'shield', acBonus: 2, saveBonus: 2, desc: 'Advantage/+2 on saves vs spells; foes have disadvantage on spell attacks against you.' },
   { name: 'Mariner’s Armor (Scale)', slot: 'armor', acBonus: 4, desc: 'Swim speed; won’t drag you underwater.' },
+  { name: 'Adamantine Plate', slot: 'armor', acBonus: 8, critImmune: true, desc: 'Any critical hit against you becomes a normal hit.' },
+  { name: 'Adamantine Half Plate', slot: 'armor', acBonus: 5, critImmune: true, desc: 'Crits against you become normal hits.' },
+  { name: 'Armor of Invulnerability', slot: 'armor', acBonus: 8, critImmune: true, grantResist: ['slashing', 'piercing', 'bludgeoning'], desc: 'Plate; resist nonmagical physical damage; crits become normal hits.' },
+  { name: 'Demon Armor', slot: 'armor', acBonus: 9, desc: '+1 plate; unarmed strikes deal 1d8 slashing and count as magical (cursed).' },
 
   // ─────────── RINGS ───────────
   { name: 'Ring of Protection', slot: 'wearable', acBonus: 1, saveBonus: 1, desc: '+1 AC and +1 to all saving throws.' },
