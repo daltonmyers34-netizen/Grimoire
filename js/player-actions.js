@@ -68,6 +68,8 @@ function ensureTurnUsed(c) {
 function attacksPerActionFor(c) {
   var pc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === c.name; });
   if (pc && (pc.features || []).indexOf('Extra Attack') >= 0) return 2;
+  // An item can grant Extra Attack (e.g. a Scimitar of Speed's flavor, homebrew gear)
+  if (pc && typeof equipmentMods === 'function' && equipmentMods(pc).extraAttack) return 2;
   if (c.multiattack > 1) return c.multiattack;
   return 1;
 }
@@ -271,6 +273,29 @@ function applyHpDamage(target, taken, opts) {
   return { realTaken: prevHp - target.hp, absorbed: absorbed, notes: notes };
 }
 
+// Apply a list of rider-damage entries ({dice, type, label?, onCrit?}) to a target
+// that was just hit. Each entry is typed and passes through the target's defenses
+// independently, then applied as riderDamage (won't itself trigger downed auto-fails).
+// Weapon dice double on a crit; a trailing flat "+N" is not doubled.
+function applyRiderDamage(target, riders, result) {
+  if (!riders || !riders.length || typeof rollDiceExpr !== 'function') return;
+  riders.forEach(function(rd) {
+    if (!rd || !rd.dice) return;
+    if (rd.onCrit && !result.crit) return;
+    var rt = rollDiceExpr(rd.dice).total;
+    if (result.crit) rt += rollDiceExpr(String(rd.dice).replace(/[+-]\s*\d+$/, '')).total;
+    var rtype = rd.type || '';
+    var rdef = applyDamageWithDefenses(target, rt, rtype);
+    var prev = target.hp;
+    var rdd = applyHpDamage(target, rdef.taken, { riderDamage: true, crit: result.crit });
+    if (typeof checkConcentration === 'function' && rdef.taken > 0) checkConcentration(target, rdef.taken);
+    result.riderTotal = (result.riderTotal || 0) + rdef.taken;
+    result.notes.push('☠ +' + rdef.taken + (rtype ? ' ' + rtype : '') + (rd.label ? ' (' + rd.label + ')' : '') + ' rider' + (prev !== target.hp ? '' : ''));
+    if (rdef.notes && rdef.notes.length) result.notes = result.notes.concat(rdef.notes);
+    if (rdd.notes && rdd.notes.length) result.notes = result.notes.concat(rdd.notes);
+  });
+}
+
 // Temp HP grant — doesn't stack, you keep the higher pool (5e RAW).
 function grantTempHp(target, amount) {
   amount = Math.max(0, parseInt(amount) || 0);
@@ -303,6 +328,9 @@ function effectiveMaxHp(c) {
 
 function combatantSpeedFt(c, baseFt) {
   var speed = baseFt || 30;
+  // Boots of Speed, winged boots, etc. add to base before conditions scale it.
+  var spc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === c.name; });
+  if (spc && typeof equipmentMods === 'function') speed += equipmentMods(spc).speed || 0;
   var conds = c.conditions || [];
   for (var i = 0; i < conds.length; i++) {
     var eff = CONDITION_EFFECTS[conds[i]];
@@ -373,6 +401,7 @@ function saveBonusFor(combatant, ability) {
       bonus += typeof getProfBonus === 'function' ? getProfBonus(pc.level || 1) : 2;
     }
   }
+  if (pc && typeof equipmentMods === 'function') bonus += equipmentMods(pc).save || 0; // Cloak/Ring of Protection etc.
   (combatant.conditions || []).forEach(function(cn) {
     var eff = CONDITION_EFFECTS[cn];
     if (!eff) return;
@@ -413,12 +442,17 @@ function resolveSaveOutcome(c, ability, dc, roll, meta) {
     if (passed) {
       logCombat('✓ ' + c.name + ' saves' + (meta.condition ? ' vs ' + meta.condition : '') + ' (' + total + ' vs DC ' + dc + ')', 'info');
       showToast('✓ ' + c.name + ' saves!', 'info');
+    } else if (meta.condition && (c.conditionImmune || []).indexOf(meta.condition) >= 0) {
+      // Item/monster grants immunity to this very condition — the save failure is moot
+      logCombat('🛡 ' + c.name + ' fails but is immune to ' + meta.condition + ' — no effect', 'info');
+      showToast('🛡 ' + c.name + ' is immune to ' + meta.condition, 'info');
     } else if (meta.condition) {
       c.conditions = c.conditions || [];
       if (c.conditions.indexOf(meta.condition) < 0) c.conditions.push(meta.condition);
       c.condMeta = c.condMeta || {};
       c.condMeta[meta.condition] = { saveAbility: ability, saveDC: dc };
-      logCombat('⚡ ' + c.name + ' FAILS (' + total + ' vs DC ' + dc + ') — now ' + meta.condition, 'damage');
+      if (meta.duration) c.condMeta[meta.condition].rounds = parseInt(meta.duration) || 0; // ticks down in endTurnProcessing
+      logCombat('⚡ ' + c.name + ' FAILS (' + total + ' vs DC ' + dc + ') — now ' + meta.condition + (meta.duration ? ' (' + meta.duration + 'r)' : ''), 'damage');
       showToast('⚡ ' + c.name + ' is ' + meta.condition + '!', 'danger');
     } else {
       logCombat('✗ ' + c.name + ' fails the save (' + total + ' vs DC ' + dc + ')', 'damage');
@@ -626,7 +660,8 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
     if (condMod) { bonus += condMod; result.notes.push((condMod > 0 ? '+' : '') + condMod + ' ' + ((attacker.conditions || []).indexOf('Blessed') >= 0 ? 'blessed' : 'baned')); }
     var total = roll + bonus;
     var effAC = (target.ac || 10) + conditionACMod(target);
-    var crit = roll === 20 || (ctx.autoCrit && total >= effAC);
+    var critMin = parseInt(a.critRange) || 20; // magic weapons can crit on 19-20 etc.
+    var crit = roll >= critMin || (ctx.autoCrit && total >= effAC);
     var hit = roll === 20 ? true : roll === 1 ? false : total >= effAC;
     result.roll = roll; result.bonus = bonus; result.total = total;
     result.targetAC = effAC; result.hit = hit; result.crit = hit && crit;
@@ -680,15 +715,30 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
       result.notes = result.notes.concat(dd.notes);
       if (typeof checkConcentration === 'function' && def.taken > 0) checkConcentration(target, def.taken);
 
+      // Rider damage: extra dice of another type on every hit (e.g. a Flame Tongue's
+      // 2d6 fire, the poison hatchet's 2d10 poison). Each rider is typed separately so
+      // the target's own resistances/immunities apply per type. Weapon dice double on
+      // a crit (5e RAW); the flat part does not. A rider flagged onCrit only lands on crits.
+      applyRiderDamage(target, a.riderDamage, result);
+      // Vs-type bonus (e.g. +2d6 vs undead) — needs the target tagged with a creatureType.
+      if (a.vsType && target.creatureType) {
+        var vk = String(target.creatureType).toLowerCase();
+        var vExpr = a.vsType[vk] || a.vsType[vk + 's'] || a.vsType.all;
+        if (vExpr) applyRiderDamage(target, [{ dice: vExpr, type: (a.damageType || 'slashing'), label: 'vs ' + vk }], result);
+      }
+
       // Condition rider: on-hit save-or-suffer
       if (a.applyCondition && CONDITION_EFFECTS[a.applyCondition] !== undefined) {
         if (a.saveAbility && a.saveDC) {
           // Player targets roll on their own phone; monsters roll at the table
           result.notes.push(target.name + ' must make a DC ' + a.saveDC + ' ' + a.saveAbility.toUpperCase() + ' save or be ' + a.applyCondition);
-          promptSave(target, a.saveAbility, a.saveDC, { kind: 'apply', condition: a.applyCondition, source: a.name });
+          promptSave(target, a.saveAbility, a.saveDC, { kind: 'apply', condition: a.applyCondition, source: a.name, duration: a.saveDuration });
+        } else if ((target.conditionImmune || []).indexOf(a.applyCondition) >= 0) {
+          result.notes.push(target.name + ' is immune to ' + a.applyCondition);
         } else {
           target.conditions = target.conditions || [];
           if (target.conditions.indexOf(a.applyCondition) < 0) target.conditions.push(a.applyCondition);
+          if (a.saveDuration) { target.condMeta = target.condMeta || {}; target.condMeta[a.applyCondition] = Object.assign({}, target.condMeta && target.condMeta[a.applyCondition], { rounds: parseInt(a.saveDuration) || 0 }); }
           result.appliedCondition = a.applyCondition;
           result.notes.push(target.name + ' is now ' + a.applyCondition + '!');
         }
@@ -1653,7 +1703,9 @@ function migratePartyWeapons() {
 }
 
 // An equipped weapon becomes an attack action automatically:
-// to-hit = ability mod + proficiency (+ magic), damage = dice + ability mod (+ magic)
+// to-hit = ability mod + proficiency + magic + weapon/equip bonuses
+// damage = dice + ability mod + magic + weapon/equip flat bonuses
+// plus rider damage, on-hit saves, crit range, and vs-type bonuses passed through.
 function weaponToAction(pc, item, offHand) {
   hydrateWeaponStats(item); // ensure a "+1 Longsword" carries 1d8 + its magic bonus
   var strMod = Math.floor((effectiveAbility(pc, 'str') - 10) / 2);
@@ -1662,21 +1714,44 @@ function weaponToAction(pc, item, offHand) {
   var abilityMod = isRanged ? dexMod : Math.max(strMod, dexMod); // melee uses best (finesse-friendly)
   var prof = typeof getProfBonus === 'function' ? getProfBonus(pc.level || 1) : 2;
   var magic = weaponMagicBonus(item); // +X adds to attack AND damage
+  var equip = typeof equipmentMods === 'function' ? equipmentMods(pc) : { attack: 0, damage: 0, critRange: 20 };
   // Two-weapon fighting: the off-hand attack is a bonus action and adds NO
   // ability modifier to its damage unless you have the Two-Weapon Fighting style.
   var dmgMod = abilityMod;
   if (offHand && (pc.features || []).indexOf('Two-Weapon Fighting') < 0 && dmgMod > 0) dmgMod = 0;
-  var flat = dmgMod + magic; // magic bonus is added on every hit (not multiplied on crit)
-  return {
+  // Flat damage = ability + magic + this weapon's own +damage + any all-weapon bonus.
+  var flat = dmgMod + magic + (parseInt(item.damageBonus) || 0) + (equip.damage || 0);
+  var toHit = abilityMod + prof + magic + (parseInt(item.toHitBonus) || 0) + (equip.attack || 0);
+  var critRange = Math.min(item.critRange || 20, equip.critRange || 20);
+  var act = {
     name: item.name + (offHand ? ' (off-hand)' : ''),
     kind: 'attack',
     range: item.range || 5,
-    bonus: abilityMod + prof + magic,
+    bonus: toHit,
     dice: (item.dice || '1d6') + (flat !== 0 ? (flat > 0 ? '+' : '') + flat : ''),
     damageType: item.damageType || inferDamageType(item.name),
     cost: offHand ? 'bonus' : undefined,
     fromItem: true
   };
+  applyWeaponRiders(act, item, critRange);
+  return act;
+}
+
+// Copy an item's on-hit effects onto the attack action it produces, so both the
+// DM engine and the player-view request carry them into resolveCombatAction.
+function applyWeaponRiders(act, item, critRange) {
+  if (critRange && critRange < 20) act.critRange = critRange;
+  if (item.riderDamage && item.riderDamage.length) act.riderDamage = item.riderDamage.slice();
+  if (item.vsType) act.vsType = item.vsType;
+  var oh = item.onHitSave;
+  if (oh && oh.ability && oh.dc && oh.condition) {
+    act.applyCondition = oh.condition;
+    act.saveAbility = oh.ability;
+    act.saveDC = oh.dc;
+    if (oh.duration) act.saveDuration = oh.duration;
+    if (oh.onSaveHalf) act.saveHalf = true;
+  }
+  return act;
 }
 
 // Full action list: manual sheet actions + equipped weapons
@@ -2206,7 +2281,12 @@ function dmRollApply() {
 // CUSTOM ITEM EFFECTS — anything you invent pulls into the stats
 // ============================================================
 function equipmentMods(pc) {
-  var out = { ac: 0, speed: 0, stats: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 }, resist: [], immune: [], vuln: [], actions: [] };
+  var out = {
+    ac: 0, speed: 0, stats: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
+    resist: [], immune: [], vuln: [], conditionImmune: [], actions: [],
+    // combat-wide bonuses (apply to ALL attacks/saves, e.g. a Ring of Protection)
+    attack: 0, damage: 0, save: 0, skills: {}, critRange: 20, extraAttack: false
+  };
   (pc.inventory || []).forEach(function(it) {
     if (!it.equipped) return;
     if (it.acBonus) out.ac += it.acBonus;
@@ -2215,7 +2295,25 @@ function equipmentMods(pc) {
     (it.grantResist || []).forEach(function(t) { if (out.resist.indexOf(t) < 0) out.resist.push(t); });
     (it.grantImmune || []).forEach(function(t) { if (out.immune.indexOf(t) < 0) out.immune.push(t); });
     (it.grantVuln || []).forEach(function(t) { if (out.vuln.indexOf(t) < 0) out.vuln.push(t); });
-    if (it.grantAction && it.grantAction.name) out.actions.push(Object.assign({ fromItem: true }, it.grantAction));
+    (it.conditionImmune || []).forEach(function(t) { if (out.conditionImmune.indexOf(t) < 0) out.conditionImmune.push(t); });
+    // Combat-wide bonuses only apply to weapon attacks when the item ISN'T itself a
+    // weapon (a Ring of Protection buffs every attack; a sword's own +damage rides
+    // only that sword and is handled in weaponToAction).
+    if (it.slot !== 'weapon') {
+      if (it.allAttackBonus) out.attack += it.allAttackBonus;
+      if (it.allDamageBonus) out.damage += it.allDamageBonus;
+    }
+    if (it.saveBonus) out.save += it.saveBonus;
+    if (it.skillBonus) Object.keys(it.skillBonus).forEach(function(k) { out.skills[k] = (out.skills[k] || 0) + it.skillBonus[k]; });
+    if (it.critRange && it.critRange < out.critRange) out.critRange = it.critRange;
+    if (it.grantsExtraAttack) out.extraAttack = true;
+    if (it.grantAction && it.grantAction.name) out.actions.push(Object.assign({ fromItem: true, sourceItemId: it.id }, it.grantAction));
+    if (it.grantSpell && it.grantSpell.name) {
+      out.actions.push({ fromItem: true, sourceItemId: it.id, name: it.grantSpell.name + ' (item)',
+        kind: it.grantSpell.kind || 'attack', dice: it.grantSpell.dice || '', range: it.grantSpell.range || 60,
+        damageType: it.grantSpell.damageType || '', saveAbility: it.grantSpell.saveAbility, saveDC: it.grantSpell.saveDC,
+        applyCondition: it.grantSpell.condition, fromSpellItem: true });
+    }
   });
   return out;
 }
@@ -2244,6 +2342,7 @@ function recomputePcCombat(pc) {
   c.resist = merge(pc.resist, mods.resist);
   c.immune = merge(pc.immune, mods.immune);
   c.vuln = merge(pc.vuln, mods.vuln);
+  c.conditionImmune = merge(pc.conditionImmune, mods.conditionImmune);
 }
 
 // ============================================================

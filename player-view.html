@@ -870,8 +870,24 @@ function pvWeaponMagic(it) {
   const m = String((it && it.name) || '').match(/\+\s*([1-9])\b/);
   return m ? parseInt(m[1], 10) : 0;
 }
+// Combat-wide bonuses from equipped NON-weapon gear (Ring of Protection, etc.).
+// Mirrors equipmentMods() on the DM side; keeps the sent action in sync.
+function pvEquipMods(pc) {
+  const out = { attack: 0, damage: 0, critRange: 20, extraAttack: false };
+  (pc.inventory || []).forEach(it => {
+    if (!it.equipped) return;
+    if (it.slot !== 'weapon') {
+      if (it.allAttackBonus) out.attack += it.allAttackBonus;
+      if (it.allDamageBonus) out.damage += it.allDamageBonus;
+    }
+    if (it.critRange && it.critRange < out.critRange) out.critRange = it.critRange;
+    if (it.grantsExtraAttack) out.extraAttack = true;
+  });
+  return out;
+}
 function pvEffectiveActions(pc) {
   const acts = (pc.actions || []).slice();
+  const eq = pvEquipMods(pc);
   (pc.inventory || []).forEach(it => {
     if (!it.equipped || it.slot !== 'weapon' || !it.dice) return;
     if (acts.some(a => a.name.toLowerCase() === it.name.toLowerCase())) return;
@@ -879,13 +895,25 @@ function pvEffectiveActions(pc) {
     const isRanged = (it.range || 5) > 20;
     const am = isRanged ? dexMod : Math.max(strMod, dexMod);
     const magic = pvWeaponMagic(it);
-    const flat = am + magic;
-    acts.push({
+    const flat = am + magic + (parseInt(it.damageBonus) || 0) + eq.damage;
+    const toHit = am + profBonus(pc.level || 1) + magic + (parseInt(it.toHitBonus) || 0) + eq.attack;
+    const critRange = Math.min(it.critRange || 20, eq.critRange || 20);
+    const act = {
       name: it.name, kind: 'attack', range: it.range || 5,
-      bonus: am + profBonus(pc.level || 1) + magic,
+      bonus: toHit,
       dice: (it.dice || '1d6') + (flat !== 0 ? (flat > 0 ? '+' : '') + flat : ''),
       damageType: it.damageType || '', fromItem: true
-    });
+    };
+    // Pass on-hit effects through so resolveCombatAction (DM side) applies them.
+    if (critRange < 20) act.critRange = critRange;
+    if (it.riderDamage && it.riderDamage.length) act.riderDamage = it.riderDamage.slice();
+    if (it.vsType) act.vsType = it.vsType;
+    const oh = it.onHitSave;
+    if (oh && oh.ability && oh.dc && oh.condition) {
+      act.applyCondition = oh.condition; act.saveAbility = oh.ability; act.saveDC = oh.dc;
+      if (oh.duration) act.saveDuration = oh.duration;
+    }
+    acts.push(act);
   });
   return acts;
 }
@@ -2479,8 +2507,14 @@ function renderInventoryTab(d) {
 
   const itemRow = (it) => {
     const extra = [];
-    if (it.dice) extra.push(it.dice + (it.damageType ? ' ' + it.damageType : ''));
+    if (it.dice) extra.push((it.magicBonus ? '+' + it.magicBonus + ' ' : '') + it.dice + (it.damageType ? ' ' + it.damageType : ''));
+    (it.riderDamage || []).forEach(rd => extra.push('☠ +' + rd.dice + (rd.type ? ' ' + rd.type : '')));
+    if (it.onHitSave && it.onHitSave.condition) extra.push('save or ' + it.onHitSave.condition);
+    if (it.critRange && it.critRange < 20) extra.push('crit ' + it.critRange + '+');
     if (it.acBonus) extra.push('+' + it.acBonus + ' AC');
+    if (it.saveBonus) extra.push('+' + it.saveBonus + ' saves');
+    if (it.statBonuses) Object.keys(it.statBonuses).forEach(k => { if (it.statBonuses[k]) extra.push('+' + it.statBonuses[k] + ' ' + k.toUpperCase()); });
+    if (it.grantResist && it.grantResist.length) extra.push('resist ' + it.grantResist.join('/'));
     if (it.speedBonus) extra.push('+' + it.speedBonus + ' ft');
     if (it.lightFt) extra.push('💡 ' + it.lightFt + ' ft');
     if (it.healDice) extra.push('heals ' + it.healDice);
