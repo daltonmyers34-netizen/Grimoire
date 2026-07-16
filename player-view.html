@@ -863,6 +863,13 @@ function pvAttackContext(attacker, target, action) {
 }
 
 // Equipped weapons become attack actions (mirror of the DM engine)
+// A +1/+2/+3 magic weapon adds its bonus to BOTH the attack roll and damage.
+// Prefer the DM-synced item.magicBonus; fall back to parsing "+N" from the name.
+function pvWeaponMagic(it) {
+  if (it && typeof it.magicBonus === 'number') return it.magicBonus;
+  const m = String((it && it.name) || '').match(/\+\s*([1-9])\b/);
+  return m ? parseInt(m[1], 10) : 0;
+}
 function pvEffectiveActions(pc) {
   const acts = (pc.actions || []).slice();
   (pc.inventory || []).forEach(it => {
@@ -871,10 +878,12 @@ function pvEffectiveActions(pc) {
     const strMod = mod(pc.str || 10), dexMod = mod(pc.dex || 10);
     const isRanged = (it.range || 5) > 20;
     const am = isRanged ? dexMod : Math.max(strMod, dexMod);
+    const magic = pvWeaponMagic(it);
+    const flat = am + magic;
     acts.push({
       name: it.name, kind: 'attack', range: it.range || 5,
-      bonus: am + profBonus(pc.level || 1),
-      dice: (it.dice || '1d6') + (am !== 0 ? (am > 0 ? '+' : '') + am : ''),
+      bonus: am + profBonus(pc.level || 1) + magic,
+      dice: (it.dice || '1d6') + (flat !== 0 ? (flat > 0 ? '+' : '') + flat : ''),
       damageType: it.damageType || '', fromItem: true
     });
   });

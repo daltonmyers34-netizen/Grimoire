@@ -952,9 +952,9 @@ function addInventoryItem(pcId) {
     if (preset.damageType) item.damageType = preset.damageType;
     if (preset.lightFt) item.lightFt = preset.lightFt;
   } else if (slot === 'weapon') {
-    item.dice = '1d6';
-    item.range = 5;
-    item.damageType = typeof inferDamageType === 'function' ? (inferDamageType(name) || 'bludgeoning') : 'bludgeoning';
+    // Resolve base dice + magic +X from the name (e.g. "+1 Longsword" → 1d8, +1)
+    if (typeof hydrateWeaponStats === 'function') hydrateWeaponStats(item);
+    else { item.dice = '1d6'; item.range = 5; item.damageType = typeof inferDamageType === 'function' ? (inferDamageType(name) || 'bludgeoning') : 'bludgeoning'; }
   } else if (slot === 'shield') {
     item.acBonus = 2;
   } else if (slot === 'light') {

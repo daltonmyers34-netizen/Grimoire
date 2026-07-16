@@ -1540,6 +1540,57 @@ function itemPresetFor(name) {
   return ITEM_PRESETS[String(name || '').trim().toLowerCase()] || null;
 }
 
+// ── Magic weapons (+1/+2/+3) ─────────────────────────────────
+// A magic weapon's bonus adds to BOTH the attack roll and the damage roll
+// (5e: "you have a +X bonus to attack and damage rolls made with this weapon").
+// We read it from an explicit item.magicBonus (a DM can set any value) or parse
+// a "+1".."+3" token from the item's name, so it works for loot, grants, and
+// hand-typed items alike.
+function weaponMagicBonus(item) {
+  if (item && typeof item.magicBonus === 'number') return item.magicBonus;
+  var m = String((item && item.name) || '').match(/\+\s*([1-9])\b/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+// Find the base-weapon preset behind a name, tolerating magic prefixes/suffixes
+// so "+1 Longsword", "Longsword +2", and "Flame Tongue Longsword" all resolve to
+// the longsword's dice/range/damage type. Longest key first so "shortsword" wins
+// over any shorter partial.
+var WEAPON_PRESET_KEYS = null;
+function baseWeaponPreset(name) {
+  var n = String(name || '').toLowerCase().replace(/[+-]\s*\d+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (ITEM_PRESETS[n] && ITEM_PRESETS[n].slot === 'weapon') return ITEM_PRESETS[n];
+  if (!WEAPON_PRESET_KEYS) {
+    WEAPON_PRESET_KEYS = Object.keys(ITEM_PRESETS)
+      .filter(function(k) { return ITEM_PRESETS[k].slot === 'weapon'; })
+      .sort(function(a, b) { return b.length - a.length; });
+  }
+  for (var i = 0; i < WEAPON_PRESET_KEYS.length; i++) {
+    if (n.indexOf(WEAPON_PRESET_KEYS[i]) >= 0) return ITEM_PRESETS[WEAPON_PRESET_KEYS[i]];
+  }
+  return null;
+}
+
+// Fill in a weapon item's combat stats (dice/range/damageType/magicBonus) from
+// its name without clobbering values a DM set by hand. Idempotent — safe to call
+// on every equip/recompute. Ensures the +X and the correct base dice reach the
+// player-view snapshot too (player-view reads item.dice / item.magicBonus).
+function hydrateWeaponStats(item) {
+  if (!item || item.slot !== 'weapon') return item;
+  var preset = baseWeaponPreset(item.name);
+  if (preset) {
+    if (!item.dice) item.dice = preset.dice;
+    if (item.range == null) item.range = preset.range;
+    if (!item.damageType) item.damageType = preset.damageType;
+  }
+  if (!item.dice) item.dice = '1d6';
+  if (item.range == null) item.range = 5;
+  if (!item.damageType) item.damageType = (typeof inferDamageType === 'function' ? inferDamageType(item.name) : '') || 'bludgeoning';
+  var b = weaponMagicBonus(item);
+  if (b && item.magicBonus == null) item.magicBonus = b;
+  return item;
+}
+
 // Guess a slot from an item's name so loot/grants arrive in the right category
 // Any name that maps to a body slot in bodySlotFor should also be caught here
 var WEARABLE_NAME_RE = /cloak|cape|mantle|shawl|\bring\b|amulet|necklace|pendant|periapt|medallion|torc|scarab|brooch|talisman|locket|choker|collar|goggles|lenses|spectacles|eyepatch|monocle|helm|helmet|crown|circlet|diadem|tiara|coronet|headband|hood|mask|\bhat\b|\bcap\b|veil|mitre|bracers|bracer|bracelet|bangle|vambrace|armlet|wristband|wristguard|gloves|glove|gauntlet|mittens|robe|tunic|shirt|vestment|\bvest\b|doublet|jerkin|blouse|chemise|surcoat|tabard|belt|girdle|sash|waistband|pants|trousers|leggings|legging|breeches|\bkilt\b|skirt|greaves|legguards|chausses|culottes|boots|\bboot\b|shoes|sandals|slippers|footwraps/i;
@@ -1587,23 +1638,26 @@ function effectiveAC(pc) {
 }
 
 // An equipped weapon becomes an attack action automatically:
-// to-hit = ability mod + proficiency, damage = dice + ability mod
+// to-hit = ability mod + proficiency (+ magic), damage = dice + ability mod (+ magic)
 function weaponToAction(pc, item, offHand) {
+  hydrateWeaponStats(item); // ensure a "+1 Longsword" carries 1d8 + its magic bonus
   var strMod = Math.floor((effectiveAbility(pc, 'str') - 10) / 2);
   var dexMod = Math.floor((effectiveAbility(pc, 'dex') - 10) / 2);
   var isRanged = (item.range || 5) > 20;
   var abilityMod = isRanged ? dexMod : Math.max(strMod, dexMod); // melee uses best (finesse-friendly)
   var prof = typeof getProfBonus === 'function' ? getProfBonus(pc.level || 1) : 2;
+  var magic = weaponMagicBonus(item); // +X adds to attack AND damage
   // Two-weapon fighting: the off-hand attack is a bonus action and adds NO
   // ability modifier to its damage unless you have the Two-Weapon Fighting style.
   var dmgMod = abilityMod;
   if (offHand && (pc.features || []).indexOf('Two-Weapon Fighting') < 0 && dmgMod > 0) dmgMod = 0;
+  var flat = dmgMod + magic; // magic bonus is added on every hit (not multiplied on crit)
   return {
     name: item.name + (offHand ? ' (off-hand)' : ''),
     kind: 'attack',
     range: item.range || 5,
-    bonus: abilityMod + prof,
-    dice: (item.dice || '1d6') + (dmgMod !== 0 ? (dmgMod > 0 ? '+' : '') + dmgMod : ''),
+    bonus: abilityMod + prof + magic,
+    dice: (item.dice || '1d6') + (flat !== 0 ? (flat > 0 ? '+' : '') + flat : ''),
     damageType: item.damageType || inferDamageType(item.name),
     cost: offHand ? 'bonus' : undefined,
     fromItem: true
@@ -2160,6 +2214,9 @@ function effectiveAbility(pc, ability) {
 
 // Push every equipment effect onto the live combatant
 function recomputePcCombat(pc) {
+  // Keep every weapon's combat stats (base dice + magic +X) current so the
+  // player-view snapshot carries them — runs after any equip/category change.
+  (pc.inventory || []).forEach(function(it) { if (it.slot === 'weapon') hydrateWeaponStats(it); });
   var c = combatants.find(function(x) { return x.name === pc.name && x.type === 'ally'; });
   if (!c) return;
   var mods = equipmentMods(pc);
