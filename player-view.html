@@ -915,6 +915,17 @@ function pvEffectiveActions(pc) {
     }
     acts.push(act);
   });
+  // Item-granted actions/spells (wands, staves, Flame Tongue blast) with charges
+  (pc.inventory || []).forEach(it => {
+    if (!it.equipped) return;
+    const chargeInfo = it.charges ? { sourceItemId: it.id, chargesLeft: (typeof it.charges.left === 'number' ? it.charges.left : it.charges.max), chargesMax: it.charges.max } : { sourceItemId: it.id };
+    const push = (base) => {
+      if (!base || !base.name || acts.some(a => a.name.toLowerCase() === base.name.toLowerCase())) return;
+      acts.push(Object.assign({ fromItem: true }, base, chargeInfo));
+    };
+    if (it.grantAction && it.grantAction.name) push(it.grantAction);
+    if (it.grantSpell && it.grantSpell.name) push({ name: it.grantSpell.name, kind: it.grantSpell.kind || 'attack', dice: it.grantSpell.dice || '', range: it.grantSpell.range || 60, damageType: it.grantSpell.damageType || '', bonus: it.grantSpell.bonus || 0, applyCondition: it.grantSpell.condition, saveAbility: it.grantSpell.saveAbility, saveDC: it.grantSpell.saveDC, saveDuration: it.grantSpell.duration });
+  });
   return acts;
 }
 
@@ -1543,6 +1554,39 @@ function pvSaveSubmit() {
   showWaiting('🎲 You rolled a ' + roll + ' — resolving…');
 }
 window._pvSaveSubmit = pvSaveSubmit;
+
+// ── Ability/skill check prompt — the DM asked you to roll ──
+function showCheckPrompt(pk) {
+  const html = '<div style="text-align:center;font-family:Cinzel,serif;font-size:18px;color:#8fd0ff;margin-bottom:4px;">🎲 ABILITY CHECK</div>' +
+    '<div style="font-size:14px;color:var(--parchment);text-align:center;margin-bottom:6px;"><strong style="color:#8fd0ff;">' + esc(pk.label) + '</strong> · DC ' + pk.dc + '</div>' +
+    '<div style="font-size:12px;color:var(--text-dim);text-align:center;margin-bottom:10px;">Your bonus <strong style="color:#8fd050;">' + (pk.bonus >= 0 ? '+' : '') + pk.bonus + '</strong> is added automatically.</div>' +
+    '<div id="pv-check-face" style="font-size:46px;font-family:Cinzel,serif;text-align:center;color:var(--gold);min-height:56px;line-height:56px;transition:transform 0.08s;">—</div>' +
+    '<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:6px;">' +
+      '<input id="pv-check-roll" type="number" min="1" max="20" placeholder="d20" style="width:84px;font-size:22px;text-align:center;padding:8px;background:rgba(0,0,0,0.4);border:2px solid rgba(120,190,255,0.5);border-radius:8px;color:var(--parchment);">' +
+      '<button class="btn-pv" style="border-color:var(--gold);color:var(--gold-light);" onclick="_pvCheckAuto()">🎲 Auto-roll</button>' +
+    '</div>' +
+    '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:12px;border-color:#8fd0ff;color:#8fd0ff;" onclick="_pvCheckSubmit()">✓ Submit Roll</button>';
+  showOverlay(html);
+}
+function pvCheckAuto() {
+  const face = document.getElementById('pv-check-face');
+  const input = document.getElementById('pv-check-roll');
+  const final = Math.ceil(Math.random() * 20);
+  pvAnimateRoll(face, final, 20, () => { if (input) input.value = final; });
+}
+window._pvCheckAuto = pvCheckAuto;
+function pvCheckSubmit() {
+  const d = latestData;
+  const me = myCombatant(d);
+  const pk = d && d.pendingCheck;
+  if (!me || !pk) return;
+  let roll = parseInt((document.getElementById('pv-check-roll') || {}).value);
+  if (!roll || roll < 1 || roll > 20) roll = Math.ceil(Math.random() * 20);
+  closeOverlay();
+  sendPlayerRequest({ type: 'skillCheck', combatantId: me.id, checkId: pk.id, roll, ts: Date.now() });
+  showWaiting('🎲 You rolled a ' + roll + ' — resolving…');
+}
+window._pvCheckSubmit = pvCheckSubmit;
 
 // ── Damage prompt: your hit landed, roll the weapon dice yourself ──
 function showDamagePrompt(pd) {
@@ -3562,6 +3606,21 @@ if (dmUid) {
       const cardV = document.querySelector('.pv-overlay-card');
       if (cardV && cardV.textContent.includes('SAVING THROW')) closeOverlay();
       window._shownSaveId = null;
+    }
+
+    // 🎲 Ability/skill check — the DM asked this player to roll
+    if (!tableMode && d.pendingCheck && selectedPcId) {
+      const meCk = myCombatant(d);
+      if (meCk && d.pendingCheck.combatantId === meCk.id && String(d.pendingCheck.id) !== String(window._shownCheckId)) {
+        window._shownCheckId = d.pendingCheck.id;
+        pvSound('turn');
+        showCheckPrompt(d.pendingCheck);
+      }
+    }
+    if (!d.pendingCheck && window._shownCheckId) {
+      const cardC = document.querySelector('.pv-overlay-card');
+      if (cardC && cardC.textContent.includes('ABILITY CHECK')) closeOverlay();
+      window._shownCheckId = null;
     }
 
     // 💥 Your attack HIT — roll your own damage

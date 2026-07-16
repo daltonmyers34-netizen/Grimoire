@@ -79,11 +79,12 @@ onHitSave: { ability: "con", dc: 13, condition: "Poisoned", duration: 2 }
 |---|---|---|
 | `acBonus` | number | + AC (armor, shields, rings, cloaks). |
 | `speedBonus` | number (ft) | Added to walking speed. |
-| `statBonuses` | `{str:2}` | Raises ability scores (affects mods, attacks, saves, everything). |
+| `statBonuses` | `{str:2}` | **Adds** to ability scores (affects mods, attacks, saves, everything). |
+| `statSet` | `{str:19}` | **Sets** a score (highest wins) — Gauntlets of Ogre Power (STR 19), Headband of Intellect (INT 19), Belt of Giant Strength (STR 21–29), Amulet of Health (CON 19). |
 | `allAttackBonus` | number | + to-hit on **every** attack (e.g. a Ring of Protection is `acBonus:1` + `saveBonus:1`). |
 | `allDamageBonus` | number | + damage on **every** attack. |
 | `saveBonus` | number | + to **all** saving throws. |
-| `skillBonus` | `{stealth:2}` | + to a skill (shown; adjudicate checks at the table). |
+| `skillBonus` | `{stealth:2}` | + to a skill. **Automated**: folds into the skill value on the sheet and into any check the DM requests (`{all:2}` bonuses every skill). |
 | `grantsExtraAttack` | `true` | Grants a second attack per Action. |
 | `lightFt` | number | Emits light (torch/lantern). |
 
@@ -104,17 +105,29 @@ onHitSave: { ability: "con", dc: 13, condition: "Poisoned", duration: 2 }
 
 ---
 
-## Granted action & charges
+## Granted action, spell & charges
 
-Give an item its own usable attack/blast, optionally limited by charges.
+Give an item its own usable attack/blast/spell, optionally limited by charges.
 
 ```js
 grantAction: { name: "Fireball (staff)", dice: "8d6", range: 150, damageType: "fire", bonus: 0 },
+// or a spell that forces a save:
+grantSpell:  { name: "Fireball (wand)", dice: "8d6", range: 150, damageType: "fire",
+               saveAbility: "dex", saveDC: 15, condition: "", duration: 0 },
 charges: { max: 10, per: "dawn" }   // per: "short" | "long" | "dawn"
 ```
-- The granted action appears in the character's action list while the item is equipped.
-- `charges.left` is shown as 🔋 `left/max` and refills on rest: a **short rest** refills
-  `per:"short"` items; a **long rest** refills everything (short, long, dawn).
+- The granted action/spell appears in the character's action list (DM and phone) while the
+  item is equipped, tagged to its source item.
+- **Charges are automated**: `charges.left` shows as 🔋 `left/max`; each use spends one and the
+  action is **blocked at 0** (the player is told it's out of charges). Refills on rest — a
+  **short rest** refills `per:"short"` items; a **long rest** refills everything (short/long/dawn).
+
+## Asking for ability & skill checks
+
+Hit the **🎲** button on any character's combatant row → pick a skill or raw ability + DC. A
+player rolls on their phone (real d20 or 🎲 auto); a monster rolls in the DM modal. The bonus
+is computed automatically: **ability mod (with item stat bonuses) + proficiency × skill rank
+(none/proficient/expertise) + item `skillBonus`.**
 
 ---
 

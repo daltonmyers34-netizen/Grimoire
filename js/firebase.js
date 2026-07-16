@@ -186,6 +186,7 @@ async function doCloudWrite() {
       pendingReaction: window.pendingReaction || null,
       pendingSmite: window.pendingSmite || null,
       pendingSave: window.pendingSave || null,
+      pendingCheck: window.pendingCheck || null,
       pendingDamage: window.pendingDamage || null,
       shops: (typeof shops !== 'undefined' ? shops : []).filter(function(s) { return s.open; }).map(function(s) { return { id: s.id, name: s.name, npcName: s.npcName, buyback: s.buyback, items: s.items }; }),
       trades: (typeof trades !== 'undefined' ? trades : []).filter(function(t) { return t.status === 'pending' || t.status === 'awaiting-player' || (Date.now() - (t.ts || 0) < 60000); }),
