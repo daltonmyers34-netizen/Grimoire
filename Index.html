@@ -146,7 +146,7 @@
           <option>Rogue</option><option>Sorcerer</option><option>Warlock</option><option>Wizard</option><option>Other</option>
         </select>
       </div>
-      <div class="field-group"><label>Race</label><input id="pc-race" placeholder="Human, Elf, Dwarf..."></div>
+      <div class="field-group"><label>Race</label><input id="pc-race" list="races-datalist" autocomplete="off" placeholder="Human, Elf, Dwarf..."></div>
       <div class="field-group"><label>Level</label><select id="pc-level" onchange="autoFillSpellSlots()">
         <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option><option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="16">16</option><option value="17">17</option><option value="18">18</option><option value="19">19</option><option value="20">20</option>
       </select></div>
@@ -731,8 +731,8 @@
     <div class="panel-title"><span class="ornament">+</span> New NPC</div>
     <div class="grid-2">
       <div class="field-group"><label>Name</label><input id="anpc-name" placeholder="Name"></div>
-      <div class="field-group"><label>Role / Class</label><input id="anpc-role" placeholder="Innkeeper, Assassin, Merchant..."></div>
-      <div class="field-group"><label>Race</label><input id="anpc-race" placeholder="Human, Elf, Dwarf..."></div>
+      <div class="field-group"><label>Role / Class</label><input id="anpc-role" list="roles-datalist" autocomplete="off" placeholder="Innkeeper, Assassin, Merchant..."></div>
+      <div class="field-group"><label>Race</label><input id="anpc-race" list="races-datalist" autocomplete="off" placeholder="Human, Elf, Dwarf..."></div>
       <div class="field-group"><label>Alignment</label>
         <select id="anpc-align">
           <option>Lawful Good</option><option>Neutral Good</option><option>Chaotic Good</option>
@@ -838,7 +838,7 @@
       </div>
       <div class="field-group">
         <label>Quest Giver</label>
-        <input id="quest-giver-input" placeholder="Elder Maeve">
+        <input id="quest-giver-input" list="npc-names-datalist" autocomplete="off" placeholder="Elder Maeve">
       </div>
     </div>
     <div class="field-group" style="margin-bottom:10px;">
@@ -1256,7 +1256,7 @@ Use this space freely during your session. Notes auto-save in your browser."></t
       <!-- Manual add -->
       <div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.07);">
         <div style="font-family:Cinzel,serif;font-size:10px;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:8px;">ADD MANUALLY</div>
-        <input id="loot-manual-input" placeholder="e.g. Bag of Holding, 200gp..."
+        <input id="loot-manual-input" list="all-items-datalist" autocomplete="off" placeholder="e.g. Bag of Holding, 200gp..."
           style="width:100%;padding:7px 10px;margin-bottom:7px;box-sizing:border-box;font-size:13px;background:rgba(0,0,0,0.3);border:1px solid rgba(212,175,55,0.2);border-radius:4px;color:var(--parchment);"
           onkeydown="if(event.key==='Enter') addManualLoot()">
         <button class="btn btn-gold" onclick="addManualLoot()" style="width:100%;padding:7px;">➕ Add to Party Inventory</button>
@@ -1347,7 +1347,7 @@ Use this space freely during your session. Notes auto-save in your browser."></t
         <div class="panel-title" style="margin-bottom:10px;"><span class="ornament">⭐</span> XP Tracker</div>
         <div class="xp-kill-row" style="margin-bottom:10px;">
           <div class="field-group" style="flex:2;margin:0;">
-            <input id="xp-creature" placeholder="Creature killed (e.g. Goblin)">
+            <input id="xp-creature" list="all-monsters-datalist" autocomplete="off" oninput="xpAutofillFromCreature(this.value)" placeholder="Creature killed (e.g. Goblin)">
           </div>
           <div class="field-group" style="width:70px;margin:0;">
             <input id="xp-amount" type="number" placeholder="XP" min="0">
@@ -1616,6 +1616,13 @@ Use this space freely during your session. Notes auto-save in your browser."></t
     <span class="stab-label">Party</span>
   </div>
 </div>
+
+<!-- Autocomplete sources (populated on load by populateGlobalDatalists) -->
+<datalist id="all-items-datalist"></datalist>
+<datalist id="all-monsters-datalist"></datalist>
+<datalist id="npc-names-datalist"></datalist>
+<datalist id="races-datalist"></datalist>
+<datalist id="roles-datalist"></datalist>
 
 <!-- Data files -->
 <script src="js/data/monsters.js"></script>

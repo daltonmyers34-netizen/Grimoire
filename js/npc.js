@@ -113,6 +113,8 @@ function initNPCs() {
 }
 
 function renderNPCs(filter = '') {
+  // keep the NPC-name / roles autocompletes current as NPCs are added/edited
+  if (typeof populateGlobalDatalists === 'function') try { populateGlobalDatalists(); } catch (e) {}
   const grid = document.getElementById('npc-grid');
   const filtered = filter
     ? npcs.filter(n => n.name.toLowerCase().includes(filter) || n.role.toLowerCase().includes(filter) || (n.tags || []).join(' ').toLowerCase().includes(filter) || (n.desc || '').toLowerCase().includes(filter))

@@ -134,7 +134,7 @@ function renderShopsPanel() {
         '</div>';
       }).join('') : '<div style="font-size:11px;color:#555;padding:4px 0;">Empty — add stock below.</div>') +
       '<div style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;">' +
-        '<input id="shop-item-name-' + s.id + '" placeholder="Item (e.g. Potion of Healing)" style="flex:2;min-width:130px;font-size:12px;padding:5px;" onkeypress="if(event.key===\'Enter\')addShopItem(' + s.id + ')">' +
+        '<input id="shop-item-name-' + s.id + '" list="all-items-datalist" autocomplete="off" placeholder="Item (e.g. Potion of Healing)" style="flex:2;min-width:130px;font-size:12px;padding:5px;" onkeypress="if(event.key===\'Enter\')addShopItem(' + s.id + ')">' +
         '<input id="shop-item-price-' + s.id + '" type="number" placeholder="🪙" title="price (auto if blank)" style="width:64px;font-size:12px;padding:5px;">' +
         '<input id="shop-item-qty-' + s.id + '" type="number" placeholder="qty" style="width:52px;font-size:12px;padding:5px;">' +
         '<button class="btn btn-ghost btn-sm" onclick="addShopItem(' + s.id + ')">+ Stock</button>' +
@@ -156,7 +156,7 @@ function dmOpenOffer() {
     '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">Build a sale and push it to a player — it pops on their phone to accept or decline.</div>' +
     '<div class="field-group" style="margin-bottom:8px;"><label class="gi-lbl">To</label><select id="offer-pc">' + party.map(function(p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('') + '</select></div>' +
     '<div style="display:flex;gap:5px;margin-bottom:6px;">' +
-      '<input id="offer-item-name" placeholder="Item to sell" style="flex:1;font-size:13px;padding:6px;" onkeypress="if(event.key===\'Enter\')offerAddItem()">' +
+      '<input id="offer-item-name" list="all-items-datalist" autocomplete="off" placeholder="Item to sell" style="flex:1;font-size:13px;padding:6px;" onkeypress="if(event.key===\'Enter\')offerAddItem()">' +
       '<input id="offer-item-price" type="number" placeholder="🪙" style="width:70px;font-size:13px;padding:6px;">' +
       '<button class="btn btn-ghost btn-sm" onclick="offerAddItem()">+ Add</button>' +
     '</div>' +

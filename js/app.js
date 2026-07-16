@@ -20,6 +20,44 @@ let party = JSON.parse(localStorage.getItem('dm_party') || '[]');
 let strictCombat = localStorage.getItem('dm_strict_combat') === '1';
 // Shared group notepad — players and the DM all read/write it (last write wins).
 let partyNotes = '';
+
+// Canonical lists for autocomplete datalists (single source of truth).
+const RACES = ['Human','Elf','Half-Elf','Dwarf','Halfling','Gnome','Half-Orc','Tiefling','Dragonborn','Aasimar','Goliath','Tabaxi','Firbolg','Kenku','Lizardfolk','Tortle','Genasi','Orc','Goblin','Kobold','Hobgoblin','Bugbear','Warforged','Changeling','Kalashtar','Yuan-ti','Triton','Satyr','Fairy','Owlin','Centaur','Minotaur','Loxodon','Vedalken','Gith','Bullywug','Merfolk','Undead','Construct','Fiend','Celestial','Fey','Beast'];
+const NPC_ROLES = ['Innkeeper','Merchant','Blacksmith','Guard Captain','Noble','Priest','Assassin','Thief','Information Broker','Bartender','Sage','Wizard','Alchemist','Bounty Hunter','Mercenary','Cultist','Bandit Leader','Spy','Healer','Farmer','Sailor','Fence','Crime Boss','Knight','Ranger','Druid','Bard','Cult Leader','Warlord','Diplomat','Scholar','Hermit','Witch','Necromancer','Pirate','Smuggler','Guild Master'];
+
+// Fill the shared <datalist>s from the databases + saved NPCs. Cheap; call on load
+// and whenever the relevant data changes (new NPC, etc.).
+function populateGlobalDatalists() {
+  var fill = function(id, values) {
+    var dl = document.getElementById(id);
+    if (!dl) return;
+    dl.innerHTML = values.filter(Boolean).map(function(v) {
+      return '<option value="' + String(v).replace(/"/g, '&quot;') + '">';
+    }).join('');
+  };
+  var items = (typeof itemNameOptions === 'function') ? itemNameOptions() : [];
+  fill('all-items-datalist', items);
+  fill('all-monsters-datalist', (typeof MONSTER_DB !== 'undefined' ? MONSTER_DB : []).map(function(m) { return m.name; }));
+  fill('npc-names-datalist', (typeof npcs !== 'undefined' ? npcs : []).map(function(n) { return n.name; }));
+  fill('races-datalist', RACES);
+  // roles = canonical list + any custom roles already used on saved NPCs
+  var roles = NPC_ROLES.slice();
+  (typeof npcs !== 'undefined' ? npcs : []).forEach(function(n) { if (n.role && roles.indexOf(n.role) < 0) roles.push(n.role); });
+  fill('roles-datalist', roles);
+}
+
+// Auto-fill the XP amount when a known monster is named in the XP tracker.
+// Monster CRs are strings ("1/4"); the XP table is keyed by number (0.25).
+function xpAutofillFromCreature(name) {
+  if (!name) return;
+  var m = (typeof MONSTER_DB !== 'undefined' ? MONSTER_DB : []).find(function(x) { return x.name.toLowerCase() === String(name).toLowerCase(); });
+  var amtEl = document.getElementById('xp-amount');
+  if (!m || !m.cr || !amtEl || typeof XP_BY_CR === 'undefined') return;
+  var cr = String(m.cr).trim();
+  var crNum = cr.indexOf('/') >= 0 ? (parseFloat(cr.split('/')[0]) / parseFloat(cr.split('/')[1])) : parseFloat(cr);
+  var xp = XP_BY_CR[crNum];
+  if (xp != null) amtEl.value = xp;
+}
 let battlePresets = JSON.parse(localStorage.getItem('dm_presets') || '[]');
 let combatLog = [];
 let diceHistory = [];
@@ -199,6 +237,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // magic-weapon support (covers the localStorage-only boot path, not just cloud/session load).
   try { if (typeof migratePartyWeapons === 'function') migratePartyWeapons(); } catch(e) { console.warn('migratePartyWeapons:', e); }
   try { initNPCs(); } catch(e) { console.warn('initNPCs:', e); }
+  try { populateGlobalDatalists(); } catch(e) { console.warn('datalists:', e); }
   try { if (typeof refreshStrictBtn === 'function') refreshStrictBtn(); } catch(e) {}
   try { renderParty(); } catch(e) { console.warn('renderParty:', e); }
   try { renderPresets(); } catch(e) { console.warn('renderPresets:', e); }
