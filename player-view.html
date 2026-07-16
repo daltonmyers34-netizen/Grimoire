@@ -934,7 +934,21 @@ function pvEffectiveActions(pc) {
 function pvEffectiveAC(pc) {
   let ac = pc.ac || 10;
   (pc.inventory || []).forEach(it => { if (it.equipped && it.acBonus) ac += it.acBonus; });
+  // buffs on the linked combatant (Shield, Mage Armor, Haste…)
+  const cmb = (latestData && (latestData.combatants || []).find(c => c.name === pc.name && c.type === 'ally'));
+  (cmb && cmb.buffs || []).forEach(b => { if (b.effects && b.effects.ac) ac += b.effects.ac; });
   return ac;
+}
+// Ability score including equipped-item bonuses: additive statBonuses stack on the
+// base; a statSet item (Gauntlets of Ogre Power → 19) overrides if higher, then adds.
+function pvEffectiveAbility(pc, key) {
+  let base = pc[key] || 10, add = 0, set = 0;
+  (pc.inventory || []).forEach(it => {
+    if (!it.equipped) return;
+    if (it.statBonuses && it.statBonuses[key]) add += it.statBonuses[key];
+    if (it.statSet && it.statSet[key] && it.statSet[key] > set) set = it.statSet[key];
+  });
+  return Math.max(base, set) + add;
 }
 
 async function sendPlayerRequest(payload) {
@@ -2877,19 +2891,24 @@ function renderCharacterCard(d) {
     html += '</div>';
   }
 
-  // Ability scores
+  // Ability scores — effective (with equipped-item bonuses); base shown when boosted
   html += '<div class="ability-grid">';
   ['STR','DEX','CON','INT','WIS','CHA'].forEach((label, i) => {
     const keys = ['str','dex','con','int','wis','cha'];
-    const val = pc[keys[i]] || 10;
+    const base = pc[keys[i]] || 10;
+    const val = pvEffectiveAbility(pc, keys[i]);
     const m = mod(val);
-    html += '<div class="ability-box">' +
+    const boosted = val !== base;
+    html += '<div class="ability-box"' + (boosted ? ' style="border-color:rgba(120,200,120,0.5);background:rgba(120,200,120,0.06);"' : '') + '>' +
       '<div class="ability-mod">' + fmtMod(m) + '</div>' +
-      '<div class="ability-score">' + val + '</div>' +
+      '<div class="ability-score">' + val + (boosted ? '<span style="font-size:9px;color:#8fd050;"> (' + base + ')</span>' : '') + '</div>' +
       '<div class="ability-label">' + label + '</div>' +
     '</div>';
   });
   html += '</div>';
+  if (((latestData && (latestData.combatants||[]).find(c=>c.name===pc.name&&c.type==='ally')||{}).buffs||[]).length || (pc.inventory||[]).some(it=>it.equipped&&(it.statBonuses||it.statSet||it.acBonus||it.saveBonus))) {
+    html += '<div style="font-size:10px;color:#8fd050;text-align:center;margin-top:4px;">✨ shown with your equipped gear &amp; active buffs</div>';
+  }
 
   // Skills
   const skills = pc.skills || {};
