@@ -612,6 +612,8 @@
   <div style="text-align:center;color:#555;padding:60px 0;font-style:italic;">Connecting to your DM...</div>
 </div>
 
+<!-- Item library (read-only) so loot popups can show what a dropped item does -->
+<script src="js/data/item-library.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore, doc, onSnapshot, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -1054,6 +1056,60 @@ function pvHpDescriptor(c) {
   if (pct > 25) return { label: 'Bloodied', color: '#ff9800' };
   return { label: 'Near Death', color: '#e05050' };
 }
+
+// A short line describing a loot item — pulled from the item library if known.
+function pvLootInfo(name) {
+  const lib = (typeof window !== 'undefined' && window.ITEM_LIBRARY) || [];
+  const t = lib.find(x => x.name.toLowerCase() === String(name).toLowerCase());
+  if (!t) return '';
+  const bits = [];
+  if (t.dice) bits.push((t.magicBonus ? '+' + t.magicBonus + ' ' : '') + t.dice + (t.damageType ? ' ' + t.damageType : ''));
+  (t.riderDamage || []).forEach(rd => bits.push('+' + rd.dice + ' ' + (rd.type || '')));
+  if (t.acBonus) bits.push('+' + t.acBonus + ' AC');
+  if (t.desc) return t.desc;
+  return bits.join(' · ');
+}
+// Tap a fallen enemy → its dropped loot, with what each item does + a Pick up button.
+function showCorpseLoot(corpse, loot) {
+  const me = myCombatant(latestData);
+  let html = '<div style="font-family:Cinzel,serif;font-size:18px;color:#e0c060;margin-bottom:2px;">💀 ' + esc(corpse.name) + '</div>' +
+    '<div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">Fallen — search the body</div>';
+  const items = loot.items || [];
+  let any = false;
+  items.forEach((name, i) => {
+    if ((loot.given || {})[i]) {
+      html += '<div style="padding:8px 10px;border:1px solid rgba(255,255,255,0.06);border-radius:6px;margin-bottom:5px;opacity:0.5;"><span style="font-size:13px;">' + esc(name) + '</span> <span style="font-size:11px;color:#6a6;">— taken by ' + esc((loot.given || {})[i]) + '</span></div>';
+      return;
+    }
+    any = true;
+    const info = pvLootInfo(name);
+    html += '<div style="padding:9px 11px;border:1px solid rgba(212,175,55,0.3);border-radius:6px;margin-bottom:6px;background:rgba(212,175,55,0.05);">' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<div style="flex:1;"><div style="font-size:14px;color:var(--gold-light);">' + esc(name) + '</div>' +
+        (info ? '<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">' + esc(info) + '</div>' : '') + '</div>' +
+        (me ? '<button class="btn-pv" style="font-size:11px;padding:4px 12px;border-color:var(--gold);color:var(--gold-light);" onclick="_pvPickupLoot(\'' + loot.id + '\',' + i + ')">Take</button>' : '') +
+      '</div></div>';
+  });
+  if (loot.gp && !loot.gpGiven) {
+    any = true;
+    html += '<div style="padding:9px 11px;border:1px solid rgba(212,175,55,0.3);border-radius:6px;margin-bottom:6px;background:rgba(212,175,55,0.05);display:flex;align-items:center;gap:8px;">' +
+      '<div style="flex:1;font-size:14px;color:var(--gold-light);">🪙 ' + loot.gp + ' gold</div>' +
+      (me ? '<button class="btn-pv" style="font-size:11px;padding:4px 12px;border-color:var(--gold);color:var(--gold-light);" onclick="_pvPickupLoot(\'' + loot.id + '\',\'gp\')">Take</button>' : '') +
+    '</div>';
+  }
+  if (!any) html += '<div style="color:var(--text-dim);font-style:italic;font-size:13px;">Picked clean.</div>';
+  html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:8px;" onclick="_pvCloseOverlay()">Close</button>';
+  showOverlay(html);
+}
+function pvPickupLoot(lootId, idx) {
+  const d = latestData;
+  const pc = (d.party || []).find(p => String(p.id) === selectedPcId);
+  if (!pc) return;
+  sendPlayerRequest({ type: 'pickupLoot', pcId: pc.id, lootId, idx, ts: Date.now() });
+  closeOverlay();
+  showWaiting('🎒 Picking it up…');
+}
+window._pvPickupLoot = pvPickupLoot;
 
 function showMonsterInfo(c) {
   const knowAll = !!c.allKnown;
@@ -1811,6 +1867,23 @@ function bindMapInteraction() {
     const d = latestData;
     if (!d || !d.mapState) return;
     const m0 = d.mapState;
+    // Tap a fallen enemy → see what it dropped and grab loot (works any time)
+    {
+      const rc = canvas.getBoundingClientRect();
+      const gx = Math.floor((e.clientX - rc.left) * (canvas.width / rc.width) / m0.cell);
+      const gy = Math.floor((e.clientY - rc.top) * (canvas.height / rc.height) / m0.cell);
+      const corpse = (d.combatants || []).find(c => {
+        if (c.type !== 'enemy' || c.hidden || c.hp > 0) return false;
+        const p = (m0.tokens || {})[c.id];
+        return p && p.x === gx && p.y === gy;
+      });
+      if (corpse) {
+        const loot = (d.battlefieldLoot || []).find(l => l.from === corpse.name &&
+          ((l.items || []).some((it, i) => !(l.given || {})[i]) || (l.gp && !l.gpGiven)));
+        if (loot) { showCorpseLoot(corpse, loot); return; }
+        showMonsterInfo(corpse); return; // dead but looted → just the statblock
+      }
+    }
     // Anyone can inspect: tapping an enemy outside your turn shows what you know
     if (!isMyTurn(d)) {
       const rect0 = canvas.getBoundingClientRect();
@@ -3377,6 +3450,15 @@ function drawPlayerMap(d) {
       ctx.fillStyle = '#fff';
       ctx.font = 'bold ' + Math.floor(m.cell * 0.3) + 'px Cinzel, serif';
       ctx.fillText(dead ? '💀' : initials(c.name), cx, cy);
+    }
+    // Loot glint on a fallen enemy that still has something to grab
+    if (dead && c.type === 'enemy') {
+      const hasLoot = (d.battlefieldLoot || []).some(l => l.from === c.name &&
+        ((l.items || []).some((it, i) => !(l.given || {})[i]) || (l.gp && !l.gpGiven)));
+      if (hasLoot) {
+        ctx.font = Math.floor(m.cell * 0.34) + 'px serif';
+        ctx.fillText('💰', cx + r * 0.7, cy - r * 0.7);
+      }
     }
     ctx.font = Math.floor(m.cell * 0.22) + 'px Cinzel, serif';
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
