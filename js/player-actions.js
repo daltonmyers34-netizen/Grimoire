@@ -81,7 +81,7 @@ function maxActionsFor(c) {
     var eff = CONDITION_EFFECTS[cn];
     if (eff && eff.extraAction) max += eff.extraAction;
   });
-  return max;
+  return max + buffMods(c).extraAction; // Haste grants an extra action
 }
 
 function actionAvailable(c, cost) {
@@ -103,7 +103,90 @@ function conditionACMod(c) {
     var eff = CONDITION_EFFECTS[cn];
     if (eff && eff.acMod) m += eff.acMod;
   });
-  return m;
+  return m + buffMods(c).ac;
+}
+
+// ─── Timed buffs ─────────────────────────────────────────────
+// A buff is a named, self-expiring effect (Haste, Bless, Heroism, a potion, a
+// spell) stored on the combatant as { name, rounds, effects }. Buffs feed the same
+// combat math as items/conditions and tick down in endTurnProcessing. Works for
+// players AND monsters (a hasted enemy is just as real).
+var BUFF_LIBRARY = {
+  'Hasted':        { rounds: 10, effects: { ac: 2, extraAction: 1, dexSaveAdv: true },       icon: '💨', desc: '+2 AC, an extra action, advantage on Dex saves' },
+  'Blessed':       { rounds: 10, effects: { attack: 2, save: 2 },                            icon: '✨', desc: '+1d4 (≈+2) to attacks and saves' },
+  'Baned':         { rounds: 10, effects: { attack: -2, save: -2 },                          icon: '💀', desc: '−1d4 (≈−2) to attacks and saves' },
+  'Heroic':        { rounds: 10, effects: { tempHp: 10, conditionImmune: ['Frightened'] },   icon: '🦁', desc: '10 temp HP, immune to Frightened (Heroism)' },
+  'Giant Might':   { rounds: 10, effects: { attack: 2, damage: 4, advStrength: true },        icon: '🪓', desc: 'Giant Strength — bigger hits, mighty Str' },
+  'Raging':        { rounds: 10, effects: { damage: 2, resist: ['slashing','piercing','bludgeoning'] }, icon: '😡', desc: '+2 melee damage, resist physical' },
+  'Shielded':      { rounds: 1,  effects: { ac: 5 },                                          icon: '🛡', desc: '+5 AC until your next turn (Shield spell)' },
+  'Hexed':         { rounds: 10, effects: { extraDamageOnHit: '1d6' },                        icon: '🔮', desc: '+1d6 necrotic on your hits (Hex)' },
+  'Hunter’s Mark': { rounds: 10, effects: { extraDamageOnHit: '1d6' },                        icon: '🎯', desc: '+1d6 on your hits' },
+  'Fire Warded':   { rounds: 10, effects: { resist: ['fire'] },                              icon: '🔥', desc: 'Resistance to fire' },
+  'Cold Warded':   { rounds: 10, effects: { resist: ['cold'] },                              icon: '❄', desc: 'Resistance to cold' },
+  'Mage Armor':    { rounds: 80, effects: { ac: 3 },                                          icon: '🌀', desc: '+3 AC (base 13+Dex, modeled as +3)' },
+  'Hasted (Speed)':{ rounds: 10, effects: { ac: 2, extraAction: 1, speed: 30 },               icon: '⚡', desc: 'Potion of Speed — Haste + fast' },
+  'Invisible':     { rounds: 10, effects: { advAttack: true },                               icon: '👻', desc: 'Unseen — advantage on attacks (until you attack/cast)' },
+  'Flying':        { rounds: 10, effects: { speed: 20 },                                      icon: '🕊', desc: 'Flight (adds speed)' },
+  'Protected':     { rounds: 10, effects: { ac: 1, save: 1 },                                 icon: '🕊', desc: '+1 AC and saves (Shield of Faith / Protection)' }
+};
+
+// Aggregate every active buff on a combatant into flat combat modifiers.
+function buffMods(c) {
+  var out = { ac: 0, attack: 0, damage: 0, save: 0, speed: 0, extraAction: 0, advAttack: false, dexSaveAdv: false, resist: [], conditionImmune: [] };
+  if (!c || !c.buffs) return out;
+  c.buffs.forEach(function(b) {
+    var e = b.effects || {};
+    out.ac += e.ac || 0; out.attack += e.attack || 0; out.damage += e.damage || 0;
+    out.save += e.save || 0; out.speed += e.speed || 0; out.extraAction += e.extraAction || 0;
+    if (e.advAttack) out.advAttack = true;
+    if (e.dexSaveAdv) out.dexSaveAdv = true;
+    (e.resist || []).forEach(function(t) { if (out.resist.indexOf(t) < 0) out.resist.push(t); });
+    (e.conditionImmune || []).forEach(function(t) { if (out.conditionImmune.indexOf(t) < 0) out.conditionImmune.push(t); });
+  });
+  return out;
+}
+// Extra on-hit dice granted by buffs (Hex, Hunter's Mark) — folded in as rider damage.
+function buffOnHitDice(c) {
+  var riders = [];
+  (c && c.buffs || []).forEach(function(b) {
+    if (b.effects && b.effects.extraDamageOnHit) riders.push({ dice: b.effects.extraDamageOnHit, type: b.effects.extraDamageType || 'necrotic', label: b.name });
+  });
+  return riders;
+}
+
+// Apply a buff to a combatant. `key` is a BUFF_LIBRARY name or a full {name,rounds,effects}.
+function applyBuff(c, key, rounds) {
+  if (!c) return;
+  var preset = typeof key === 'string' ? BUFF_LIBRARY[key] : key;
+  var name = typeof key === 'string' ? key : (key && key.name);
+  if (!preset || !name) return;
+  c.buffs = (c.buffs || []).filter(function(b) { return b.name !== name; }); // refresh, don't stack
+  var r = rounds || preset.rounds || 10;
+  c.buffs.push({ id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()), name: name, rounds: r, icon: preset.icon || '✨', effects: preset.effects || {} });
+  if (preset.effects && preset.effects.tempHp) grantTempHp(c, preset.effects.tempHp);
+  if (typeof logCombat === 'function') logCombat('✨ ' + c.name + ' gains ' + name + ' (' + r + ' rounds)', 'heal');
+  if (typeof showToast === 'function') showToast('✨ ' + c.name + ' — ' + name + '!', 'success');
+  if (typeof renderCombatants === 'function') renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+}
+function removeBuff(c, name) {
+  if (!c || !c.buffs) return;
+  c.buffs = c.buffs.filter(function(b) { return b.name !== name; });
+  if (typeof renderCombatants === 'function') renderCombatants();
+  if (window.cloudSave) window.cloudSave();
+}
+// Tick every buff on a combatant down one round; drop the expired ones.
+function tickBuffs(c) {
+  if (!c || !c.buffs || !c.buffs.length) return;
+  c.buffs = c.buffs.filter(function(b) {
+    b.rounds = (b.rounds || 0) - 1;
+    if (b.rounds <= 0) {
+      if (typeof logCombat === 'function') logCombat('⏳ ' + b.name + ' fades from ' + c.name, 'info');
+      if (typeof showToast === 'function') showToast('⏳ ' + c.name + ' — ' + b.name + ' wore off', 'info');
+      return false;
+    }
+    return true;
+  });
 }
 
 // Called when a combatant's turn STARTS: fresh economy, stances that
@@ -128,7 +211,9 @@ function startTurnFor(c) {
 
 // Called when a combatant's turn ENDS: repeat saves + durations (all auto)
 function endTurnProcessing(c) {
-  if (!c || !c.conditions || !c.conditions.length) return;
+  if (!c) return;
+  tickBuffs(c); // timed buffs count down and expire on your turn's end
+  if (!c.conditions || !c.conditions.length) return;
   var meta = c.condMeta || {};
   var saveEntries = [];
   c.conditions.slice().forEach(function(cond) {
@@ -203,6 +288,7 @@ function applyDamageWithDefenses(target, amount, dmgType) {
   var taken = amount;
   var conds = target.conditions || [];
   var resistAll = conds.some(function(c) { return (CONDITION_EFFECTS[c] || {}).resistAll; });
+  var buffResist = buffMods(target).resist; // timed buffs (Fire Warded, Rage...)
   if (dmgType && DAMAGE_TYPES.indexOf(dmgType) >= 0) {
     if ((target.immune || []).indexOf(dmgType) >= 0) {
       notes.push('immune to ' + dmgType + ' — no damage');
@@ -210,7 +296,7 @@ function applyDamageWithDefenses(target, amount, dmgType) {
     }
     var physRes = ['slashing','piercing','bludgeoning'].indexOf(dmgType) >= 0 &&
       conds.some(function(c) { return (CONDITION_EFFECTS[c] || {}).resistPhysical; });
-    if ((target.resist || []).indexOf(dmgType) >= 0 || resistAll || physRes) {
+    if ((target.resist || []).indexOf(dmgType) >= 0 || buffResist.indexOf(dmgType) >= 0 || resistAll || physRes) {
       taken = Math.floor(taken / 2);
       notes.push('halved to ' + taken + ' (' + (resistAll ? 'petrified' : physRes ? 'raging — resists physical' : 'resistant to ' + dmgType) + ')');
     }
@@ -331,6 +417,7 @@ function combatantSpeedFt(c, baseFt) {
   // Boots of Speed, winged boots, etc. add to base before conditions scale it.
   var spc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === c.name; });
   if (spc && typeof equipmentMods === 'function') speed += equipmentMods(spc).speed || 0;
+  speed += buffMods(c).speed || 0; // Haste/Fly/Boots buffs
   var conds = c.conditions || [];
   for (var i = 0; i < conds.length; i++) {
     var eff = CONDITION_EFFECTS[conds[i]];
@@ -368,6 +455,7 @@ function computeAttackContext(attacker, target, action) {
     if (eff.selfDis) { dis = true; notes.push('you are ' + cn.toLowerCase() + ' (disadvantage)'); }
     if (eff.selfAdv) { adv = true; notes.push('you are ' + cn.toLowerCase() + ' (advantage)'); }
   });
+  if (buffMods(attacker).advAttack) { adv = true; notes.push('buffed (advantage)'); }
   if (exhaustionLevel(attacker) >= 3) { dis = true; notes.push('exhaustion ' + exhaustionLevel(attacker) + ' (disadvantage)'); }
   (target.conditions || []).forEach(function(cn) {
     var eff = CONDITION_EFFECTS[cn]; if (!eff) return;
@@ -402,6 +490,7 @@ function saveBonusFor(combatant, ability) {
     }
   }
   if (pc && typeof equipmentMods === 'function') bonus += equipmentMods(pc).save || 0; // Cloak/Ring of Protection etc.
+  bonus += buffMods(combatant).save || 0; // Bless/Bane and other timed buffs
   (combatant.conditions || []).forEach(function(cn) {
     var eff = CONDITION_EFFECTS[cn];
     if (!eff) return;
@@ -442,8 +531,8 @@ function resolveSaveOutcome(c, ability, dc, roll, meta) {
     if (passed) {
       logCombat('✓ ' + c.name + ' saves' + (meta.condition ? ' vs ' + meta.condition : '') + ' (' + total + ' vs DC ' + dc + ')', 'info');
       showToast('✓ ' + c.name + ' saves!', 'info');
-    } else if (meta.condition && (c.conditionImmune || []).indexOf(meta.condition) >= 0) {
-      // Item/monster grants immunity to this very condition — the save failure is moot
+    } else if (meta.condition && ((c.conditionImmune || []).indexOf(meta.condition) >= 0 || buffMods(c).conditionImmune.indexOf(meta.condition) >= 0)) {
+      // Item/monster/buff grants immunity to this very condition — the save failure is moot
       logCombat('🛡 ' + c.name + ' fails but is immune to ' + meta.condition + ' — no effect', 'info');
       showToast('🛡 ' + c.name + ' is immune to ' + meta.condition, 'info');
     } else if (meta.condition) {
@@ -637,14 +726,14 @@ function processPlayerSaveRoll(req) {
   if (window.cloudSaveNow) window.cloudSaveNow();
 }
 
-// Attack roll modifier from conditions (Bless +2, Bane -2)
+// Attack roll modifier from conditions (Bless +2, Bane -2) and timed buffs
 function conditionAttackMod(c) {
   var m = 0;
   (c.conditions || []).forEach(function(cn) {
     var eff = CONDITION_EFFECTS[cn];
     if (eff && eff.attackMod) m += eff.attackMod;
   });
-  return m;
+  return m + buffMods(c).attack;
 }
 
 // A player's request got refused — tell THEIR screen, not just the DM's
@@ -819,6 +908,9 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
           if (bmd) { amount += bmd; result.notes.push('+' + bmd + ' rage damage'); }
         });
       }
+      // Timed-buff flat damage (Giant Strength, Rage buff, etc.)
+      var bDmg = buffMods(attacker).damage;
+      if (bDmg) { amount += bDmg; result.notes.push('+' + bDmg + ' buff damage'); }
       // Sneak Attack: rogues with advantage, automatically, once per turn
       var sneakPc = party.find(function(p) { return p.name === attacker.name && (p.features || []).indexOf('Sneak Attack') >= 0; });
       if (sneakPc && ctx.net > 0 && !ensureTurnUsed(attacker).sneakUsed) {
@@ -845,6 +937,7 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
       // the target's own resistances/immunities apply per type. Weapon dice double on
       // a crit (5e RAW); the flat part does not. A rider flagged onCrit only lands on crits.
       applyRiderDamage(target, a.riderDamage, result);
+      applyRiderDamage(target, buffOnHitDice(attacker), result); // Hex / Hunter's Mark
       // Vs-type bonus (e.g. +2d6 vs undead) — needs the target tagged with a creatureType.
       if (a.vsType && target.creatureType) {
         var vk = String(target.creatureType).toLowerCase();
@@ -2807,17 +2900,21 @@ function processUseItem(req) {
       if (!actionAvailable(c, potCost)) { showToast('🚫 ' + pc.name + ' already used their ' + potCost, 'warn'); rejectPlayer(c, 'Already used your ' + potCost); return; }
       spendActionFor(c, potCost);
     }
-    var heal = rollDiceExpr(item.healDice || '2d4+2');
-    if (drinker) {
+    var healExpr = item.healDice || (item.buff ? null : '2d4+2'); // buff-only potions don't heal
+    var heal = healExpr ? rollDiceExpr(healExpr) : { total: 0 };
+    if (drinker && heal.total) {
       var prev = drinker.hp;
       drinker.hp = Math.min(drinker.maxHp, drinker.hp + heal.total);
       if (prev === 0 && drinker.hp > 0) drinker.conditions = (drinker.conditions || []).filter(function(x) { return x !== 'Unconscious' && x !== 'Stable'; });
       logCombat('🧪 ' + pc.name + (feeding ? ' pours ' + item.name + ' into ' + drinker.name : ' drinks ' + item.name) + ' — heals ' + (drinker.hp - prev) + ' (' + prev + '→' + drinker.hp + ' HP)', 'heal');
       window.lastActionResult = { id: Date.now(), kind: 'heal', attacker: pc.name, target: drinker.name, actionName: item.name, amount: drinker.hp - prev, hit: true, notes: feeding && prev === 0 ? [drinker.name + ' sputters back to consciousness!'] : [], ts: new Date().toISOString() };
-    } else {
-      logCombat('🧪 ' + pc.name + ' drinks ' + item.name + ' (' + heal.total + ' HP — not in combat, DM adjust as needed)', 'heal');
     }
-    showToast('🧪 ' + (feeding ? drinker.name + ' fed ' : pc.name + ' drinks ') + item.name + ' — +' + heal.total, 'success');
+    // Buff potions (Haste, Heroism, Giant Strength, Fire Resistance…)
+    if (item.buff && drinker && typeof applyBuff === 'function') {
+      applyBuff(drinker, item.buff);
+      logCombat('🧪 ' + drinker.name + ' quaffs ' + item.name + ' — ' + item.buff, 'heal');
+    }
+    showToast('🧪 ' + (feeding ? drinker.name + ' fed ' : pc.name + ' drinks ') + item.name + (heal.total ? ' — +' + heal.total : (item.buff ? ' — ' + item.buff : '')), 'success');
   } else {
     showToast('🎒 ' + pc.name + ' uses ' + item.name, 'info');
     logCombat('🎒 ' + pc.name + ' uses ' + item.name, 'info');
