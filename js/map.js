@@ -1017,6 +1017,28 @@ function mapMouseUp() {
         mapDrag = null; mapFogPainting = false; mapNeedsSync = false;
         return;
       }
+      // Strict Rules: obey turn order + speed when the DM runs the map like a player
+      if (typeof strictCombat !== 'undefined' && strictCombat && combatActive) {
+        var mv = combatants.find(function(c) { return c.id === mapDrag.id; });
+        var cur = combatants[currentTurn];
+        var np2 = mapState.tokens[mapDrag.id];
+        if (mv && np2) {
+          var snapBack = function(msg) {
+            mapState.tokens[mapDrag.id] = { x: mapDrag.fromX, y: mapDrag.fromY };
+            renderMap(); showToast(msg, 'warn');
+            mapDrag = null; mapFogPainting = false; mapNeedsSync = false;
+          };
+          var isTheirTurn = cur && (cur.id === mv.id || (mv.owner && cur.name === mv.owner));
+          var dist = (typeof dmDistFt === 'function') ? dmDistFt({ x: mapDrag.fromX, y: mapDrag.fromY }, np2) : 0;
+          var base = (typeof combatantSpeedFt === 'function') ? combatantSpeedFt(mv, parseInt(mv.speed) || 30) : (parseInt(mv.speed) || 30);
+          var tu = mv.turnUsed || (mv.turnUsed = { actions: 0, bonus: false, movedFt: 0 });
+          if (!isTheirTurn) { snapBack('🚫 Not ' + mv.name + '\'s turn — snapped back'); return; }
+          if (base === 0) { snapBack('🚫 ' + mv.name + ' can\'t move right now — snapped back'); return; }
+          if ((tu.movedFt || 0) + dist > base) { snapBack('🚫 ' + mv.name + ' only has ' + Math.max(0, base - (tu.movedFt || 0)) + ' ft left — snapped back'); return; }
+          tu.movedFt = (tu.movedFt || 0) + dist;
+          if (typeof renderCombatants === 'function') renderCombatants();
+        }
+      }
     }
     // Opportunity attacks when the DM drags someone out of melee reach
     if (wasTokenDrag && typeof checkOpportunityAttacks === 'function') {

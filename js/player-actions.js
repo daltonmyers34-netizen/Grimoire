@@ -1360,6 +1360,28 @@ function dmExecuteAction(attackerId, targetId, actionIdx) {
   var modal = document.getElementById('dm-act-modal');
   if (modal) modal.remove();
   if (!a) return;
+  // Strict Rules: run this creature by the book — only on its turn, only in range.
+  if (typeof strictCombat !== 'undefined' && strictCombat && combatActive) {
+    var sAtk = combatants.find(function(x) { return x.id === attackerId; });
+    var sTgt = combatants.find(function(x) { return x.id === targetId; });
+    var sCur = combatants[currentTurn];
+    var sTurn = sCur && sAtk && (sCur.id === sAtk.id || (sAtk.owner && sCur.name === sAtk.owner));
+    if (a.cost !== 'legendary' && a.cost !== 'reaction' && !sTurn) {
+      showToast('🚫 Strict Rules — it\'s not ' + (sAtk ? sAtk.name : 'their') + '\'s turn', 'warn');
+      return;
+    }
+    if (sAtk && sTgt && typeof mapState !== 'undefined' && mapState.tokens) {
+      var sap = mapState.tokens[sAtk.id], stp = mapState.tokens[sTgt.id];
+      if (sap && stp && typeof dmDistFt === 'function') {
+        var sd = dmDistFt(sap, stp);
+        var reach = parseInt(a.range) || 5;
+        if (sd > reach) {
+          showToast('🚫 Out of range — ' + sTgt.name + ' is ' + sd + ' ft away (' + a.name + ' reaches ' + reach + ' ft)', 'warn');
+          return;
+        }
+      }
+    }
+  }
   if (a.kind === 'heal') {
     resolveCombatAction(attackerId, targetId, a, { roll: null, source: 'dm' });
     return;
@@ -2366,6 +2388,11 @@ function processCastSpell(req) {
 function learnFromAttack(target) {
   if (target.type === 'ally') return;
   target._atkRolls = (target._atkRolls || 0) + 1;
+  // Recognizing WHAT a creature is comes quickly once you're in the thick of it.
+  if (!target.typeKnown && (target.creatureType || (typeof inferCreatureType === 'function'))) {
+    if (!target.creatureType && typeof inferCreatureType === 'function') target.creatureType = inferCreatureType(target.name);
+    target.typeKnown = true;
+  }
   if (target._atkRolls >= 2 && !target.acKnown) {
     target.acKnown = true;
     showToast('👁 The party has learned ' + target.name + '\'s AC (' + target.ac + ')', 'info');

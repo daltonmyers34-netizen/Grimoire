@@ -13,6 +13,27 @@ Object.defineProperty(window, 'currentRound', {
 });
 
 // Sync state to cloud/localStorage after any combat change
+// Toggle Strict Rules mode (run enemies by the book: turn-gated, speed-limited moves,
+// range-enforced attacks). Persists across sessions.
+function toggleStrictCombat() {
+  strictCombat = !strictCombat;
+  try { localStorage.setItem('dm_strict_combat', strictCombat ? '1' : '0'); } catch (e) {}
+  refreshStrictBtn();
+  if (typeof renderCombatants === 'function') renderCombatants();
+  if (typeof cvUpdateHeader === 'function') try { cvUpdateHeader(); } catch (e) {}
+  showToast(strictCombat
+    ? '⚔ Strict Rules ON — move by speed, act on your turn, mind your range'
+    : '🎲 Strict Rules OFF — full DM control restored', strictCombat ? 'success' : 'info');
+}
+function refreshStrictBtn() {
+  var btn = document.getElementById('strict-combat-btn');
+  if (!btn) return;
+  btn.textContent = strictCombat ? '⚔ Strict Rules: ON' : '⚔ Strict Rules';
+  btn.style.borderColor = strictCombat ? 'var(--gold)' : '';
+  btn.style.color = strictCombat ? 'var(--gold)' : '';
+  btn.style.background = strictCombat ? 'rgba(212,175,55,0.15)' : '';
+}
+
 function syncCombatState() {
   // Catch-all: make sure every enemy carries a creature type (manual adds, AI-gen,
   // legacy saves) so slayer weapons and type effects always have something to key on.
@@ -824,6 +845,7 @@ function renderDefenseChips() {
 
 function renderRevealRow(c) {
   var opts = [
+    { key: 'typeKnown', label: 'Type',      on: !!c.typeKnown },
     { key: 'acKnown',   label: 'AC',        on: !!c.acKnown },
     { key: 'defsKnown', label: 'Defenses',  on: !!c.defsKnown },
     { key: 'allKnown',  label: 'Everything', on: !!c.allKnown }

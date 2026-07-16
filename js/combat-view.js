@@ -84,9 +84,18 @@ function cvUpdateHeader() {
   if (!combatActive) { el.innerHTML = '<span style="color:var(--text-dim);">Combat not started — hit ▶ Start Combat on the Initiative panel</span>'; return; }
   var cur = combatants[currentTurn];
   var next = combatants.length ? combatants[(currentTurn + 1) % combatants.length] : null;
+  var strictOn = (typeof strictCombat !== 'undefined' && strictCombat);
+  var moveLeft = '';
+  if (strictOn && cur) {
+    var spd = (typeof combatantSpeedFt === 'function') ? combatantSpeedFt(cur, parseInt(cur.speed) || 30) : (parseInt(cur.speed) || 30);
+    var used = (cur.turnUsed && cur.turnUsed.movedFt) || 0;
+    moveLeft = ' <span style="color:#8fd0ff;">· 🏃 ' + Math.max(0, spd - used) + ' ft left</span>';
+  }
   el.innerHTML = 'Round <strong style="color:var(--gold);">' + round + '</strong>' +
     (cur ? ' · Now: <strong style="color:' + (cur.type === 'enemy' ? '#ff9090' : '#8fd050') + ';">' + esc(cur.name) + '</strong> <span style="color:var(--text-dim);">(' + cur.hp + '/' + cur.maxHp + ')</span>' : '') +
-    (next ? ' · Next: ' + esc(next.name) : '');
+    moveLeft +
+    (next ? ' · Next: ' + esc(next.name) : '') +
+    ' <button onclick="toggleStrictCombat()" title="Run monsters like a player: only act on their turn, moves limited to speed, attacks check range" style="margin-left:8px;font-size:10px;padding:2px 9px;border-radius:10px;cursor:pointer;border:1px solid ' + (strictOn ? 'var(--gold)' : 'rgba(255,255,255,0.15)') + ';background:' + (strictOn ? 'rgba(212,175,55,0.18)' : 'rgba(0,0,0,0.25)') + ';color:' + (strictOn ? 'var(--gold)' : '#888') + ';">' + (strictOn ? '⚔ Strict Rules ON' : '🎲 Strict Rules OFF') + '</button>';
   var badge = document.getElementById('cv-loot-badge');
   if (badge) {
     var waiting = battlefieldLoot.reduce(function(n, e) {
