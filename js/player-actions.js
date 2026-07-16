@@ -786,6 +786,7 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
     var effAC = (target.ac || 10) + conditionACMod(target);
     var critMin = parseInt(a.critRange) || 20; // magic weapons can crit on 19-20 etc.
     var crit = roll >= critMin || (ctx.autoCrit && total >= effAC);
+    if (crit && target.critImmune) { crit = false; result.notes.push(target.name + '\'s armor turns the crit into a normal hit'); } // Adamantine
     var hit = roll === 20 ? true : roll === 1 ? false : total >= effAC;
     result.roll = roll; result.bonus = bonus; result.total = total;
     result.targetAC = effAC; result.hit = hit; result.crit = hit && crit;
@@ -1816,6 +1817,32 @@ function effectiveAC(pc) {
   return (pc.ac || 10) + (typeof equipmentMods === 'function' ? equipmentMods(pc).ac : 0);
 }
 
+// Turn an item NAME (loot drop, DM-typed loot, shop stock) into a full inventory
+// item. A name matching a library item inherits ALL its effect fields (so a dropped
+// "Flame Tongue Longsword" keeps its rider damage); otherwise falls back to the
+// weapon/armor presets, then a slot guess. Weapons are hydrated (base dice + magic).
+function resolveItemFromName(name) {
+  var item = {
+    id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()),
+    name: String(name || 'Item'), qty: 1,
+    slot: (typeof inferItemSlot === 'function') ? inferItemSlot(name) : 'gear', equipped: false
+  };
+  var lib = (typeof ITEM_LIBRARY !== 'undefined')
+    ? ITEM_LIBRARY.find(function(t) { return t.name.toLowerCase() === String(name).toLowerCase(); }) : null;
+  if (lib) {
+    Object.keys(lib).forEach(function(k) {
+      if (k === 'desc') { item.desc = lib.desc; return; }
+      item[k] = (lib[k] && typeof lib[k] === 'object') ? JSON.parse(JSON.stringify(lib[k])) : lib[k];
+    });
+    item.name = lib.name;
+  } else {
+    var preset = (typeof itemPresetFor === 'function') ? itemPresetFor(name) : null;
+    if (preset) Object.keys(preset).forEach(function(k) { item[k] = preset[k]; });
+  }
+  if (item.slot === 'weapon' && typeof hydrateWeaponStats === 'function') hydrateWeaponStats(item);
+  return item;
+}
+
 // One-time migration: bring every existing weapon in every character's bag up to
 // date (fill base dice from the name, capture a +N magic bonus) so saves created
 // before magic-weapon support fix themselves on load — no need to re-equip.
@@ -2441,10 +2468,11 @@ function equipmentMods(pc) {
     statSet: {}, // Gauntlets of Ogre Power etc. SET a score (highest wins), not add
     resist: [], immune: [], vuln: [], conditionImmune: [], actions: [],
     // combat-wide bonuses (apply to ALL attacks/saves, e.g. a Ring of Protection)
-    attack: 0, damage: 0, save: 0, skills: {}, critRange: 20, extraAttack: false
+    attack: 0, damage: 0, save: 0, skills: {}, critRange: 20, extraAttack: false, critImmune: false
   };
   (pc.inventory || []).forEach(function(it) {
     if (!it.equipped) return;
+    if (it.critImmune) out.critImmune = true;
     if (it.acBonus) out.ac += it.acBonus;
     if (it.speedBonus) out.speed += it.speedBonus;
     if (it.statBonuses) Object.keys(out.stats).forEach(function(k) { out.stats[k] += it.statBonuses[k] || 0; });
@@ -2503,6 +2531,7 @@ function recomputePcCombat(pc) {
   c.immune = merge(pc.immune, mods.immune);
   c.vuln = merge(pc.vuln, mods.vuln);
   c.conditionImmune = merge(pc.conditionImmune, mods.conditionImmune);
+  c.critImmune = mods.critImmune || pc.critImmune || undefined; // Adamantine armor
 }
 
 // ============================================================
@@ -2540,6 +2569,15 @@ function dmEditActions(combatantId) {
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
       '<span style="font-size:12px;color:var(--text-dim);">⚔⚔ Attacks per Action (multiattack):</span>' +
       '<input id="ae-multi" type="number" min="1" max="6" value="' + (c.multiattack || 1) + '" style="width:56px;font-size:14px;padding:4px;text-align:center;">' +
+    '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+      '<span style="font-size:12px;color:var(--text-dim);">🐲 Creature type:</span>' +
+      '<select id="ae-creaturetype" style="font-size:13px;padding:4px;">' +
+        ['', 'aberration','beast','celestial','construct','dragon','elemental','fey','fiend','giant','humanoid','monstrosity','ooze','plant','undead'].map(function(t) {
+          return '<option value="' + t + '"' + ((c.creatureType || '') === t ? ' selected' : '') + '>' + (t ? t.charAt(0).toUpperCase() + t.slice(1) : '— none —') + '</option>';
+        }).join('') +
+      '</select>' +
+      '<span style="font-size:10px;color:#555;">slayer weapons (vs dragons/giants/undead…) key off this</span>' +
     '</div>' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
       '<span style="font-size:12px;color:var(--text-dim);">⭐ Legendary actions per round:</span>' +
@@ -2617,6 +2655,8 @@ function dmSaveActions(combatantId) {
   c.legendary = legMax > 0 ? { max: legMax, used: (c.legendary && c.legendary.used) || 0 } : undefined;
   var ownerEl = document.getElementById('ae-owner');
   c.owner = (ownerEl && ownerEl.value.trim()) || undefined;
+  var ctEl = document.getElementById('ae-creaturetype');
+  c.creatureType = (ctEl && ctEl.value) || undefined;
   var multiEl = document.getElementById('ae-multi');
   var multi = multiEl ? parseInt(multiEl.value) || 1 : 1;
   c.multiattack = multi > 1 ? multi : undefined;
