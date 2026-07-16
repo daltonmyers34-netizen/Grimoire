@@ -95,7 +95,7 @@ function cvUpdateHeader() {
     (cur ? ' · Now: <strong style="color:' + (cur.type === 'enemy' ? '#ff9090' : '#8fd050') + ';">' + esc(cur.name) + '</strong> <span style="color:var(--text-dim);">(' + cur.hp + '/' + cur.maxHp + ')</span>' : '') +
     moveLeft +
     (next ? ' · Next: ' + esc(next.name) : '') +
-    ' <button onclick="toggleStrictCombat()" title="Run monsters like a player: only act on their turn, moves limited to speed, attacks check range" style="margin-left:8px;font-size:10px;padding:2px 9px;border-radius:10px;cursor:pointer;border:1px solid ' + (strictOn ? 'var(--gold)' : 'rgba(255,255,255,0.15)') + ';background:' + (strictOn ? 'rgba(212,175,55,0.18)' : 'rgba(0,0,0,0.25)') + ';color:' + (strictOn ? 'var(--gold)' : '#888') + ';">' + (strictOn ? '⚔ Strict Rules ON' : '🎲 Strict Rules OFF') + '</button>';
+    ' <button onclick="toggleStrictCombat()" title="Track turn order, movement (by speed) and attack range while you run monsters. When something breaks a rule you get a one-click Overrule prompt — nothing is ever hard-blocked." style="margin-left:8px;font-size:10px;padding:2px 9px;border-radius:10px;cursor:pointer;border:1px solid ' + (strictOn ? 'var(--gold)' : 'rgba(255,255,255,0.15)') + ';background:' + (strictOn ? 'rgba(212,175,55,0.18)' : 'rgba(0,0,0,0.25)') + ';color:' + (strictOn ? 'var(--gold)' : '#888') + ';">' + (strictOn ? '⚔ Rules Assist ON' : '🎲 Rules Assist OFF') + '</button>';
   var badge = document.getElementById('cv-loot-badge');
   if (badge) {
     var waiting = battlefieldLoot.reduce(function(n, e) {
