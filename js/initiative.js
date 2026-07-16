@@ -22,13 +22,13 @@ function toggleStrictCombat() {
   if (typeof renderCombatants === 'function') renderCombatants();
   if (typeof cvUpdateHeader === 'function') try { cvUpdateHeader(); } catch (e) {}
   showToast(strictCombat
-    ? '⚔ Strict Rules ON — move by speed, act on your turn, mind your range'
-    : '🎲 Strict Rules OFF — full DM control restored', strictCombat ? 'success' : 'info');
+    ? '⚔ Rules Assist ON — you\'ll get an Overrule prompt when a move/attack breaks turn, speed, or range'
+    : '🎲 Rules Assist OFF — no prompts, full DM control', strictCombat ? 'success' : 'info');
 }
 function refreshStrictBtn() {
   var btn = document.getElementById('strict-combat-btn');
   if (!btn) return;
-  btn.textContent = strictCombat ? '⚔ Strict Rules: ON' : '⚔ Strict Rules';
+  btn.textContent = strictCombat ? '⚔ Rules Assist: ON' : '⚔ Rules Assist';
   btn.style.borderColor = strictCombat ? 'var(--gold)' : '';
   btn.style.color = strictCombat ? 'var(--gold)' : '';
   btn.style.background = strictCombat ? 'rgba(212,175,55,0.15)' : '';

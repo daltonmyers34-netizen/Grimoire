@@ -1355,19 +1355,42 @@ function dmPickTarget(attackerId, actionIdx) {
   modal.innerHTML = inner;
 }
 
+// A soft rules warning the DM can wave through. onAllow proceeds; onCancel aborts.
+function dmOverrule(message, onAllow, onCancel) {
+  var existing = document.getElementById('dm-overrule-modal'); if (existing) existing.remove();
+  var ov = document.createElement('div');
+  ov.id = 'dm-overrule-modal';
+  ov.className = 'modal-overlay show';
+  ov.style.zIndex = '3200';
+  ov.innerHTML = '<div class="modal" style="max-width:420px;width:92%;text-align:center;">' +
+    '<div style="font-size:34px;margin-bottom:6px;">⚠</div>' +
+    '<div style="font-size:14px;color:var(--parchment);margin-bottom:16px;line-height:1.5;">' + message + '</div>' +
+    '<div style="display:flex;gap:10px;justify-content:center;">' +
+      '<button class="btn btn-gold" id="dm-overrule-yes">✔ Overrule — allow it</button>' +
+      '<button class="btn btn-ghost" id="dm-overrule-no">Cancel</button>' +
+    '</div></div>';
+  document.body.appendChild(ov);
+  var done = function(fn) { ov.remove(); if (typeof fn === 'function') fn(); };
+  document.getElementById('dm-overrule-yes').onclick = function() { done(onAllow); };
+  document.getElementById('dm-overrule-no').onclick = function() { done(onCancel); };
+  ov.addEventListener('click', function(e) { if (e.target === ov) done(onCancel); });
+}
+
 function dmExecuteAction(attackerId, targetId, actionIdx) {
   var a = (window.__dmActActions || [])[actionIdx];
   var modal = document.getElementById('dm-act-modal');
   if (modal) modal.remove();
   if (!a) return;
-  // Strict Rules: run this creature by the book — only on its turn, only in range.
+  var proceed = function() { dmDoAction(attackerId, targetId, a, actionIdx); };
+  // Rules Assist: advise (don't block) when a creature acts off its turn or out of
+  // range — the DM can Overrule with one click.
   if (typeof strictCombat !== 'undefined' && strictCombat && combatActive) {
     var sAtk = combatants.find(function(x) { return x.id === attackerId; });
     var sTgt = combatants.find(function(x) { return x.id === targetId; });
     var sCur = combatants[currentTurn];
     var sTurn = sCur && sAtk && (sCur.id === sAtk.id || (sAtk.owner && sCur.name === sAtk.owner));
     if (a.cost !== 'legendary' && a.cost !== 'reaction' && !sTurn) {
-      showToast('🚫 Strict Rules — it\'s not ' + (sAtk ? sAtk.name : 'their') + '\'s turn', 'warn');
+      dmOverrule('It\'s <strong>' + (sCur ? esc(sCur.name) : '?') + '</strong>\'s turn, not ' + (sAtk ? esc(sAtk.name) : 'theirs') + '\'s. Act anyway?', proceed);
       return;
     }
     if (sAtk && sTgt && typeof mapState !== 'undefined' && mapState.tokens) {
@@ -1376,12 +1399,17 @@ function dmExecuteAction(attackerId, targetId, actionIdx) {
         var sd = dmDistFt(sap, stp);
         var reach = parseInt(a.range) || 5;
         if (sd > reach) {
-          showToast('🚫 Out of range — ' + sTgt.name + ' is ' + sd + ' ft away (' + a.name + ' reaches ' + reach + ' ft)', 'warn');
+          dmOverrule('<strong>' + esc(sTgt.name) + '</strong> is ' + sd + ' ft away — ' + esc(a.name) + ' reaches ' + reach + ' ft. Attack anyway?', proceed);
           return;
         }
       }
     }
   }
+  proceed();
+}
+
+// The actual attack/heal kickoff (after any Rules Assist overrule).
+function dmDoAction(attackerId, targetId, a, actionIdx) {
   if (a.kind === 'heal') {
     resolveCombatAction(attackerId, targetId, a, { roll: null, source: 'dm' });
     return;
