@@ -1002,6 +1002,17 @@ function mapMouseMove(e) {
 function mapMouseUp() {
   if (mapDrag || mapFogPainting || mapNeedsSync) {
     var wasTokenDrag = mapDrag && mapDrag.kind === 'token';
+    // A click on a token that didn't move → open its action menu (tap-to-act, like
+    // the player view). Drags still move the token as before.
+    if (wasTokenDrag) {
+      var npc = mapState.tokens[mapDrag.id];
+      if (npc && npc.x === mapDrag.fromX && npc.y === mapDrag.fromY) {
+        var clickedId = mapDrag.id;
+        mapDrag = null; mapFogPainting = false; mapNeedsSync = false;
+        if (typeof dmOpenActMenu === 'function') dmOpenActMenu(clickedId);
+        return;
+      }
+    }
     // Occupied square? Snap back.
     if (wasTokenDrag) {
       var np = mapState.tokens[mapDrag.id];
@@ -1029,6 +1040,7 @@ function mapMouseUp() {
           var dist = (typeof dmDistFt === 'function') ? dmDistFt({ x: drag.fromX, y: drag.fromY }, np2) : 0;
           var base = (typeof combatantSpeedFt === 'function') ? combatantSpeedFt(mv, parseInt(mv.speed) || 30) : (parseInt(mv.speed) || 30);
           var tu = mv.turnUsed || (mv.turnUsed = { actions: 0, bonus: false, movedFt: 0 });
+          if (tu.dashed) base *= 2; // Dash action doubles movement this turn
           var revert = function() {
             mapState.tokens[drag.id] = { x: drag.fromX, y: drag.fromY };
             renderMap();

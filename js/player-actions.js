@@ -1318,11 +1318,52 @@ function dmOpenActMenu(combatantId) {
       '<button class="btn btn-gold btn-sm" onclick="dmPickTarget(' + combatantId + ',' + i + ')">Use</button>' +
     '</div>';
   });
+  // Universal actions any creature can take (like the player action bar)
+  if (combatActive) {
+    var uni = c.readied
+      ? '<button class="btn btn-ghost btn-sm" onclick="clearReadied(' + combatantId + ');document.getElementById(\'dm-act-modal\').remove();" style="border-color:rgba(150,110,230,0.5);color:#c8a8ff;">⚡ Trigger readied: ' + esc(c.readied.action) + '</button>'
+      : ['Dodge', 'Dash', 'Disengage', 'Ready'].map(function(k) {
+          return '<button class="btn btn-ghost btn-sm" onclick="dmMonsterAction(' + combatantId + ',\'' + k + '\')" title="' + ({ Dodge: 'Attackers roll at disadvantage until your next turn (Action)', Dash: 'Double your movement this turn (Action)', Disengage: 'No opportunity attacks until your next turn (Action)', Ready: 'Prepare an action with a trigger (Action)' })[k] + '">' + k + '</button>';
+        }).join('');
+    inner += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 6px;">' + uni + '</div>';
+  }
   inner += '<div class="modal-btns"><button class="btn btn-ghost" onclick="document.getElementById(\'dm-act-modal\').remove()">Cancel</button></div></div>';
   ov.innerHTML = inner;
   ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
   document.body.appendChild(ov);
   window.__dmActActions = actions;
+}
+
+// Universal combat actions for any creature the DM runs (Dodge/Dash/Disengage/Ready).
+function dmMonsterAction(combatantId, key) {
+  var c = combatants.find(function(x) { return x.id === combatantId; });
+  if (!c) return;
+  var spend = function(cost) {
+    if (!combatActive || cost === 'free') return true;
+    if (!actionAvailable(c, cost)) { showToast('🚫 ' + c.name + ' has no ' + cost + ' left', 'warn'); return false; }
+    spendActionFor(c, cost); return true;
+  };
+  var addCond = function(cond) { c.conditions = c.conditions || []; if (c.conditions.indexOf(cond) < 0) c.conditions.push(cond); };
+  if (key === 'Dodge') {
+    if (!spend('action')) return; addCond('Dodging');
+    logCombat('🛡 ' + c.name + ' Dodges — attackers have disadvantage', 'info'); showToast('🛡 ' + c.name + ' is Dodging', 'info');
+  } else if (key === 'Disengage') {
+    if (!spend('action')) return; addCond('Disengaged');
+    logCombat('🏃 ' + c.name + ' Disengages — no opportunity attacks', 'info'); showToast('🏃 ' + c.name + ' Disengaged', 'info');
+  } else if (key === 'Dash') {
+    if (!spend('action')) return; var tu = ensureTurnUsed(c); tu.dashed = true;
+    logCombat('💨 ' + c.name + ' Dashes — movement doubled this turn', 'info'); showToast('💨 ' + c.name + ' is Dashing', 'info');
+  } else if (key === 'Ready') {
+    var act = window.prompt('Ready what action? (e.g. "Bite the first creature that comes close")', '');
+    if (!act) return;
+    var trig = window.prompt('Triggered when?', '') || '';
+    if (!spend('action')) return;
+    c.readied = { action: act, trigger: trig };
+    logCombat('⏳ ' + c.name + ' readies: ' + act + (trig ? ' (when ' + trig + ')' : ''), 'info'); showToast('⏳ ' + c.name + ' readied an action', 'info');
+  }
+  renderCombatants();
+  if (typeof syncCombatState === 'function') syncCombatState();
+  var m = document.getElementById('dm-act-modal'); if (m) m.remove();
 }
 
 function dmPickTarget(attackerId, actionIdx) {

@@ -88,8 +88,9 @@ function cvUpdateHeader() {
   var moveLeft = '';
   if (strictOn && cur) {
     var spd = (typeof combatantSpeedFt === 'function') ? combatantSpeedFt(cur, parseInt(cur.speed) || 30) : (parseInt(cur.speed) || 30);
+    if (cur.turnUsed && cur.turnUsed.dashed) spd *= 2;
     var used = (cur.turnUsed && cur.turnUsed.movedFt) || 0;
-    moveLeft = ' <span style="color:#8fd0ff;">· 🏃 ' + Math.max(0, spd - used) + ' ft left</span>';
+    moveLeft = ' <span style="color:#8fd0ff;">· 🏃 ' + Math.max(0, spd - used) + ' ft left' + (cur.turnUsed && cur.turnUsed.dashed ? ' (dashing)' : '') + '</span>';
   }
   el.innerHTML = 'Round <strong style="color:var(--gold);">' + round + '</strong>' +
     (cur ? ' · Now: <strong style="color:' + (cur.type === 'enemy' ? '#ff9090' : '#8fd050') + ';">' + esc(cur.name) + '</strong> <span style="color:var(--text-dim);">(' + cur.hp + '/' + cur.maxHp + ')</span>' : '') +
