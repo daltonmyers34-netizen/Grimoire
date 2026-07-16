@@ -1118,7 +1118,8 @@ function showCorpseLoot(corpse, loot) {
     '</div>';
   }
   if (!any) html += '<div style="color:var(--text-dim);font-style:italic;font-size:13px;">Picked clean.</div>';
-  html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:8px;" onclick="_pvCloseOverlay()">Close</button>';
+  if (any && me) html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:4px;margin-bottom:6px;border-color:var(--gold);color:var(--gold-light);background:rgba(212,175,55,0.1);" onclick="_pvPickupAll(\'' + loot.id + '\')">🎒 Take everything</button>';
+  html += '<button class="btn-pv" style="width:100%;justify-content:center;margin-top:4px;" onclick="_pvCloseOverlay()">Close</button>';
   showOverlay(html);
 }
 function pvPickupLoot(lootId, idx) {
@@ -1126,9 +1127,22 @@ function pvPickupLoot(lootId, idx) {
   const pc = (d.party || []).find(p => String(p.id) === selectedPcId);
   if (!pc) return;
   sendPlayerRequest({ type: 'pickupLoot', pcId: pc.id, lootId, idx, ts: Date.now() });
-  closeOverlay();
-  showWaiting('🎒 Picking it up…');
+  // Optimistic: mark it taken locally and re-render the corpse card instantly.
+  const loot = (d.battlefieldLoot || []).find(l => String(l.id) === String(lootId));
+  if (loot) {
+    if (idx === 'gp') loot.gpGiven = true;
+    else { loot.given = loot.given || {}; loot.given[idx] = pc.name; }
+    const corpse = (d.combatants || []).find(c => c.name === loot.from && c.hp <= 0);
+    if (corpse) showCorpseLoot(corpse, loot); else closeOverlay();
+  } else closeOverlay();
 }
+window._pvPickupAll = (lootId) => {
+  const d = latestData;
+  const pc = (d.party || []).find(p => String(p.id) === selectedPcId);
+  if (!pc) return;
+  sendPlayerRequest({ type: 'pickupLoot', pcId: pc.id, lootId, idx: 'all', ts: Date.now() });
+  closeOverlay();
+};
 window._pvPickupLoot = pvPickupLoot;
 
 function showMonsterInfo(c) {
@@ -2003,7 +2017,9 @@ function bindMapInteraction() {
       return;
     }
     sendPlayerRequest({ type: 'move', combatantId: me.id, x, y, baseSpeed: baseSpd, ts: Date.now() });
-    showWaiting('🥾 Moving ' + ft + ' ft...');
+    // Optimistic: move the token right away so it feels instant. The DM's sync
+    // confirms it (or, on the rare rejection, corrects it on the next update).
+    if (d.mapState && d.mapState.tokens) d.mapState.tokens[me.id] = { x, y };
     drawPlayerMap(d);
   });
 }
