@@ -43,7 +43,7 @@ function applyState(s) {
   if (s.combatants)  { combatants = s.combatants; renderCombatants(); }
   if (s.npcs)        { npcs = s.npcs; renderNPCs(); }
   if (s.locations && s.locations.length) { locations = s.locations; if(typeof renderLocations==='function') renderLocations(); }
-  if (s.party)       { party = s.party; try { localStorage.setItem('dm_party', JSON.stringify(party)); } catch(e){}; renderParty(); }
+  if (s.party)       { party = s.party; if (typeof migratePartyWeapons === 'function') try { migratePartyWeapons(); } catch(e){}; try { localStorage.setItem('dm_party', JSON.stringify(party)); } catch(e){}; renderParty(); }
   if (s.presets)     { localStorage.setItem('dm_presets', JSON.stringify(s.presets)); }
   if (s.worldTotalHours !== undefined) { worldTotalHours = s.worldTotalHours; worldSeason = s.worldSeason||0; updateWorldDisplay(); syncTopBar(); }
   if (s.totalXP !== undefined) { totalXP = s.totalXP; xpLog = s.xpLog||[]; }
