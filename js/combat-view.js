@@ -374,6 +374,36 @@ function cvGiveItem(lootId, idx) {
   if (window.cloudSave) window.cloudSave();
 }
 
+// A player tapped a corpse on the map and grabbed an item (or its gold).
+function processPickupLoot(req) {
+  var e = battlefieldLoot.find(function(x) { return String(x.id) === String(req.lootId); });
+  var pc = party.find(function(p) { return p.id === req.pcId; });
+  if (!e || !pc) return;
+  if (req.idx === 'gp') {
+    if (!e.gp || e.gpGiven) return;
+    pc.gold = (pc.gold || 0) + e.gp;
+    e.gpGiven = true;
+    if (typeof logCombat === 'function') logCombat('🪙 ' + pc.name + ' loots ' + e.gp + ' gp from ' + e.from, 'info');
+    showToast('🪙 ' + pc.name + ' took ' + e.gp + ' gp', 'success');
+  } else {
+    var idx = parseInt(req.idx);
+    var name = (e.items || [])[idx];
+    if (!name || (e.given || {})[idx]) return; // already taken
+    var item = (typeof resolveItemFromName === 'function') ? resolveItemFromName(name)
+      : { id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()), name: name, qty: 1, slot: 'gear', equipped: false };
+    pc.inventory = pc.inventory || [];
+    pc.inventory.push(item);
+    if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
+    e.given = e.given || {}; e.given[idx] = pc.name;
+    if (typeof logCombat === 'function') logCombat('🎒 ' + pc.name + ' loots ' + name + ' from ' + e.from, 'info');
+    showToast('🎒 ' + pc.name + ' looted ' + name, 'success');
+  }
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+  if (typeof renderParty === 'function') renderParty();
+  if (typeof renderCvLoot === 'function') renderCvLoot();
+  if (window.cloudSaveNow) window.cloudSaveNow(); else if (window.cloudSave) window.cloudSave();
+}
+
 function cvGiveGold(lootId) {
   var e = battlefieldLoot.find(function(x) { return String(x.id) === String(lootId); });
   var sel = document.getElementById('cv-givegp-' + lootId);

@@ -1131,6 +1131,7 @@ function processPlayerAction(req) {
     else if (req.type === 'ready') processPlayerReady(req);
     else if (req.type === 'saveRoll') processPlayerSaveRoll(req);
     else if (req.type === 'skillCheck') processPlayerSkillCheck(req);
+    else if (req.type === 'pickupLoot') processPickupLoot(req);
     else if (req.type === 'damageRoll') processPlayerDamageRoll(req);
     else if (req.type === 'recategorize') processRecategorizeItem(req);
     else if (req.type === 'dropItem') processDropItem(req);
