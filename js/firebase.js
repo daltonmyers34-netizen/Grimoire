@@ -237,7 +237,7 @@ window.cloudSave = () => {
   } catch(e) { console.warn('localStorage backup:', e); }
   if (!currentUid) return;
   clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(doCloudWrite, 800);
+  syncTimeout = setTimeout(doCloudWrite, 450);
 };
 
 // -- UI helpers --------------------------------------------------------

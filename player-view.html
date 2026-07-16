@@ -616,14 +616,18 @@
 <script src="js/data/item-library.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, doc, onSnapshot, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, initializeFirestore, doc, onSnapshot, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const app = initializeApp({
   apiKey: "AIzaSyAHeoD6eKkxm7ezwvBcEt5W6S7nVqZYknY",
   authDomain: "dm-grimoire-20df0.firebaseapp.com",
   projectId: "dm-grimoire-20df0"
 });
-const db = getFirestore(app);
+// ignoreUndefinedProperties: otherwise a single undefined field (e.g. a wand action's
+// applyCondition) makes addDoc() reject the whole request. Skip undefined instead.
+let db;
+try { db = initializeFirestore(app, { ignoreUndefinedProperties: true }); }
+catch (e) { db = getFirestore(app); }
 
 // ── Get DM UID from URL ──────────────────────────────────────
 const params = new URLSearchParams(window.location.search);
@@ -954,7 +958,8 @@ function pvEffectiveAbility(pc, key) {
 
 async function sendPlayerRequest(payload) {
   try {
-    await addDoc(collection(db, 'playerActions', dmUid, 'requests'), payload);
+    // JSON round-trip drops any undefined fields (Firestore rejects them otherwise).
+    await addDoc(collection(db, 'playerActions', dmUid, 'requests'), JSON.parse(JSON.stringify(payload)));
     return true;
   } catch(e) {
     alert('Could not send to your DM: ' + e.message + '\n\nAsk your DM to update the Firestore security rules (playerActions).');
