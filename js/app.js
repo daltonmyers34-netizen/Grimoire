@@ -14,6 +14,10 @@ let shops = [];   // merchant inventories (trading)
 let trades = [];  // trade offers in flight (DM inbox + player-facing)
 let locations = [];
 let party = JSON.parse(localStorage.getItem('dm_party') || '[]');
+// Strict Rules mode: when on, the DM runs monsters like a player — only the
+// current-turn creature acts, map moves are limited to its speed, and attacks
+// enforce range. Off by default (god-mode DM tools stay unchanged).
+let strictCombat = localStorage.getItem('dm_strict_combat') === '1';
 let battlePresets = JSON.parse(localStorage.getItem('dm_presets') || '[]');
 let combatLog = [];
 let diceHistory = [];
@@ -193,6 +197,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // magic-weapon support (covers the localStorage-only boot path, not just cloud/session load).
   try { if (typeof migratePartyWeapons === 'function') migratePartyWeapons(); } catch(e) { console.warn('migratePartyWeapons:', e); }
   try { initNPCs(); } catch(e) { console.warn('initNPCs:', e); }
+  try { if (typeof refreshStrictBtn === 'function') refreshStrictBtn(); } catch(e) {}
   try { renderParty(); } catch(e) { console.warn('renderParty:', e); }
   try { renderPresets(); } catch(e) { console.warn('renderPresets:', e); }
   try { renderPartyInventory(); } catch(e) { console.warn('renderPartyInventory:', e); }

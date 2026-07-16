@@ -1116,6 +1116,10 @@ function showMonsterInfo(c) {
   const hpDesc = pvHpDescriptor(c);
   let html = '<div style="font-family:Cinzel,serif;font-size:18px;color:#ff9090;margin-bottom:2px;">' + esc(c.name) + '</div>' +
     '<div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">What your party knows</div>';
+  // Creature type — recognized once the party engages it (hints at typical resistances)
+  if ((c.typeKnown || knowAll) && c.creatureType) {
+    html += '<div style="font-size:14px;margin-bottom:6px;">Type: <strong style="color:#c8a8ff;text-transform:capitalize;">' + esc(c.creatureType) + '</strong></div>';
+  }
   // Health — always as words, never numbers (unless the DM reveals everything)
   html += '<div style="font-size:14px;margin-bottom:6px;">Condition: <strong style="color:' + hpDesc.color + ';">' + hpDesc.label + '</strong>' +
     (knowAll ? ' <span style="color:var(--text-dim);font-size:12px;">(' + c.hp + '/' + c.maxHp + ' HP)</span>' : '') + '</div>';
