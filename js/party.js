@@ -104,13 +104,15 @@ function buildSkillsCardHTML(pc) {
   var profBonus = getProfBonus(pc.level || 1);
   var mod = function(s) { return Math.floor((s - 10) / 2); };
   var fmt = function(n) { return n >= 0 ? '+' + n : '' + n; };
+  var itemSkills = (typeof equipmentMods === 'function') ? (equipmentMods(pc).skills || {}) : {};
   var profSkills = [];
   SKILL_LIST.forEach(function(sk) {
     var val = pc.skills[sk.key] || 0;
-    if (val === 0) return;
+    var itemBonus = (itemSkills[sk.key] || 0) + (itemSkills.all || 0);
+    if (val === 0 && !itemBonus) return;
     var ability = sk.ability;
-    var abilityScore = pc[ability] || 10;
-    var bonus = mod(abilityScore) + profBonus * val;
+    var abilityScore = (typeof effectiveAbility === 'function' ? effectiveAbility(pc, ability) : (pc[ability] || 10));
+    var bonus = mod(abilityScore) + profBonus * val + itemBonus;
     var icon = val === 2 ? '★' : '●';
     var color = val === 2 ? '#ffe066' : '#90c8ff';
     profSkills.push('<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:3px;font-size:11px;background:rgba(100,180,255,0.08);border:1px solid ' + (val === 2 ? 'rgba(255,224,0,0.25)' : 'rgba(100,180,255,0.2)') + ';color:' + color + ';margin:1px;">' + icon + ' ' + sk.label + ' <strong>' + fmt(bonus) + '</strong></span>');
@@ -1335,6 +1337,7 @@ function editItemEffects(pcId, itemId) {
         return '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);">' + s.toUpperCase() + '</div><input id="fx-' + s + '" type="number" value="' + (st[s] || 0) + '" style="width:100%;text-align:center;font-size:12px;padding:4px 2px;"></div>';
       }).join('') +
     '</div>' +
+    '<div class="field-group" style="margin:6px 0;"><label>Skill bonus <span style="color:#666;font-weight:normal;">(e.g. stealth:2, perception:2 — comma-separated, or all:2)</span></label><input id="fx-skills" value="' + esc2(Object.keys(it.skillBonus || {}).map(function(k){ return k + ':' + it.skillBonus[k]; }).join(', ')) + '" placeholder="stealth:2"></div>' +
     '<label style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:6px;margin-bottom:4px;"><input id="fx-extraatk" type="checkbox"' + (it.grantsExtraAttack ? ' checked' : '') + '> Grants Extra Attack (2 attacks per Action)</label>';
 
   // ── DEFENSES ──
@@ -1403,6 +1406,13 @@ function saveItemEffects(pcId, itemId) {
   it.allDamageBonus = num('fx-alldmg') || undefined;
   it.saveBonus = num('fx-savebonus') || undefined;
   it.grantsExtraAttack = chk('fx-extraatk') || undefined;
+  // Skill bonuses: "stealth:2, perception:1" or "all:2"
+  var sk = {}, skAny = false;
+  (val('fx-skills') || '').split(',').forEach(function(pair) {
+    var kv = pair.split(':'); var k = (kv[0] || '').trim().toLowerCase().replace(/ /g, '_'); var v = parseInt(kv[1]);
+    if (k && v) { sk[k] = v; skAny = true; }
+  });
+  it.skillBonus = skAny ? sk : undefined;
   var stats = {}, any = false;
   ['str','dex','con','int','wis','cha'].forEach(function(s) { var v = num('fx-' + s); if (v) { stats[s] = v; any = true; } });
   it.statBonuses = any ? stats : undefined;

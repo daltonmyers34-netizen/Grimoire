@@ -463,6 +463,121 @@ function resolveSaveOutcome(c, ability, dc, roll, meta) {
   return passed;
 }
 
+// ─── Ability & skill checks — routed to whoever makes them ───────
+// Mirrors the saving-throw flow: a player ally rolls on their phone; a monster
+// rolls at the DM's table. Bonus = ability mod (with item stat bonuses) + proficiency
+// × skill rank (0/1/2 for none/proficient/expertise) + any item skill bonus.
+var SKILL_ABILITY = {
+  acrobatics:'dex', animal_handling:'wis', arcana:'int', athletics:'str', deception:'cha',
+  history:'int', insight:'wis', intimidation:'cha', investigation:'int', medicine:'wis',
+  nature:'int', perception:'wis', performance:'cha', persuasion:'cha', religion:'int',
+  sleight_of_hand:'dex', stealth:'dex', survival:'wis'
+};
+function checkLabel(key) {
+  if (SKILL_ABILITY[key]) return key.replace(/_/g, ' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); });
+  return String(key).toUpperCase() + ' check';
+}
+function checkBonusFor(combatant, checkKey) {
+  var isSkill = SKILL_ABILITY.hasOwnProperty(checkKey);
+  var ability = isSkill ? SKILL_ABILITY[checkKey] : checkKey;
+  var pc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === combatant.name; });
+  if (!pc) {
+    // Monster estimate: half its CR-ish (fall back to a modest +2) plus a proficiency guess
+    return 2;
+  }
+  var score = typeof effectiveAbility === 'function' ? effectiveAbility(pc, ability) : (pc[ability] || 10);
+  var bonus = Math.floor((score - 10) / 2);
+  if (isSkill) {
+    var rank = (pc.skills && pc.skills[checkKey]) || 0;
+    bonus += (typeof getProfBonus === 'function' ? getProfBonus(pc.level || 1) : 2) * rank;
+    var mods = typeof equipmentMods === 'function' ? equipmentMods(pc) : { skills: {} };
+    bonus += (mods.skills && (mods.skills[checkKey] || 0)) + (mods.skills && mods.skills.all || 0);
+  }
+  return bonus;
+}
+function resolveCheckOutcome(c, checkKey, dc, roll, meta) {
+  meta = meta || {};
+  var b = checkBonusFor(c, checkKey);
+  var total = (parseInt(roll) || 10) + b;
+  var passed = total >= dc;
+  var label = meta.label || checkLabel(checkKey);
+  if (passed) {
+    logCombat('✓ ' + c.name + ' succeeds on ' + label + ' (' + total + ' vs DC ' + dc + ')', 'heal');
+    showToast('✓ ' + c.name + ' passes the ' + label + ' (' + total + ' vs DC ' + dc + ')', 'success');
+  } else {
+    logCombat('✗ ' + c.name + ' fails ' + label + ' (' + total + ' vs DC ' + dc + ')', 'info');
+    showToast('✗ ' + c.name + ' fails the ' + label + ' (' + total + ' vs DC ' + dc + ')', 'warn');
+  }
+  if (window.cloudSave) window.cloudSave();
+  return passed;
+}
+function promptCheck(target, checkKey, dc, meta) {
+  meta = meta || {};
+  if (!target) return;
+  var pc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === target.name; });
+  var b = checkBonusFor(target, checkKey);
+  var label = meta.label || checkLabel(checkKey);
+  if (pc && target.type === 'ally') {
+    window.pendingCheck = {
+      id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()),
+      combatantId: target.id, pcName: target.name, check: checkKey, label: label,
+      dc: dc, bonus: b, source: meta.source || ''
+    };
+    logCombat('🎲 ' + target.name + ' — ' + label + ' check (DC ' + dc + ') prompted on their phone', 'info');
+    if (window.cloudSaveNow) window.cloudSaveNow(); else if (window.cloudSave) window.cloudSave();
+  } else {
+    requestRolls('🎲 ' + label + ' — ' + target.name,
+      [{ id: 'r', label: target.name + ' — ' + label, sub: 'DC ' + dc + ' · bonus ' + (b >= 0 ? '+' : '') + b }],
+      function(results) { resolveCheckOutcome(target, checkKey, dc, results.r, meta); });
+  }
+}
+function processPlayerSkillCheck(req) {
+  var pending = window.pendingCheck;
+  if (!pending || String(pending.id) !== String(req.checkId)) return;
+  var c = combatants.find(function(x) { return x.id === req.combatantId; });
+  window.pendingCheck = null;
+  if (c) resolveCheckOutcome(c, pending.check, pending.dc, req.roll, { label: pending.label, source: pending.source });
+  if (window.cloudSaveNow) window.cloudSaveNow();
+}
+
+// DM: ask a creature for an ability/skill check. Player allies roll on their phone;
+// monsters roll in the DM modal. Opens a small picker for the skill + DC.
+function dmRequestCheck(combatantId) {
+  var c = combatants.find(function(x) { return x.id === combatantId; });
+  if (!c) return;
+  var existing = document.getElementById('dm-check-modal'); if (existing) existing.remove();
+  var ov = document.createElement('div');
+  ov.id = 'dm-check-modal';
+  ov.className = 'modal-overlay show';
+  ov.style.zIndex = '2700';
+  var skillOpts = Object.keys(SKILL_ABILITY).map(function(k) {
+    return '<option value="' + k + '">' + checkLabel(k) + ' (' + SKILL_ABILITY[k].toUpperCase() + ')</option>';
+  }).join('');
+  var abilOpts = ['str','dex','con','int','wis','cha'].map(function(a) {
+    return '<option value="' + a + '">' + a.toUpperCase() + ' (raw ability)</option>';
+  }).join('');
+  ov.innerHTML = '<div class="modal" style="max-width:420px;width:94%;">' +
+    '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:8px;">🎲 ' + c.name + ' — ability check</h3>' +
+    '<div class="field-group"><label>Check</label><select id="dmck-skill" style="width:100%;">' +
+      '<optgroup label="Skills">' + skillOpts + '</optgroup><optgroup label="Raw ability">' + abilOpts + '</optgroup></select></div>' +
+    '<div class="field-group"><label>DC</label><input id="dmck-dc" type="number" value="15" style="width:90px;text-align:center;"></div>' +
+    '<div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">' + (c.type === 'ally' ? 'Prompts ' + c.name + ' to roll on their phone.' : 'You roll for ' + c.name + ' in the roll modal.') + '</div>' +
+    '<div class="modal-btns">' +
+      '<button class="btn btn-gold" onclick="dmFireCheck(' + combatantId + ')">🎲 Request check</button>' +
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'dm-check-modal\').remove()">Cancel</button>' +
+    '</div></div>';
+  ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+function dmFireCheck(combatantId) {
+  var c = combatants.find(function(x) { return x.id === combatantId; });
+  if (!c) return;
+  var key = (document.getElementById('dmck-skill') || {}).value;
+  var dc = parseInt((document.getElementById('dmck-dc') || {}).value) || 10;
+  var m = document.getElementById('dm-check-modal'); if (m) m.remove();
+  promptCheck(c, key, dc, {});
+}
+
 function promptSave(target, ability, dc, meta) {
   meta = meta || {};
   var pc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === target.name; });
@@ -634,6 +749,15 @@ function resolveCombatAction(attackerId, targetId, action, opts) {
       return null;
     }
     attacker.legendary.used++;
+  }
+
+  // Item-granted actions with limited charges (wands, staves): spend one, or block.
+  if (a.sourceItemId && a.chargesMax !== undefined) {
+    if (!spendItemCharge(attacker, a)) {
+      showToast('🔋 ' + a.name + ' has no charges left', 'warn');
+      if (opts.source === 'player') rejectPlayer(attacker, a.name + ' is out of charges (recharges on a rest)');
+      return null;
+    }
   }
 
   snapshotBeforeAction();
@@ -912,6 +1036,7 @@ function processPlayerAction(req) {
     else if (req.type === 'help') processPlayerHelp(req);
     else if (req.type === 'ready') processPlayerReady(req);
     else if (req.type === 'saveRoll') processPlayerSaveRoll(req);
+    else if (req.type === 'skillCheck') processPlayerSkillCheck(req);
     else if (req.type === 'damageRoll') processPlayerDamageRoll(req);
     else if (req.type === 'recategorize') processRecategorizeItem(req);
     else if (req.type === 'dropItem') processDropItem(req);
@@ -1771,13 +1896,43 @@ function effectiveActions(pc) {
         acts.push(weaponToAction(pc, it, isOff));
       }
     }
-    if (it.grantAction && it.grantAction.name) {
-      if (!acts.some(function(a) { return a.name.toLowerCase() === it.grantAction.name.toLowerCase(); })) {
-        acts.push(Object.assign({ fromItem: true }, it.grantAction));
-      }
-    }
+    itemGrantedActions(it).forEach(function(ga) {
+      if (!acts.some(function(a) { return a.name.toLowerCase() === ga.name.toLowerCase(); })) acts.push(ga);
+    });
   });
   return acts;
+}
+
+// Build the usable action(s) an item grants (grantAction + grantSpell), tagged with
+// the source item + charge state so use decrements charges (spendItemCharge).
+function itemGrantedActions(it) {
+  var out = [];
+  var chargeInfo = it.charges ? { sourceItemId: it.id, chargesLeft: (typeof it.charges.left === 'number' ? it.charges.left : it.charges.max), chargesMax: it.charges.max } : { sourceItemId: it.id };
+  if (it.grantAction && it.grantAction.name) out.push(Object.assign({ fromItem: true }, it.grantAction, chargeInfo));
+  if (it.grantSpell && it.grantSpell.name) {
+    out.push(Object.assign({
+      fromItem: true, kind: it.grantSpell.kind || 'attack', name: it.grantSpell.name,
+      dice: it.grantSpell.dice || '', range: it.grantSpell.range || 60, damageType: it.grantSpell.damageType || '',
+      bonus: it.grantSpell.bonus || 0, applyCondition: it.grantSpell.condition,
+      saveAbility: it.grantSpell.saveAbility, saveDC: it.grantSpell.saveDC, saveDuration: it.grantSpell.duration
+    }, chargeInfo));
+  }
+  return out;
+}
+
+// Spend one charge for an item-granted action. Returns false if the item is out of
+// charges (so the caller can reject the use). No-op (returns true) if the item is
+// uncharged. Used by resolveCombatAction and processCastSpell.
+function spendItemCharge(attacker, action) {
+  if (!action || !action.sourceItemId) return true;
+  var pc = (typeof party !== 'undefined' ? party : []).find(function(p) { return p.name === attacker.name; });
+  var it = pc && (pc.inventory || []).find(function(i) { return i.id === action.sourceItemId; });
+  if (!it || !it.charges || typeof it.charges.max !== 'number') return true;
+  var left = typeof it.charges.left === 'number' ? it.charges.left : it.charges.max;
+  if (left <= 0) return false;
+  it.charges.left = left - 1;
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+  return true;
 }
 
 // Recompute the linked combatant's AC after equipment changes
@@ -2283,6 +2438,7 @@ function dmRollApply() {
 function equipmentMods(pc) {
   var out = {
     ac: 0, speed: 0, stats: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
+    statSet: {}, // Gauntlets of Ogre Power etc. SET a score (highest wins), not add
     resist: [], immune: [], vuln: [], conditionImmune: [], actions: [],
     // combat-wide bonuses (apply to ALL attacks/saves, e.g. a Ring of Protection)
     attack: 0, damage: 0, save: 0, skills: {}, critRange: 20, extraAttack: false
@@ -2292,6 +2448,7 @@ function equipmentMods(pc) {
     if (it.acBonus) out.ac += it.acBonus;
     if (it.speedBonus) out.speed += it.speedBonus;
     if (it.statBonuses) Object.keys(out.stats).forEach(function(k) { out.stats[k] += it.statBonuses[k] || 0; });
+    if (it.statSet) Object.keys(it.statSet).forEach(function(k) { if ((it.statSet[k] || 0) > (out.statSet[k] || 0)) out.statSet[k] = it.statSet[k]; });
     (it.grantResist || []).forEach(function(t) { if (out.resist.indexOf(t) < 0) out.resist.push(t); });
     (it.grantImmune || []).forEach(function(t) { if (out.immune.indexOf(t) < 0) out.immune.push(t); });
     (it.grantVuln || []).forEach(function(t) { if (out.vuln.indexOf(t) < 0) out.vuln.push(t); });
@@ -2318,11 +2475,14 @@ function equipmentMods(pc) {
   return out;
 }
 
-// Ability score including magic item bonuses (Belt of Giant Strength...)
+// Ability score including magic item bonuses. Additive bonuses stack on the base;
+// a "set" item (Gauntlets of Ogre Power → STR 19, Headband of Intellect → INT 19)
+// overrides to its score if higher, then additive bonuses apply on top (5e RAW).
 function effectiveAbility(pc, ability) {
   var base = pc[ability] || 10;
   var mods = equipmentMods(pc);
-  return base + (mods.stats[ability] || 0);
+  var set = mods.statSet[ability] || 0;
+  return Math.max(base, set) + (mods.stats[ability] || 0);
 }
 
 // Push every equipment effect onto the live combatant
