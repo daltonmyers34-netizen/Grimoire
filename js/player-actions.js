@@ -1132,6 +1132,9 @@ function processPlayerAction(req) {
     else if (req.type === 'saveRoll') processPlayerSaveRoll(req);
     else if (req.type === 'skillCheck') processPlayerSkillCheck(req);
     else if (req.type === 'pickupLoot') processPickupLoot(req);
+    else if (req.type === 'partyNote') processPartyNote(req);
+    else if (req.type === 'stashTake') processStashTake(req);
+    else if (req.type === 'stashContribute') processStashContribute(req);
     else if (req.type === 'damageRoll') processPlayerDamageRoll(req);
     else if (req.type === 'recategorize') processRecategorizeItem(req);
     else if (req.type === 'dropItem') processDropItem(req);
@@ -2201,6 +2204,7 @@ function processEquipItem(req) {
   if (typeof renderParty === 'function') renderParty();
   renderCombatants();
   showToast((item.equipped ? '🎒 ' : '📦 ') + pc.name + (item.equipped ? ' equipped ' : ' unequipped ') + item.name, 'info');
+  if (window.cloudSaveNow) window.cloudSaveNow(); // flush so the player sees it equip/unequip now
 }
 
 // Player re-files an item into a different category (fixes mis-slotted loot)
@@ -2232,6 +2236,7 @@ function processDropItem(req) {
   if (typeof renderParty === 'function') renderParty();
   renderCombatants();
   showToast('🗑 ' + pc.name + ' dropped ' + item.name, 'info');
+  if (window.cloudSaveNow) window.cloudSaveNow(); // flush so the player's bag updates now
 }
 
 function processJournal(req) {
@@ -2239,6 +2244,50 @@ function processJournal(req) {
   if (!pc) return;
   pc.journal = String(req.text || '').slice(0, 20000);
   if (typeof savePartyStorage === 'function') savePartyStorage();
+}
+
+// Shared group notepad — any player can edit it (last write wins).
+function processPartyNote(req) {
+  if (typeof partyNotes === 'undefined') return;
+  partyNotes = String(req.text || '').slice(0, 20000);
+  if (window.cloudSaveNow) window.cloudSaveNow(); else if (window.cloudSave) window.cloudSave();
+}
+
+// Party stash (the loot-tab "Party Inventory"): a player takes an item into their bag.
+function processStashTake(req) {
+  if (typeof partyInventory === 'undefined') return;
+  var pc = party.find(function(p) { return p.id === req.pcId; });
+  var entry = partyInventory.find(function(e) { return String(e.id) === String(req.stashId); });
+  if (!pc || !entry) return;
+  var item = (typeof resolveItemFromName === 'function') ? resolveItemFromName(entry.name)
+    : { id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()), name: entry.name, qty: 1, slot: 'gear', equipped: false };
+  pc.inventory = pc.inventory || [];
+  pc.inventory.push(item);
+  partyInventory = partyInventory.filter(function(e) { return String(e.id) !== String(req.stashId); });
+  window.partyInventory = partyInventory;
+  if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+  if (typeof renderPartyInventory === 'function') try { renderPartyInventory(); } catch (e) {}
+  if (typeof renderParty === 'function') renderParty();
+  showToast('🎒 ' + pc.name + ' took ' + entry.name + ' from the party stash', 'info');
+  if (window.cloudSaveNow) window.cloudSaveNow();
+}
+
+// A player contributes an item from their bag to the shared party stash.
+function processStashContribute(req) {
+  if (typeof partyInventory === 'undefined') return;
+  var pc = party.find(function(p) { return p.id === req.pcId; });
+  var item = pc && (pc.inventory || []).find(function(i) { return i.id === req.itemId; });
+  if (!pc || !item) return;
+  partyInventory.push({ id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()), icon: '🎒', name: item.name, desc: item.desc || '', value: item.value || '', date: '' });
+  window.partyInventory = partyInventory;
+  pc.inventory = pc.inventory.filter(function(i) { return i.id !== req.itemId; });
+  if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
+  if (typeof savePartyStorage === 'function') savePartyStorage();
+  if (typeof renderPartyInventory === 'function') try { renderPartyInventory(); } catch (e) {}
+  if (typeof renderParty === 'function') renderParty();
+  showToast('📦 ' + pc.name + ' added ' + item.name + ' to the party stash', 'info');
+  if (window.cloudSaveNow) window.cloudSaveNow();
 }
 
 // ============================================================

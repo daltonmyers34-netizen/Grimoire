@@ -178,6 +178,9 @@ async function doCloudWrite() {
       currentTurn: state.currentTurn >= 0 ? state.currentTurn : -1,
       combatActive: state.combatActive || false,
       partyInventory: state.partyInventory || [],
+      partyNotes: (typeof partyNotes !== 'undefined' ? partyNotes : ''),
+      quests: (typeof quests !== 'undefined' ? quests : []).filter(function(q) { return q.status !== 'abandoned'; })
+        .map(function(q) { return { id: q.id, title: q.title, giver: q.giver || '', status: q.status, notes: q.notes || '' }; }),
       pvMessages: state.pvMessages || {},
       pvPartyMessage: state.pvPartyMessage || '',
       mapState: (state.mapState && state.mapState.hiddenFromPlayers) ? null : (state.mapState || null),

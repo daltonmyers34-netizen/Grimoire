@@ -1172,6 +1172,10 @@ Use this space freely during your session. Notes auto-save in your browser."></t
       <button class="btn btn-ghost btn-sm" onclick="clearPlotNotes()">Clear</button>
     <textarea id="plot-notes" class="notes-area" style="min-height:160px;" placeholder="Active plot hooks, foreshadowing, campaign threads..."></textarea>
   </div>
+  <div class="panel">
+    <div class="panel-title"><span class="ornament">📝</span> Group Notes <span style="font-size:11px;color:var(--text-dim);font-weight:normal;">— shared with players (they can read &amp; write this)</span></div>
+    <textarea id="party-notes" class="notes-area" style="min-height:120px;border-color:rgba(120,190,255,0.3);" placeholder="A shared notepad — whatever you or the players type here shows on every phone." oninput="saveGroupNotesDM(this.value)"></textarea>
+  </div>
 </div>
 
 

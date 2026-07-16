@@ -922,18 +922,22 @@ function renderInventoryModal(pcId) {
       if (it.lightFt) extra.push('💡 ' + it.lightFt + ' ft');
       if (it.healDice) extra.push('heals ' + it.healDice);
       if (it.range && it.slot === 'weapon') extra.push(it.range + ' ft');
-      html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid ' + (it.equipped ? 'rgba(212,175,55,0.45)' : 'rgba(255,255,255,0.08)') + ';border-radius:6px;margin-bottom:5px;background:' + (it.equipped ? 'rgba(212,175,55,0.06)' : 'rgba(0,0,0,0.2)') + ';">' +
-        '<span>' + (slotIcons[it.slot] || '🎒') + '</span>' +
-        '<div style="flex:1;min-width:0;">' +
-          '<span style="font-size:14px;color:var(--parchment);">' + esc(it.name) + (it.qty > 1 ? ' ×' + it.qty : '') + '</span>' +
-          (extra.length ? '<span style="font-size:11px;color:var(--text-dim);margin-left:8px;">' + extra.join(' · ') + '</span>' : '') +
+      var canEq = ['weapon','armor','shield','wearable','light'].indexOf(it.slot) >= 0;
+      // Two-line card: name + details on top, controls on their own row (never crammed).
+      html += '<div style="padding:8px 10px;border:1px solid ' + (it.equipped ? 'rgba(212,175,55,0.45)' : 'rgba(255,255,255,0.08)') + ';border-radius:6px;margin-bottom:6px;background:' + (it.equipped ? 'rgba(212,175,55,0.06)' : 'rgba(0,0,0,0.2)') + ';">' +
+        '<div style="display:flex;align-items:baseline;gap:6px;">' +
+          '<span style="flex-shrink:0;">' + (slotIcons[it.slot] || '🎒') + '</span>' +
+          '<span style="font-size:14px;color:var(--parchment);font-weight:600;">' + esc(it.name) + (it.qty > 1 ? ' ×' + it.qty : '') + '</span>' +
         '</div>' +
-        '<select title="Category" onchange="dmSetItemSlot(' + pcId + ',' + it.id + ',this.value)" style="font-size:11px;padding:3px;">' +
-          ['weapon','armor','shield','wearable','potion','light','ammo','gear'].map(function(s){ return '<option value="' + s + '"' + ((it.slot||'gear')===s?' selected':'') + '>' + s + '</option>'; }).join('') +
-        '</select>' +
-        '<button class="btn btn-ghost btn-sm" title="Edit magical effects (+stats, resistances, special attacks...)" onclick="editItemEffects(' + pcId + ',' + it.id + ')">✨</button>' +
-        (['weapon','armor','shield','wearable','light'].indexOf(it.slot) >= 0 ? '<button class="btn btn-ghost btn-sm" style="' + (it.equipped ? 'border-color:var(--gold);color:var(--gold);' : '') + '" onclick="dmToggleEquip(' + pcId + ',' + it.id + ')">' + (it.equipped ? '✓ Equipped' : 'Equip') + '</button>' : '') +
-        '<button onclick="deleteInventoryItem(' + pcId + ',' + it.id + ')" style="background:none;border:1px solid var(--border);color:var(--blood-light);border-radius:3px;cursor:pointer;width:24px;height:24px;font-size:11px;">✕</button>' +
+        (extra.length ? '<div style="font-size:11px;color:var(--text-dim);margin:3px 0 6px 22px;">' + extra.join(' · ') + '</div>' : '<div style="height:4px;"></div>') +
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:22px;">' +
+          '<select title="Category" onchange="dmSetItemSlot(' + pcId + ',' + it.id + ',this.value)" style="font-size:11px;padding:3px 4px;">' +
+            ['weapon','armor','shield','wearable','potion','light','ammo','gear'].map(function(s){ return '<option value="' + s + '"' + ((it.slot||'gear')===s?' selected':'') + '>' + s + '</option>'; }).join('') +
+          '</select>' +
+          '<button class="btn btn-ghost btn-sm" title="Edit magical effects (+stats, resistances, special attacks...)" onclick="editItemEffects(' + pcId + ',' + it.id + ')">✨ Effects</button>' +
+          (canEq ? '<button class="btn btn-ghost btn-sm" style="' + (it.equipped ? 'border-color:var(--gold);color:var(--gold);' : '') + '" onclick="dmToggleEquip(' + pcId + ',' + it.id + ')">' + (it.equipped ? '✓ Equipped' : 'Equip') + '</button>' : '') +
+          '<button onclick="deleteInventoryItem(' + pcId + ',' + it.id + ')" title="Delete" style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--blood-light);border-radius:3px;cursor:pointer;width:26px;height:26px;font-size:12px;">✕</button>' +
+        '</div>' +
       '</div>';
     });
   }

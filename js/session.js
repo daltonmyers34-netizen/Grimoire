@@ -30,6 +30,7 @@ function collectState() {
     shops: (typeof shops !== 'undefined') ? shops : [],
     trades: (typeof trades !== 'undefined') ? trades : [],
     quests: (typeof quests !== 'undefined' && quests) ? quests : [],
+    partyNotes: (typeof partyNotes !== 'undefined') ? partyNotes : '',
     pvMessages: window.pvMessages || {},
     pvPartyMessage: window.pvPartyMessage || '',
     notes: {
@@ -64,6 +65,7 @@ function applyState(s) {
   if (typeof shops !== 'undefined') { shops = s.shops || []; if (typeof renderShopsPanel === 'function') renderShopsPanel(); }
   if (typeof trades !== 'undefined') { trades = s.trades || []; if (typeof renderTradeInbox === 'function') renderTradeInbox(); }
   if (s.quests && typeof quests !== 'undefined') { quests = s.quests; if (typeof renderQuests === 'function') renderQuests(); }
+  if (s.partyNotes !== undefined && typeof partyNotes !== 'undefined') { partyNotes = s.partyNotes; var gn = document.getElementById('party-notes'); if (gn && document.activeElement !== gn) gn.value = s.partyNotes; }
   if (s.pvMessages) { window.pvMessages = s.pvMessages; }
   if (s.pvPartyMessage) { window.pvPartyMessage = s.pvPartyMessage; }
   if (s.partyInventory) { partyInventory = s.partyInventory; window.partyInventory = s.partyInventory; try { localStorage.setItem('dm-party-inventory', JSON.stringify(s.partyInventory)); } catch(e){}; if (typeof renderPartyInventory==='function') try { renderPartyInventory(); } catch(e){} }

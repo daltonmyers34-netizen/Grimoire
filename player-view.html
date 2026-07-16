@@ -603,7 +603,7 @@
 <div class="pv-header">
   <div class="pv-title">DM Grimoire</div>
   <div style="display:flex;align-items:center;gap:10px;">
-    <button id="pv-mute-btn" onclick="_pvToggleMute()" style="background:none;border:1px solid rgba(212,175,55,0.3);border-radius:5px;color:var(--gold);font-size:14px;padding:3px 8px;cursor:pointer;">🔊</button>
+    <button id="pv-mute-btn" onclick="_pvToggleMute()" title="Vibration feedback on/off (phones)" style="background:none;border:1px solid rgba(212,175,55,0.3);border-radius:5px;color:var(--gold);font-size:14px;padding:3px 8px;cursor:pointer;">📳</button>
     <span class="pv-status" id="pv-status">Connecting...</span>
   </div>
 </div>
@@ -713,9 +713,11 @@ const MOVE_SPEED_FT = 30;
 
 // ── Sounds & haptics (WebAudio — no assets needed) ───────────
 let pvMuted = localStorage.getItem('pv_mute') === '1';
-setTimeout(() => { const b = document.getElementById('pv-mute-btn'); if (b && pvMuted) b.textContent = '🔇'; }, 100);
+setTimeout(() => { const b = document.getElementById('pv-mute-btn'); if (b && pvMuted) b.textContent = '📴'; }, 100);
 let _audioCtx = null;
 function pvTone(freq, dur, delay, type, vol) {
+  // Sound removed by request — feedback is haptic-only now (see pvSound). No-op.
+  return;
   try {
     if (pvMuted) return;
     _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -728,19 +730,18 @@ function pvTone(freq, dur, delay, type, vol) {
     o.start(_audioCtx.currentTime + delay); o.stop(_audioCtx.currentTime + delay + dur + 0.05);
   } catch(e) {}
 }
+// Haptics only — no sound. On a phone these buzz; on desktop they no-op.
 function pvSound(kind) {
-  if (kind === 'turn') { pvTone(660, 0.18, 0, 'sine'); pvTone(880, 0.28, 0.15, 'sine'); if (navigator.vibrate) navigator.vibrate([120, 60, 120]); }
-  else if (kind === 'hit') { pvTone(180, 0.16, 0, 'square', 0.12); if (navigator.vibrate) navigator.vibrate(80); }
-  else if (kind === 'crit') { pvTone(523, 0.12, 0), pvTone(659, 0.12, 0.1), pvTone(784, 0.12, 0.2), pvTone(1046, 0.3, 0.3); if (navigator.vibrate) navigator.vibrate([60, 40, 60, 40, 160]); }
-  else if (kind === 'miss') { pvTone(300, 0.1, 0, 'triangle', 0.1); pvTone(220, 0.16, 0.09, 'triangle', 0.1); }
-  else if (kind === 'heal') { pvTone(523, 0.14, 0), pvTone(784, 0.24, 0.12); }
-  else if (kind === 'death') { pvTone(220, 0.3, 0, 'sawtooth', 0.08); pvTone(196, 0.5, 0.28, 'sawtooth', 0.08); if (navigator.vibrate) navigator.vibrate([250, 100, 250]); }
+  if (pvMuted || typeof navigator === 'undefined' || !navigator.vibrate) return;
+  const patterns = { turn: [110, 55, 110], hit: 70, crit: [60, 40, 60, 40, 150], miss: 35, heal: [40, 40, 80], death: [240, 100, 240] };
+  const pat = patterns[kind];
+  if (pat) { try { navigator.vibrate(pat); } catch (e) {} }
 }
 function toggleMute() {
   pvMuted = !pvMuted;
   localStorage.setItem('pv_mute', pvMuted ? '1' : '0');
   const btn = document.getElementById('pv-mute-btn');
-  if (btn) btn.textContent = pvMuted ? '🔇' : '🔊';
+  if (btn) btn.textContent = pvMuted ? '📴' : '📳';
 }
 window._pvToggleMute = toggleMute;
 
@@ -2039,9 +2040,11 @@ window._pvSwitchTab = switchPvTab;
 // ══════════════════════════════════════════════════════════════
 function renderRoot(d) {
   latestData = d;
-  // Don't clobber a journal draft mid-typing — data updates still land in latestData
-  const ta = document.getElementById('pv-journal');
-  if (activeTab === 'journal' && ta && document.activeElement === ta) return;
+  // Don't clobber a journal/notes draft mid-typing — data updates still land in latestData
+  if (activeTab === 'journal') {
+    const ae = document.activeElement;
+    if (ae && (ae.id === 'pv-journal' || ae.id === 'pv-party-notes' || ae.id === 'pv-stash-search')) return;
+  }
   const root = document.getElementById('pv-root');
   const party = d.party || [];
 
@@ -2309,7 +2312,7 @@ function renderTwoColumnView(d) {
       (hasCombat ? '<button class="pv-tab' + (activeTab === 'initiative' ? ' active' : '') + '" onclick="_pvSwitchTab(\'initiative\')">\u2694 Initiative</button>' : '') +
       (hasMap ? '<button class="pv-tab' + (activeTab === 'map' ? ' active' : '') + '" onclick="_pvSwitchTab(\'map\')">\ud83d\uddfa Map</button>' : '') +
       (hasWorld ? '<button class="pv-tab' + (activeTab === 'world' ? ' active' : '') + '" onclick="_pvSwitchTab(\'world\')">🌍 World</button>' : '') +
-      (tableMode ? '' : '<button class="pv-tab' + (activeTab === 'journal' ? ' active' : '') + '" onclick="_pvSwitchTab(\'journal\')">📖 Journal</button>') +
+      (tableMode ? '' : '<button class="pv-tab' + (activeTab === 'journal' ? ' active' : '') + '" onclick="_pvSwitchTab(\'journal\')">📜 Party</button>') +
     '</div>';
   }
 
@@ -3073,18 +3076,117 @@ function renderInitiativePanel(d) {
 // ══════════════════════════════════════════════════════════════
 // RENDER: Battle Map Panel (left panel, when tab active)
 // ══════════════════════════════════════════════════════════════
+let pvStashQuery = '';
 function renderJournalPanel(d) {
   const pc = myPC(d);
   if (!pc) return '';
-  return '<div class="card">' +
-    '<div class="card-section-label">📖 ' + esc(pc.name) + '\'s Journal <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(saved to the campaign)</span></div>' +
-    '<textarea id="pv-journal" style="width:100%;min-height:300px;background:rgba(0,0,0,0.3);border:1px solid rgba(212,175,55,0.2);border-radius:8px;color:var(--parchment);font-family:Crimson Text,serif;font-size:16px;line-height:1.6;padding:12px;resize:vertical;box-sizing:border-box;">' + esc(pc.journal || '') + '</textarea>' +
+  let html = '';
+
+  // ── QUESTS (read-only) ──
+  const quests = (d.quests || []).filter(q => q.status === 'active');
+  const doneQ = (d.quests || []).filter(q => q.status === 'resolved');
+  html += '<div class="card"><div class="card-section-label">📜 Quests</div>';
+  if (!quests.length && !doneQ.length) {
+    html += '<div style="font-size:13px;color:#666;font-style:italic;">No quests yet — your DM will post objectives here.</div>';
+  } else {
+    quests.forEach(q => {
+      html += '<div style="border-left:3px solid var(--gold);padding:6px 10px;margin-bottom:8px;background:rgba(212,175,55,0.05);border-radius:0 6px 6px 0;">' +
+        '<div style="font-size:15px;color:var(--gold-light);font-family:Cinzel,serif;">' + esc(q.title) + '</div>' +
+        (q.giver ? '<div style="font-size:11px;color:var(--text-dim);">from ' + esc(q.giver) + '</div>' : '') +
+        (q.notes ? '<div style="font-size:13px;color:var(--parchment);margin-top:3px;line-height:1.4;">' + esc(q.notes) + '</div>' : '') +
+      '</div>';
+    });
+    doneQ.forEach(q => {
+      html += '<div style="padding:4px 10px;margin-bottom:4px;opacity:0.6;"><span style="font-size:13px;color:#2ecc71;">✓ ' + esc(q.title) + '</span></div>';
+    });
+  }
+  html += '</div>';
+
+  // ── GROUP NOTES (shared, editable by anyone) ──
+  html += '<div class="card"><div class="card-section-label">📝 Group Notes <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(shared — everyone sees &amp; edits)</span></div>' +
+    '<textarea id="pv-party-notes" placeholder="Plans, clues, who owes who gold…" style="width:100%;min-height:120px;background:rgba(0,0,0,0.3);border:1px solid rgba(120,190,255,0.25);border-radius:8px;color:var(--parchment);font-family:Crimson Text,serif;font-size:15px;line-height:1.5;padding:12px;resize:vertical;box-sizing:border-box;">' + esc(d.partyNotes || '') + '</textarea>' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;">' +
+      '<button class="btn-pv" style="border-color:#8fd0ff;color:#8fd0ff;" onclick="_pvSaveGroupNotes()">💾 Save Group Notes</button>' +
+      '<span id="pv-partynotes-status" style="font-size:12px;color:var(--text-dim);"></span>' +
+    '</div></div>';
+
+  // ── PARTY STASH (shared inventory) ──
+  const stash = (d.partyInventory || []);
+  const q = pvStashQuery.toLowerCase();
+  const shown = q ? stash.filter(e => (e.name + ' ' + (e.desc || '')).toLowerCase().indexOf(q) >= 0) : stash;
+  html += '<div class="card"><div class="card-section-label">📦 Party Stash <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(' + stash.length + ' item' + (stash.length === 1 ? '' : 's') + ')</span></div>';
+  if (stash.length) {
+    html += '<input id="pv-stash-search" value="' + esc(pvStashQuery) + '" oninput="_pvStashSearch(this.value)" placeholder="🔍 Search the stash…" style="width:100%;padding:7px 10px;margin-bottom:8px;box-sizing:border-box;font-size:13px;">';
+  }
+  html += '<div id="pv-stash-list">';
+  if (!stash.length) {
+    html += '<div style="font-size:13px;color:#666;font-style:italic;">Empty — contribute an item below, or the DM will drop shared loot here.</div>';
+  } else {
+    shown.forEach(e => {
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.07);border-radius:5px;margin-bottom:4px;background:rgba(0,0,0,0.15);">' +
+        '<span>' + (e.icon || '🎒') + '</span>' +
+        '<div style="flex:1;min-width:0;"><div style="font-size:13px;color:var(--parchment);">' + esc(e.name) + '</div>' +
+        (e.desc ? '<div style="font-size:10px;color:var(--text-dim);">' + esc(e.desc) + '</div>' : '') + '</div>' +
+        '<button class="btn-pv" style="font-size:10px;padding:3px 10px;border-color:var(--gold);color:var(--gold-light);" onclick="_pvStashTake(\'' + e.id + '\')">Take</button>' +
+      '</div>';
+    });
+    if (!shown.length) html += '<div style="font-size:12px;color:#666;font-style:italic;padding:8px;">Nothing matches your search.</div>';
+  }
+  html += '</div>';
+  // Contribute from my bag
+  const spare = (pc.inventory || []).filter(i => !i.equipped);
+  if (spare.length) {
+    html += '<div style="display:flex;gap:6px;margin-top:10px;align-items:center;">' +
+      '<select id="pv-stash-give" style="flex:1;font-size:12px;padding:5px;"><option value="">— add one of your items —</option>' +
+        spare.map(i => '<option value="' + i.id + '">' + esc(i.name) + '</option>').join('') + '</select>' +
+      '<button class="btn-pv" style="font-size:11px;padding:5px 12px;" onclick="_pvContributeStash()">📦 Add to stash</button>' +
+    '</div>';
+  }
+  html += '</div>';
+
+  // ── PERSONAL JOURNAL ──
+  html += '<div class="card"><div class="card-section-label">📖 ' + esc(pc.name) + '\'s Journal <span style="font-size:9px;color:#555;text-transform:none;letter-spacing:0;">(private to you)</span></div>' +
+    '<textarea id="pv-journal" style="width:100%;min-height:180px;background:rgba(0,0,0,0.3);border:1px solid rgba(212,175,55,0.2);border-radius:8px;color:var(--parchment);font-family:Crimson Text,serif;font-size:16px;line-height:1.6;padding:12px;resize:vertical;box-sizing:border-box;">' + esc(pc.journal || '') + '</textarea>' +
     '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;">' +
       '<button class="btn-pv" style="border-color:var(--gold);" onclick="_pvSaveJournal()">💾 Save Journal</button>' +
       '<span id="pv-journal-status" style="font-size:12px;color:var(--text-dim);"></span>' +
-    '</div>' +
-  '</div>';
+    '</div></div>';
+  return html;
 }
+function saveGroupNotes() {
+  const ta = document.getElementById('pv-party-notes'); if (!ta) return;
+  sendPlayerRequest({ type: 'partyNote', text: ta.value, ts: Date.now() });
+  const st = document.getElementById('pv-partynotes-status');
+  if (st) { st.textContent = '✓ Shared'; st.style.color = '#8fd050'; setTimeout(() => { if (st) st.textContent = ''; }, 2500); }
+}
+window._pvSaveGroupNotes = saveGroupNotes;
+window._pvStashSearch = (v) => {
+  pvStashQuery = v || '';
+  // re-render just the list, keep focus in the search box
+  const d = latestData; if (!d) return;
+  const listWrap = document.getElementById('pv-stash-list');
+  if (!listWrap) return;
+  const stash = d.partyInventory || [];
+  const q = pvStashQuery.toLowerCase();
+  const shown = q ? stash.filter(e => (e.name + ' ' + (e.desc || '')).toLowerCase().indexOf(q) >= 0) : stash;
+  listWrap.innerHTML = shown.length ? shown.map(e =>
+    '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.07);border-radius:5px;margin-bottom:4px;background:rgba(0,0,0,0.15);">' +
+    '<span>' + (e.icon || '🎒') + '</span><div style="flex:1;min-width:0;"><div style="font-size:13px;color:var(--parchment);">' + esc(e.name) + '</div>' +
+    (e.desc ? '<div style="font-size:10px;color:var(--text-dim);">' + esc(e.desc) + '</div>' : '') + '</div>' +
+    '<button class="btn-pv" style="font-size:10px;padding:3px 10px;border-color:var(--gold);color:var(--gold-light);" onclick="_pvStashTake(\'' + e.id + '\')">Take</button></div>'
+  ).join('') : '<div style="font-size:12px;color:#666;font-style:italic;padding:8px;">Nothing matches your search.</div>';
+};
+window._pvStashTake = (stashId) => {
+  const pc = myPC(latestData); if (!pc) return;
+  sendPlayerRequest({ type: 'stashTake', pcId: pc.id, stashId, ts: Date.now() });
+  showWaiting('🎒 Taking it from the stash…');
+};
+window._pvContributeStash = () => {
+  const pc = myPC(latestData); const sel = document.getElementById('pv-stash-give');
+  if (!pc || !sel || !sel.value) return;
+  sendPlayerRequest({ type: 'stashContribute', pcId: pc.id, itemId: parseFloat(sel.value), ts: Date.now() });
+  showWaiting('📦 Adding to the stash…');
+};
 
 async function saveJournal() {
   const d = latestData;
