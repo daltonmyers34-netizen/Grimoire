@@ -34,6 +34,14 @@ function refreshStrictBtn() {
   btn.style.background = strictCombat ? 'rgba(212,175,55,0.15)' : '';
 }
 
+// DM edits the shared group notes — same field the players see/edit.
+var _partyNotesTimer = null;
+function saveGroupNotesDM(text) {
+  if (typeof partyNotes !== 'undefined') partyNotes = String(text || '');
+  if (_partyNotesTimer) clearTimeout(_partyNotesTimer);
+  _partyNotesTimer = setTimeout(function() { if (window.cloudSave) window.cloudSave(); }, 600);
+}
+
 function syncCombatState() {
   // Catch-all: make sure every enemy carries a creature type (manual adds, AI-gen,
   // legacy saves) so slayer weapons and type effects always have something to key on.

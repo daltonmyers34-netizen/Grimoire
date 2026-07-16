@@ -18,6 +18,8 @@ let party = JSON.parse(localStorage.getItem('dm_party') || '[]');
 // current-turn creature acts, map moves are limited to its speed, and attacks
 // enforce range. Off by default (god-mode DM tools stay unchanged).
 let strictCombat = localStorage.getItem('dm_strict_combat') === '1';
+// Shared group notepad — players and the DM all read/write it (last write wins).
+let partyNotes = '';
 let battlePresets = JSON.parse(localStorage.getItem('dm_presets') || '[]');
 let combatLog = [];
 let diceHistory = [];
