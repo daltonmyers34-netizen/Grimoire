@@ -6,10 +6,14 @@
 // changes, and victory. Toggle + test buttons live on the Sound tab.
 // Device preference (not campaign state), like the player-view mute.
 
-var dmAmbientOn = localStorage.getItem('dm_ambient_sound') === '1'; // default OFF (opt-in on the Sound tab)
+// Sound removed from the app by request — the DM side is fully silent now.
+// The tone synths below hard no-op; the Sound tab's toggle/previews are inert.
+var SOUND_DISABLED = true;
+var dmAmbientOn = false;
 var _dmAudioCtx = null;
 
 function dmTone(freq, dur, delay, type, vol) {
+  if (SOUND_DISABLED) return;
   try {
     if (!dmAmbientOn) return;
     _dmAudioCtx = _dmAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -28,6 +32,7 @@ function dmTone(freq, dur, delay, type, vol) {
 
 // A short sweep used for horns/rumbles
 function dmSweep(f1, f2, dur, delay, type, vol) {
+  if (SOUND_DISABLED) return;
   try {
     if (!dmAmbientOn) return;
     _dmAudioCtx = _dmAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
