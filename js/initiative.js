@@ -67,7 +67,16 @@ function addCombatant() {
   document.getElementById('new-hp').value = '';
   document.getElementById('new-ac').value = '';
   renderCombatants();
+  refreshMapRoster();
   syncCombatState();
+}
+
+// After the roster changes, place any new token and redraw + sync the map so
+// enemies appear/disappear live without regenerating the map.
+function refreshMapRoster() {
+  if (typeof ensureTokensPlaced === 'function') try { ensureTokensPlaced(); } catch (e) {}
+  if (typeof renderMap === 'function') try { renderMap(); } catch (e) {}
+  if (typeof syncMapState === 'function') syncMapState();
 }
 
 // Add a combatant from a monster database entry
@@ -87,6 +96,7 @@ function addCombatantFromDB(m) {
   });
   combatants.sort(function(a,b) { return b.init - a.init; });
   renderCombatants();
+  refreshMapRoster();
   syncCombatState();
   showToast(m.name + ' added to initiative!', 'success');
 }
@@ -929,7 +939,10 @@ function closeCondModal() {
 
 function removeCombatant(id) {
   combatants = combatants.filter(function(x) { return x.id !== id; });
+  // Clear its token off the map and redraw so it disappears without regenerating.
+  if (typeof mapState !== 'undefined' && mapState.tokens) delete mapState.tokens[id];
   renderCombatants();
+  refreshMapRoster();
   syncCombatState();
 }
 
@@ -980,6 +993,7 @@ function quickAddMonster() {
     combatants.push({ id: uniqueId(), name: name, init: init, hp: 10, maxHp: 10, ac: 10, type: 'enemy', conditions: [] });
     combatants.sort(function(a,b) { return b.init - a.init; });
     renderCombatants();
+    refreshMapRoster();
     syncCombatState();
     showToast(name + ' added (generic stats)', 'success');
   }

@@ -389,6 +389,28 @@ function processPickupLoot(req) {
   var e = battlefieldLoot.find(function(x) { return String(x.id) === String(req.lootId); });
   var pc = party.find(function(p) { return p.id === req.pcId; });
   if (!e || !pc) return;
+  // Take everything in one go
+  if (req.idx === 'all') {
+    pc.inventory = pc.inventory || [];
+    var got = 0;
+    (e.items || []).forEach(function(name, i) {
+      if ((e.given || {})[i]) return;
+      var it = (typeof resolveItemFromName === 'function') ? resolveItemFromName(name)
+        : { id: (typeof uniqueId === 'function' ? uniqueId() : Date.now()), name: name, qty: 1, slot: 'gear', equipped: false };
+      pc.inventory.push(it);
+      e.given = e.given || {}; e.given[i] = pc.name; got++;
+    });
+    if (e.gp && !e.gpGiven) { pc.gold = (pc.gold || 0) + e.gp; e.gpGiven = true; got++; }
+    if (!got) return;
+    if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
+    if (typeof logCombat === 'function') logCombat('🎒 ' + pc.name + ' loots everything from ' + e.from, 'info');
+    showToast('🎒 ' + pc.name + ' looted ' + e.from, 'success');
+    if (typeof savePartyStorage === 'function') savePartyStorage();
+    if (typeof renderParty === 'function') renderParty();
+    if (typeof renderCvLoot === 'function') renderCvLoot();
+    if (window.cloudSaveNow) window.cloudSaveNow();
+    return;
+  }
   if (req.idx === 'gp') {
     if (!e.gp || e.gpGiven) return;
     pc.gold = (pc.gold || 0) + e.gp;
