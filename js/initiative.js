@@ -14,6 +14,13 @@ Object.defineProperty(window, 'currentRound', {
 
 // Sync state to cloud/localStorage after any combat change
 function syncCombatState() {
+  // Catch-all: make sure every enemy carries a creature type (manual adds, AI-gen,
+  // legacy saves) so slayer weapons and type effects always have something to key on.
+  if (typeof inferCreatureType === 'function') {
+    combatants.forEach(function(c) {
+      if (c.type === 'enemy' && c.creatureType === undefined) c.creatureType = inferCreatureType(c.name);
+    });
+  }
   if (window.cloudSave) window.cloudSave();
 }
 
@@ -46,6 +53,7 @@ function addCombatantFromDB(m) {
     ac: parseInt(m.ac) || 10,
     type: m.type || 'enemy',
     conditions: [],
+    creatureType: m.creatureType || (typeof inferCreatureType === 'function' ? inferCreatureType(m.name) : undefined),
     actions: m.actions || (typeof improvisedAttackFor === 'function' ? [improvisedAttackFor(m.name, m.cr)] : [])
   });
   combatants.sort(function(a,b) { return b.init - a.init; });
@@ -492,6 +500,7 @@ function renderCombatants() {
     var inspN = parseInt(c.inspiration) || 0;
     var inspBadge = inspN > 0 ? '<span onclick="spendCombatantInspiration(' + c.id + ')" style="color:#ffe066;font-size:13px;margin-left:4px;cursor:pointer;" title="Inspiration ×' + inspN + ' — click to spend one">★' + (inspN > 1 ? '×' + inspN : '') + '</span>' : '';
     var concBadge = c.concentrating ? '<span style="background:rgba(100,50,200,0.2);border:1px solid rgba(150,80,255,0.4);color:#b080ff;font-size:9px;font-family:Cinzel,serif;border-radius:3px;padding:1px 5px;margin-left:4px;" title="' + c.concentrating + '">CONC</span>' : '';
+    var buffBadges = (c.buffs || []).map(function(b) { return '<span style="font-size:11px;margin-left:3px;" title="' + esc(b.name) + ' (' + b.rounds + 'r)">' + (b.icon || '✨') + '</span>'; }).join('');
     var hiddenBadge = c.hidden ? '<span style="color:#888;font-size:10px;margin-left:4px;" title="Hidden from players">👁</span>' : '';
     var exLvl = (typeof exhaustionLevel === 'function') ? exhaustionLevel(c) : (c.exhaustion || 0);
     var exBadge = exLvl > 0 ? '<span style="background:rgba(180,120,40,0.2);border:1px solid rgba(210,150,60,0.5);color:#e0a860;font-size:9px;font-family:Cinzel,serif;border-radius:3px;padding:1px 5px;margin-left:4px;" title="Exhaustion — ' + ((typeof EXHAUSTION_TEXT !== "undefined") ? EXHAUSTION_TEXT[exLvl] : "") + '">😫 ' + exLvl + '</span>' : '';
@@ -502,7 +511,7 @@ function renderCombatants() {
       '<div>' +
         '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px;margin-bottom:3px;">' +
           '<span class="combatant-name ' + nameClass + '" style="font-size:16px;">' + c.name + (isActive ? ' ◀' : '') + '</span>' +
-          inspBadge + concBadge + hiddenBadge + exBadge + surpriseBadge +
+          inspBadge + concBadge + buffBadges + hiddenBadge + exBadge + surpriseBadge +
           '<span style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.04em;color:' + typeColor + ';margin-left:4px;opacity:0.8;">' + c.type.toUpperCase() + '</span>' +
         '</div>' +
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
@@ -662,8 +671,41 @@ function openCondModal(id) {
   condTargetId = id;
   renderDefenseChips();
   renderCondDurations();
+  renderCondBuffs();
   renderExhaustionRow();
   document.getElementById('cond-modal').classList.add('show');
+}
+
+// Buff picker + active-buff list inside the condition modal
+function renderCondBuffs() {
+  var wrap = document.getElementById('cond-buffs');
+  var c = combatants.find(function(x) { return x.id === condTargetId; });
+  if (!wrap || !c) return;
+  var lib = (typeof BUFF_LIBRARY !== 'undefined') ? BUFF_LIBRARY : {};
+  var active = (c.buffs || []).map(function(b) {
+    return '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:4px;font-size:11px;background:rgba(120,200,120,0.12);border:1px solid rgba(120,200,120,0.4);color:#9fe09f;margin:2px;">' +
+      (b.icon || '✨') + ' ' + esc(b.name) + ' <span style="color:#e0a860;">' + b.rounds + 'r</span>' +
+      '<span onclick="removeCombatantBuff(\'' + b.name.replace(/'/g, "\\'") + '\')" style="cursor:pointer;color:#e08080;margin-left:2px;">✕</span></span>';
+  }).join('');
+  var chips = Object.keys(lib).map(function(name) {
+    var b = lib[name];
+    return '<button onclick="applyCombatantBuff(\'' + name.replace(/'/g, "\\'") + '\')" title="' + esc(b.desc || '') + '" style="font-size:11px;padding:3px 9px;border:1px solid var(--border);background:rgba(0,0,0,0.25);color:var(--parchment);border-radius:4px;cursor:pointer;margin:2px;">' + (b.icon || '✨') + ' ' + esc(name) + '</button>';
+  }).join('');
+  wrap.innerHTML =
+    (active ? '<div style="margin-bottom:8px;">' + active + '</div>' : '') +
+    '<div style="display:flex;flex-wrap:wrap;">' + chips + '</div>';
+}
+function applyCombatantBuff(name) {
+  var c = combatants.find(function(x) { return x.id === condTargetId; });
+  if (!c || typeof applyBuff !== 'function') return;
+  applyBuff(c, name);
+  renderCondBuffs();
+}
+function removeCombatantBuff(name) {
+  var c = combatants.find(function(x) { return x.id === condTargetId; });
+  if (!c || typeof removeBuff !== 'function') return;
+  removeBuff(c, name);
+  renderCondBuffs();
 }
 
 // Per-condition round timers — set a duration, it ticks down each turn end

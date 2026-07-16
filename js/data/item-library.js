@@ -183,12 +183,13 @@ var ITEM_LIBRARY = [
   { name: 'Potion of Greater Healing', slot: 'potion', healDice: '4d4+4', desc: 'Heals 4d4+4 HP.' },
   { name: 'Potion of Superior Healing', slot: 'potion', healDice: '8d4+8', desc: 'Heals 8d4+8 HP.' },
   { name: 'Potion of Supreme Healing', slot: 'potion', healDice: '10d4+20', desc: 'Heals 10d4+20 HP.' },
-  { name: 'Potion of Fire Resistance', slot: 'potion', desc: 'Resistance to fire for 1 hour (apply grantResist on the drinker while active).' },
-  { name: 'Potion of Giant Strength (Hill)', slot: 'potion', desc: 'STR becomes 21 for 1 hour.' },
-  { name: 'Potion of Heroism', slot: 'potion', desc: '10 temp HP + Bless for 1 hour.' },
-  { name: 'Potion of Speed', slot: 'potion', desc: 'Hasted for 1 minute (double speed, +2 AC, extra action).' },
-  { name: 'Potion of Invisibility', slot: 'potion', desc: 'Invisible for 1 hour or until you attack/cast.' },
-  { name: 'Potion of Flying', slot: 'potion', desc: 'Fly speed equal to walking speed for 1 hour.' }
+  { name: 'Potion of Fire Resistance', slot: 'potion', buff: 'Fire Warded', desc: 'Resistance to fire (buff applies on drink).' },
+  { name: 'Potion of Cold Resistance', slot: 'potion', buff: 'Cold Warded', desc: 'Resistance to cold.' },
+  { name: 'Potion of Giant Strength (Hill)', slot: 'potion', buff: 'Giant Might', desc: 'Giant Strength — mightier hits.' },
+  { name: 'Potion of Heroism', slot: 'potion', buff: 'Heroic', desc: '10 temp HP + immune to fear (Heroism).' },
+  { name: 'Potion of Speed', slot: 'potion', buff: 'Hasted (Speed)', desc: 'Hasted — double speed, +2 AC, extra action.' },
+  { name: 'Potion of Invisibility', slot: 'potion', buff: 'Invisible', desc: 'Unseen — advantage on attacks until you attack/cast.' },
+  { name: 'Potion of Flying', slot: 'potion', buff: 'Flying', desc: 'Take to the air.' }
 ];
 
 if (typeof window !== 'undefined') window.ITEM_LIBRARY = ITEM_LIBRARY;

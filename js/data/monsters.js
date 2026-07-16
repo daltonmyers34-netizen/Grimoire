@@ -310,3 +310,30 @@ const MONSTER_ACTIONS = {
     traits:[{name:'Legendary Actions (3/turn)',text:'Detect (Perception), Tail Attack (+13 to hit, 1d12+7), Wing Attack (DC 21 Str or knocked prone).'}]
   },
 };
+
+// ── Creature-type inference ──────────────────────────────────────────────────
+// Maps a monster name to its 5e creature type so slayer weapons (vsType) and
+// type-keyed effects work automatically. Order matters: specific types are checked
+// before beasts, and "giant <animal>" (Giant Rat) resolves to beast, not giant.
+function inferCreatureType(name) {
+  var n = String(name || '').toLowerCase();
+  var has = function(re) { return re.test(n); };
+  if (has(/skeleton|zombie|ghoul|ghast|shadow|specter|spectre|poltergeist|revenant|banshee|wisp|flameskull|crawling claw|death knight|wight|wraith|demilich|\blich\b|vampire|mummy|allip|ghost|wight|bodak|boneclaw|dracolich|dread|undead/)) return 'undead';
+  if (has(/demon|devil|imp\b|quasit|balor|pit fiend|hezrou|vrock|glabrezu|marilith|nalfeshnee|succubus|incubus|cambion|barbed|bearded devil|bone devil|erinyes|horned devil|ice devil|lemure|chain devil|rakshasa|night hag|yugoloth|dretch|manes|shadow demon|fiend|hell/)) return 'fiend';
+  if (has(/angel|deva|planetar|solar|couatl|pegasus|unicorn|ki-rin|celestial/)) return 'celestial';
+  if (has(/aboleth|beholder|spectator|mind flayer|illithid|otyugh|cloaker|chuul|grell|gibbering|nothic|slaad|star spawn|flumph|intellect devourer|gauth|aberration|neothelid/)) return 'aberration';
+  if (has(/golem|animated|homunculus|shield guardian|helmed horror|scarecrow|modron|automaton|construct|clay|iron cobra/)) return 'construct';
+  if (has(/ooze|pudding|jelly|slime|gelatinous/)) return 'ooze';
+  if (has(/shambling|treant|myconid|blight|awakened tree|awakened shrub|wood woad|shrieker|violet fungus|vegepygmy|\bplant\b/)) return 'plant';
+  if (has(/elemental|mephit|salamander|\bazer\b|djinni|efreeti|\bdao\b|marid|invisible stalker|genie|magmin|gargoyle/)) return 'elemental';
+  if (has(/dryad|satyr|sprite|pixie|blink dog|faerie|redcap|quickling|boggle|darkling|sea hag|green hag|\bfey\b/)) return 'fey';
+  if (has(/dragon|wyvern|wyrm|drake|pseudodragon|wyrmling|dragonnel|guard drake/)) return 'dragon';
+  // Beasts (incl. "Giant <animal>", swarms) — before the giant-type check
+  if (has(/wolf|worg|\bbear\b|\brat\b|snake|spider|\bbat\b|boar|lion|tiger|\bape\b|gorilla|elk|horse|steed|warhorse|eagle|hawk|owl\b|shark|octopus|squid|crocodile|\bdog\b|mastiff|\bcat\b|panther|jaguar|leopard|lynx|mule|camel|elephant|rhinoceros|mammoth|\bdeer\b|cow|\box\b|goat|hyena|jackal|vulture|raven|\bfrog\b|toad|lizard|\bcrab\b|scorpion|beetle|wasp|centipede|swarm|baboon|badger|weasel|\bram\b|reindeer|boar|piranha|seahorse|constrictor|\bviper\b|\bape\b/)) return 'beast';
+  if (has(/giant\b|ogre|troll|ettin|cyclops|\boni\b|fomorian|firbolg|goliath/)) return 'giant';
+  if (has(/chimera|manticore|griffon|hippogriff|owlbear|hydra|basilisk|cockatrice|displacer|bulette|ankheg|remorhaz|roper|umber hulk|minotaur|medusa|gorgon|harpy|lamia|sphinx|kraken|purple worm|rust monster|carrion crawler|darkmantle|grick|hook horror|peryton|phase spider|winter wolf|yeti|behir|tarrasque|gnoll|merrow|centaur|naga|yuan-ti|bulezau|monstrosity/)) return 'monstrosity';
+  return 'humanoid';
+}
+// Stamp the quick-add DB so every listed monster carries its type (DM can override).
+try { MONSTER_DB.forEach(function(m) { if (!m.creatureType) m.creatureType = inferCreatureType(m.name); }); } catch (e) {}
+if (typeof window !== 'undefined') window.inferCreatureType = inferCreatureType;
