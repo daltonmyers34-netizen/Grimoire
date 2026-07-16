@@ -1498,40 +1498,44 @@ function saveItemEffects(pcId, itemId) {
   };
   var csvRaw = function(id) { return (val(id) || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean); };
 
+  // set the key to a truthy value, or DELETE it — never leave `undefined` behind
+  // (a single undefined value makes Firestore reject the whole cloud save).
+  var setDel = function(key, v) { if (v) it[key] = v; else delete it[key]; };
+
   // Weapon
   var d = val('fx-dice'); if (d) it.dice = d;
   var dt = val('fx-dtype'); if (dt) it.damageType = dt;
-  it.magicBonus = num('fx-magic') || undefined;
-  it.toHitBonus = num('fx-tohit') || undefined;
-  it.damageBonus = num('fx-dmgbonus') || undefined;
-  var cr = parseInt(val('fx-crit')) || 20; it.critRange = cr < 20 ? cr : undefined;
+  setDel('magicBonus', num('fx-magic'));
+  setDel('toHitBonus', num('fx-tohit'));
+  setDel('damageBonus', num('fx-dmgbonus'));
+  var cr = parseInt(val('fx-crit')) || 20; setDel('critRange', cr < 20 ? cr : 0);
   var riders = [];
   for (var i = 0; i < 3; i++) {
     var rdd = val('fx-rd-dice-' + i);
-    if (rdd) { var rd = { dice: rdd, type: val('fx-rd-type-' + i) || undefined }; if (chk('fx-rd-crit-' + i)) rd.onCrit = true; riders.push(rd); }
+    if (rdd) { var rd = { dice: rdd, type: val('fx-rd-type-' + i) || '' }; if (chk('fx-rd-crit-' + i)) rd.onCrit = true; riders.push(rd); }
   }
-  it.riderDamage = riders.length ? riders : undefined;
+  setDel('riderDamage', riders.length ? riders : null);
   var ohAb = val('fx-oh-ability'), ohDc = num('fx-oh-dc'), ohCond = val('fx-oh-cond');
-  it.onHitSave = (ohAb && ohDc && ohCond) ? { ability: ohAb, dc: ohDc, condition: ohCond, duration: num('fx-oh-dur') || undefined } : undefined;
+  setDel('onHitSave', (ohAb && ohDc && ohCond) ? { ability: ohAb, dc: ohDc, condition: ohCond, duration: num('fx-oh-dur') || 0 } : null);
 
   // Passive
-  it.acBonus = num('fx-ac') || undefined;
-  it.speedBonus = num('fx-speed') || undefined;
-  it.lightFt = num('fx-light') || undefined;
-  it.allAttackBonus = num('fx-allatk') || undefined;
-  it.allDamageBonus = num('fx-alldmg') || undefined;
-  it.saveBonus = num('fx-savebonus') || undefined;
-  it.grantsExtraAttack = chk('fx-extraatk') || undefined;
+  setDel('acBonus', num('fx-ac'));
+  setDel('speedBonus', num('fx-speed'));
+  setDel('lightFt', num('fx-light'));
+  setDel('allAttackBonus', num('fx-allatk'));
+  setDel('allDamageBonus', num('fx-alldmg'));
+  setDel('saveBonus', num('fx-savebonus'));
+  setDel('grantsExtraAttack', chk('fx-extraatk'));
   // Skill bonuses — from the skill dropdowns
   var sk = {}, skAny = false;
   for (var si = 0; si < 3; si++) {
     var kk = val('fx-skill-key-' + si), vv = num('fx-skill-val-' + si);
     if (kk && vv) { sk[kk] = vv; skAny = true; }
   }
-  it.skillBonus = skAny ? sk : undefined;
+  setDel('skillBonus', skAny ? sk : null);
   var stats = {}, any = false;
   ['str','dex','con','int','wis','cha'].forEach(function(s) { var v = num('fx-' + s); if (v) { stats[s] = v; any = true; } });
-  it.statBonuses = any ? stats : undefined;
+  setDel('statBonuses', any ? stats : null);
 
   // Defenses — from the toggle chips
   it.grantResist = fxReadChips('resist'); if (!it.grantResist.length) delete it.grantResist;
@@ -1541,13 +1545,13 @@ function saveItemEffects(pcId, itemId) {
 
   // Granted action + charges
   var an = val('fx-aname');
-  it.grantAction = an ? {
+  setDel('grantAction', an ? {
     name: an, kind: 'attack', range: num('fx-arange') || 5, bonus: num('fx-abonus') || 0,
     dice: val('fx-adice') || '1d6',
     damageType: val('fx-atype') || (typeof inferDamageType === 'function' ? inferDamageType(an) : '')
-  } : undefined;
+  } : null);
   var chMax = num('fx-charges'), chPer = val('fx-recharge');
-  it.charges = chMax ? { max: chMax, left: (it.charges && typeof it.charges.left === 'number' && it.charges.max === chMax) ? it.charges.left : chMax, per: chPer || 'long' } : undefined;
+  setDel('charges', chMax ? { max: chMax, left: (it.charges && typeof it.charges.left === 'number' && it.charges.max === chMax) ? it.charges.left : chMax, per: chPer || 'long' } : null);
 
   if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
   savePartyStorage();
