@@ -892,14 +892,15 @@ function renderInventoryModal(pcId) {
   // Add item row
   html += '<div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:12px;">' +
     '<div style="display:grid;grid-template-columns:2fr 60px 1fr auto;gap:6px;align-items:end;">' +
-      '<div class="field-group" style="margin:0;"><label>Item <span style="color:#666;font-weight:normal;">(known names auto-fill stats)</span></label><input id="inv-new-name" placeholder="Longsword, Torch, Shield, Rope..."></div>' +
+      '<div class="field-group" style="margin:0;"><label>Item <span style="color:#666;font-weight:normal;">(type to search — known names auto-fill stats)</span></label><input id="inv-new-name" list="inv-name-datalist" autocomplete="off" placeholder="Start typing: Flame Tongue, Plate, Potion of..."></div>' +
       '<div class="field-group" style="margin:0;"><label>Qty</label><input id="inv-new-qty" type="number" value="1" style="text-align:center;"></div>' +
       '<div class="field-group" style="margin:0;"><label>Slot</label><select id="inv-new-slot">' +
         '<option value="gear">Gear</option><option value="weapon">Weapon</option><option value="armor">Armor</option><option value="shield">Shield</option><option value="light">Light</option><option value="potion">Potion</option><option value="ammo">Ammo</option>' +
       '</select></div>' +
       '<button class="btn btn-gold btn-sm" onclick="addInventoryItem(' + pcId + ')">+ Add</button>' +
     '</div>' +
-    '<div style="margin-top:8px;text-align:center;"><button class="btn btn-ghost btn-sm" onclick="openItemLibrary(' + pcId + ',0)">📚 Add from magic item library…</button></div>' +
+    '<div style="margin-top:8px;text-align:center;"><button class="btn btn-ghost btn-sm" onclick="openItemLibrary(' + pcId + ',0)">📚 Browse magic item library…</button></div>' +
+    '<datalist id="inv-name-datalist">' + itemNameOptions().map(function(n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>' +
     '</div>';
 
   // Item list
@@ -945,6 +946,16 @@ function renderInventoryModal(pcId) {
   ov.innerHTML = html;
 }
 
+// Every item name we can autocomplete: library items + known base-item presets.
+function itemNameOptions() {
+  var names = {};
+  if (typeof ITEM_LIBRARY !== 'undefined') ITEM_LIBRARY.forEach(function(t) { names[t.name] = 1; });
+  if (typeof ITEM_PRESETS !== 'undefined') Object.keys(ITEM_PRESETS).forEach(function(k) {
+    names[k.replace(/\b\w/g, function(c) { return c.toUpperCase(); })] = 1;
+  });
+  return Object.keys(names).sort();
+}
+
 function addInventoryItem(pcId) {
   var pc = party.find(function(p) { return p.id === pcId; });
   if (!pc) return;
@@ -952,6 +963,19 @@ function addInventoryItem(pcId) {
   if (!name) return;
   var qty = parseInt(document.getElementById('inv-new-qty').value) || 1;
   var slot = document.getElementById('inv-new-slot').value;
+  // Exact library match → full effects (a typed "Flame Tongue Longsword" keeps its rider).
+  var lib = (typeof ITEM_LIBRARY !== 'undefined') ? ITEM_LIBRARY.find(function(t) { return t.name.toLowerCase() === name.toLowerCase(); }) : null;
+  if (lib && typeof resolveItemFromName === 'function') {
+    var libItem = resolveItemFromName(name);
+    libItem.qty = qty;
+    pc.inventory = pc.inventory || [];
+    pc.inventory.push(libItem);
+    if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
+    savePartyStorage();
+    renderInventoryModal(pcId);
+    showToast('✨ ' + libItem.name + ' → ' + pc.name, 'success');
+    return;
+  }
   var item = { id: typeof uniqueId === 'function' ? uniqueId() : Date.now(), name: name, qty: qty, slot: slot, equipped: false };
   var preset = typeof itemPresetFor === 'function' ? itemPresetFor(name) : null;
   if (preset) {
@@ -1226,35 +1250,107 @@ function applyLibraryItem(pcId, itemId, libIndex) {
 }
 
 // Library browser — grid of prebuilt items with their effect summary
+var _libCtx = { pcId: 0, itemId: 0, q: '', cat: '' };
+var LIB_CATS = [
+  { key: '', label: 'All' }, { key: 'weapon', label: '⚔ Weapons' }, { key: 'armor', label: '🛡 Armor & Shields' },
+  { key: 'wearable', label: '💍 Wearables' }, { key: 'wand', label: '🪄 Wands & Staves' }, { key: 'potion', label: '🧪 Potions' }
+];
+function libItemCategory(t) {
+  var n = String(t.name || '').toLowerCase();
+  if (/wand|staff|\brod\b/.test(n)) return 'wand';
+  if (t.slot === 'armor' || t.slot === 'shield') return 'armor';
+  if (t.slot === 'weapon') return 'weapon';
+  if (t.slot === 'potion') return 'potion';
+  if (t.slot === 'wearable') return 'wearable';
+  return 'other';
+}
+function libChipStyle(on) {
+  return 'font-size:11px;padding:4px 11px;border-radius:12px;cursor:pointer;border:1px solid ' +
+    (on ? 'var(--gold)' : 'rgba(255,255,255,0.15)') + ';background:' + (on ? 'rgba(212,175,55,0.18)' : 'rgba(0,0,0,0.25)') +
+    ';color:' + (on ? 'var(--gold)' : '#aaa') + ';';
+}
 function openItemLibrary(pcId, itemId) {
+  _libCtx = { pcId: pcId, itemId: itemId || 0, q: '', cat: '' };
   var existing = document.getElementById('item-lib-modal'); if (existing) existing.remove();
-  var lib = (typeof ITEM_LIBRARY !== 'undefined') ? ITEM_LIBRARY : [];
   var ov = document.createElement('div');
   ov.id = 'item-lib-modal';
   ov.className = 'modal-overlay show';
   ov.style.zIndex = '2720';
   var esc2 = function(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
-  var rows = lib.map(function(t, i) {
-    return '<div onclick="applyLibraryItem(' + pcId + ',' + (itemId || 0) + ',' + i + ')" style="padding:9px 11px;border:1px solid rgba(255,255,255,0.1);border-radius:6px;margin-bottom:6px;cursor:pointer;background:rgba(0,0,0,0.2);" onmouseover="this.style.borderColor=\'var(--gold)\'" onmouseout="this.style.borderColor=\'rgba(255,255,255,0.1)\'">' +
-      '<div style="font-size:14px;color:var(--gold-light);font-family:Cinzel,serif;">' + esc2(t.name) + ' <span style="font-size:10px;color:#666;">' + esc2(t.slot) + '</span></div>' +
-      '<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">' + esc2(t.desc || '') + '</div>' +
-    '</div>';
+  var target = itemId ? 'turn this item into it' : 'add it to ' + esc2((party.find(function(p){return p.id===pcId;})||{}).name);
+  var cats = LIB_CATS.map(function(c) {
+    return '<span data-cat="' + c.key + '" onclick="libSetCat(\'' + c.key + '\')" style="' + libChipStyle(c.key === '') + '">' + c.label + '</span>';
   }).join('');
-  ov.innerHTML = '<div class="modal" style="max-width:520px;width:96%;max-height:86vh;overflow-y:auto;">' +
+  ov.innerHTML = '<div class="modal" style="max-width:540px;width:96%;max-height:88vh;display:flex;flex-direction:column;">' +
     '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:4px;">📚 Magic Item Library</h3>' +
-    '<div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">Click one to ' + (itemId ? 'turn this item into it' : 'add it to ' + (party.find(function(p){return p.id===pcId;})||{}).name) + ' — then tweak anything in the effects editor.</div>' +
-    rows +
+    '<div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">Search or filter, then click one to ' + target + ' — tweak anything after in the effects editor.</div>' +
+    '<input id="lib-search" oninput="libSearch(this.value)" autocomplete="off" placeholder="🔍 Search by name or effect (poison, fire, +2, stealth…)" style="width:100%;padding:9px 12px;font-size:14px;margin-bottom:8px;box-sizing:border-box;">' +
+    '<div id="lib-cats" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">' + cats + '</div>' +
+    '<div id="lib-count" style="font-size:10px;color:#666;margin-bottom:6px;"></div>' +
+    '<div id="lib-list" style="overflow-y:auto;flex:1;min-height:120px;"></div>' +
     '<div class="modal-btns" style="margin-top:10px;"><button class="btn btn-ghost" onclick="document.getElementById(\'item-lib-modal\').remove()">Close</button></div>' +
   '</div>';
   ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
   document.body.appendChild(ov);
+  renderLibList();
+}
+function libSearch(v) { _libCtx.q = String(v || '').toLowerCase(); renderLibList(); }
+function libSetCat(c) {
+  _libCtx.cat = c;
+  document.querySelectorAll('#lib-cats [data-cat]').forEach(function(el) { el.style.cssText = libChipStyle(el.getAttribute('data-cat') === c); });
+  renderLibList();
+}
+function renderLibList() {
+  var list = document.getElementById('lib-list'); if (!list) return;
+  var lib = (typeof ITEM_LIBRARY !== 'undefined') ? ITEM_LIBRARY : [];
+  var esc2 = function(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
+  var q = _libCtx.q, cat = _libCtx.cat, pcId = _libCtx.pcId, itemId = _libCtx.itemId;
+  var out = [];
+  lib.forEach(function(t, i) {
+    if (cat && libItemCategory(t) !== cat) return;
+    if (q && (t.name + ' ' + (t.desc || '') + ' ' + t.slot).toLowerCase().indexOf(q) < 0) return;
+    out.push('<div onclick="applyLibraryItem(' + pcId + ',' + itemId + ',' + i + ')" style="padding:9px 11px;border:1px solid rgba(255,255,255,0.1);border-radius:6px;margin-bottom:6px;cursor:pointer;background:rgba(0,0,0,0.2);" onmouseover="this.style.borderColor=\'var(--gold)\'" onmouseout="this.style.borderColor=\'rgba(255,255,255,0.1)\'">' +
+      '<div style="font-size:14px;color:var(--gold-light);font-family:Cinzel,serif;">' + esc2(t.name) + ' <span style="font-size:10px;color:#666;">' + esc2(t.slot) + '</span></div>' +
+      '<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">' + esc2(t.desc || '') + '</div>' +
+    '</div>');
+  });
+  list.innerHTML = out.length ? out.join('') : '<div style="color:var(--text-dim);font-style:italic;padding:20px;text-align:center;">No items match — try a different search or filter.</div>';
+  var cnt = document.getElementById('lib-count'); if (cnt) cnt.textContent = out.length + ' item' + (out.length === 1 ? '' : 's');
 }
 
 // Damage types + conditions used by the item builder dropdowns
 var ITEM_DMG_TYPES = ['slashing','piercing','bludgeoning','fire','cold','lightning','thunder','poison','acid','necrotic','radiant','force','psychic'];
 function itemConditionList() {
-  if (typeof CONDITION_EFFECTS !== 'undefined') return Object.keys(CONDITION_EFFECTS);
-  return ['Poisoned','Prone','Frightened','Restrained','Stunned','Blinded','Grappled','Charmed','Paralyzed','Unconscious'];
+  // The conditions worth granting immunity to (skip stances/DM bookkeeping ones)
+  var common = ['Poisoned','Prone','Frightened','Restrained','Stunned','Blinded','Deafened','Grappled','Charmed','Paralyzed','Petrified','Incapacitated','Unconscious','Exhaustion'];
+  if (typeof CONDITION_EFFECTS !== 'undefined') {
+    var keys = Object.keys(CONDITION_EFFECTS);
+    common.forEach(function(c) { if (keys.indexOf(c) < 0) keys.push(c); });
+    return common.filter(function(c) { return keys.indexOf(c) >= 0; });
+  }
+  return common;
+}
+// Toggle-chip helpers for the item builder — click instead of typing (no typos).
+function fxChipStyle(on) {
+  return 'display:inline-block;padding:3px 10px;margin:2px 4px 2px 0;border-radius:12px;font-size:11px;cursor:pointer;user-select:none;border:1px solid ' +
+    (on ? 'var(--gold)' : 'rgba(255,255,255,0.15)') + ';background:' + (on ? 'rgba(212,175,55,0.18)' : 'rgba(0,0,0,0.25)') +
+    ';color:' + (on ? 'var(--gold)' : '#bbb') + ';';
+}
+function fxChips(group, options, selected) {
+  return options.map(function(o) {
+    var on = (selected || []).indexOf(o) >= 0;
+    return '<span class="fx-chip" data-group="' + group + '" data-val="' + o + '" data-on="' + (on ? '1' : '0') + '" onclick="fxToggleChip(this)" style="' + fxChipStyle(on) + '">' + o + '</span>';
+  }).join('');
+}
+function fxToggleChip(el) {
+  var on = el.getAttribute('data-on') !== '1';
+  el.setAttribute('data-on', on ? '1' : '0');
+  el.style.cssText = fxChipStyle(on);
+}
+function fxReadChips(group) {
+  var out = [];
+  document.querySelectorAll('.fx-chip[data-group="' + group + '"][data-on="1"]').forEach(function(el) { out.push(el.getAttribute('data-val')); });
+  return out;
 }
 function fxSection(title, sub) {
   return '<div style="margin:14px 0 6px;padding-top:10px;border-top:1px solid rgba(212,175,55,0.18);">' +
@@ -1337,15 +1433,31 @@ function editItemEffects(pcId, itemId) {
         return '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);">' + s.toUpperCase() + '</div><input id="fx-' + s + '" type="number" value="' + (st[s] || 0) + '" style="width:100%;text-align:center;font-size:12px;padding:4px 2px;"></div>';
       }).join('') +
     '</div>' +
-    '<div class="field-group" style="margin:6px 0;"><label>Skill bonus <span style="color:#666;font-weight:normal;">(e.g. stealth:2, perception:2 — comma-separated, or all:2)</span></label><input id="fx-skills" value="' + esc2(Object.keys(it.skillBonus || {}).map(function(k){ return k + ':' + it.skillBonus[k]; }).join(', ')) + '" placeholder="stealth:2"></div>' +
+    (function() {
+      var skl = it.skillBonus || {}; var sklKeys = Object.keys(skl);
+      var row = function(idx) {
+        var k = sklKeys[idx] || ''; var v = k ? skl[k] : '';
+        var opts = '<option value="">— skill —</option>' +
+          SKILL_LIST.map(function(s) { return '<option value="' + s.key + '"' + (k === s.key ? ' selected' : '') + '>' + s.label + '</option>'; }).join('') +
+          '<option value="all"' + (k === 'all' ? ' selected' : '') + '>ALL skills</option>';
+        return '<div style="display:flex;gap:6px;margin-bottom:4px;"><select id="fx-skill-key-' + idx + '" style="flex:1;font-size:12px;padding:4px;">' + opts + '</select>' +
+          '<input id="fx-skill-val-' + idx + '" type="number" value="' + (v || '') + '" placeholder="+" style="width:56px;text-align:center;"></div>';
+      };
+      return '<div style="margin:6px 0;"><label style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.08em;color:var(--text-dim);">SKILL BONUS</label>' + row(0) + row(1) + row(2) + '</div>';
+    })() +
     '<label style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:6px;margin-bottom:4px;"><input id="fx-extraatk" type="checkbox"' + (it.grantsExtraAttack ? ' checked' : '') + '> Grants Extra Attack (2 attacks per Action)</label>';
 
-  // ── DEFENSES ──
-  html += fxSection('🧬 DEFENSES', 'Comma-separated damage types (fire, cold…). Condition immunity by name.');
-  html += '<div class="field-group" style="margin-bottom:6px;"><label>Resistance to</label><input id="fx-resist" value="' + esc2((it.grantResist || []).join(', ')) + '"></div>' +
-    '<div class="field-group" style="margin-bottom:6px;"><label>Immunity to (damage)</label><input id="fx-immune" value="' + esc2((it.grantImmune || []).join(', ')) + '"></div>' +
-    '<div class="field-group" style="margin-bottom:6px;"><label>Vulnerability to <span style="color:#666;font-weight:normal;">(cursed!)</span></label><input id="fx-vuln" value="' + esc2((it.grantVuln || []).join(', ')) + '"></div>' +
-    '<div class="field-group" style="margin-bottom:6px;"><label>Immune to conditions <span style="color:#666;font-weight:normal;">(Frightened, Poisoned…)</span></label><input id="fx-condimmune" value="' + esc2((it.conditionImmune || []).join(', ')) + '"></div>';
+  // ── DEFENSES ── (tap chips, no typing)
+  var defRow = function(label, hint, group, opts, sel) {
+    return '<div style="margin-bottom:9px;">' +
+      '<div style="font-size:11px;color:var(--text-dim);margin-bottom:3px;">' + label + (hint ? ' <span style="color:#666;">' + hint + '</span>' : '') + '</div>' +
+      '<div>' + fxChips(group, opts, sel) + '</div></div>';
+  };
+  html += fxSection('🧬 DEFENSES', 'Tap to toggle — no typing, no typos.');
+  html += defRow('Resist', '(half damage)', 'resist', ITEM_DMG_TYPES, it.grantResist || []);
+  html += defRow('Immune', '(no damage)', 'immune', ITEM_DMG_TYPES, it.grantImmune || []);
+  html += defRow('Vulnerable', '(double — cursed)', 'vuln', ITEM_DMG_TYPES, it.grantVuln || []);
+  html += defRow('Condition immunity', '', 'condimmune', itemConditionList(), it.conditionImmune || []);
 
   // ── GRANTED ACTION ──
   html += fxSection('🌟 GRANTED ACTION', 'An extra attack/blast this item lets you use (Flame Tongue Blast, wand bolt…).');
@@ -1406,22 +1518,22 @@ function saveItemEffects(pcId, itemId) {
   it.allDamageBonus = num('fx-alldmg') || undefined;
   it.saveBonus = num('fx-savebonus') || undefined;
   it.grantsExtraAttack = chk('fx-extraatk') || undefined;
-  // Skill bonuses: "stealth:2, perception:1" or "all:2"
+  // Skill bonuses — from the skill dropdowns
   var sk = {}, skAny = false;
-  (val('fx-skills') || '').split(',').forEach(function(pair) {
-    var kv = pair.split(':'); var k = (kv[0] || '').trim().toLowerCase().replace(/ /g, '_'); var v = parseInt(kv[1]);
-    if (k && v) { sk[k] = v; skAny = true; }
-  });
+  for (var si = 0; si < 3; si++) {
+    var kk = val('fx-skill-key-' + si), vv = num('fx-skill-val-' + si);
+    if (kk && vv) { sk[kk] = vv; skAny = true; }
+  }
   it.skillBonus = skAny ? sk : undefined;
   var stats = {}, any = false;
   ['str','dex','con','int','wis','cha'].forEach(function(s) { var v = num('fx-' + s); if (v) { stats[s] = v; any = true; } });
   it.statBonuses = any ? stats : undefined;
 
-  // Defenses
-  it.grantResist = csv('fx-resist'); if (!it.grantResist.length) delete it.grantResist;
-  it.grantImmune = csv('fx-immune'); if (!it.grantImmune.length) delete it.grantImmune;
-  it.grantVuln = csv('fx-vuln'); if (!it.grantVuln.length) delete it.grantVuln;
-  it.conditionImmune = csvRaw('fx-condimmune'); if (!it.conditionImmune.length) delete it.conditionImmune;
+  // Defenses — from the toggle chips
+  it.grantResist = fxReadChips('resist'); if (!it.grantResist.length) delete it.grantResist;
+  it.grantImmune = fxReadChips('immune'); if (!it.grantImmune.length) delete it.grantImmune;
+  it.grantVuln = fxReadChips('vuln'); if (!it.grantVuln.length) delete it.grantVuln;
+  it.conditionImmune = fxReadChips('condimmune'); if (!it.conditionImmune.length) delete it.conditionImmune;
 
   // Granted action + charges
   var an = val('fx-aname');
