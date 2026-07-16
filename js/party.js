@@ -896,7 +896,9 @@ function renderInventoryModal(pcId) {
         '<option value="gear">Gear</option><option value="weapon">Weapon</option><option value="armor">Armor</option><option value="shield">Shield</option><option value="light">Light</option><option value="potion">Potion</option><option value="ammo">Ammo</option>' +
       '</select></div>' +
       '<button class="btn btn-gold btn-sm" onclick="addInventoryItem(' + pcId + ')">+ Add</button>' +
-    '</div></div>';
+    '</div>' +
+    '<div style="margin-top:8px;text-align:center;"><button class="btn btn-ghost btn-sm" onclick="openItemLibrary(' + pcId + ',0)">📚 Add from magic item library…</button></div>' +
+    '</div>';
 
   // Item list
   if (!pc.inventory.length) {
@@ -904,8 +906,16 @@ function renderInventoryModal(pcId) {
   } else {
     pc.inventory.forEach(function(it) {
       var extra = [];
-      if (it.dice) extra.push(it.dice + (it.damageType ? ' ' + it.damageType : ''));
+      if (it.dice) extra.push((it.magicBonus ? '+' + it.magicBonus + ' ' : '') + it.dice + (it.damageType ? ' ' + it.damageType : ''));
+      (it.riderDamage || []).forEach(function(rd) { extra.push('☠ +' + rd.dice + (rd.type ? ' ' + rd.type : '')); });
+      if (it.onHitSave && it.onHitSave.condition) extra.push('DC' + it.onHitSave.dc + ' ' + String(it.onHitSave.ability || '').toUpperCase() + ' or ' + it.onHitSave.condition);
+      if (it.critRange && it.critRange < 20) extra.push('crit ' + it.critRange + '+');
       if (it.acBonus) extra.push('+' + it.acBonus + ' AC');
+      if (it.saveBonus) extra.push('+' + it.saveBonus + ' saves');
+      if (it.allAttackBonus) extra.push('+' + it.allAttackBonus + ' all atk');
+      if (it.statBonuses) Object.keys(it.statBonuses).forEach(function(k){ if (it.statBonuses[k]) extra.push('+' + it.statBonuses[k] + ' ' + k.toUpperCase()); });
+      if (it.grantResist && it.grantResist.length) extra.push('resist ' + it.grantResist.join('/'));
+      if (it.charges) extra.push('🔋 ' + (typeof it.charges.left==='number'?it.charges.left:it.charges.max) + '/' + it.charges.max);
       if (it.lightFt) extra.push('💡 ' + it.lightFt + ' ft');
       if (it.healDice) extra.push('heals ' + it.healDice);
       if (it.range && it.slot === 'weapon') extra.push(it.range + ' ft');
@@ -1170,6 +1180,86 @@ function collectSpells() {
 // ══════════════════════════════════════════════════════════════
 // ITEM EFFECTS EDITOR — make any item magical
 // ══════════════════════════════════════════════════════════════
+// Fields the library stamps onto an item (everything except bookkeeping)
+var ITEM_EFFECT_FIELDS = ['slot','dice','damageType','magicBonus','toHitBonus','damageBonus','critRange','riderDamage','vsType','onHitSave',
+  'acBonus','speedBonus','lightFt','allAttackBonus','allDamageBonus','saveBonus','grantsExtraAttack','statBonuses','skillBonus',
+  'grantResist','grantImmune','grantVuln','conditionImmune','grantAction','grantSpell','charges','healDice','range'];
+
+// Deep-ish clone so a library template never shares array/object refs with an item
+function cloneItemFields(src) {
+  var out = {};
+  ITEM_EFFECT_FIELDS.forEach(function(k) {
+    if (src[k] === undefined) return;
+    out[k] = (src[k] && typeof src[k] === 'object') ? JSON.parse(JSON.stringify(src[k])) : src[k];
+  });
+  return out;
+}
+
+// Stamp a library template onto an item (id 0 = create a brand-new item on the pc)
+function applyLibraryItem(pcId, itemId, libIndex) {
+  var pc = party.find(function(p) { return p.id === pcId; });
+  if (!pc) return;
+  var tpl = (typeof ITEM_LIBRARY !== 'undefined') ? ITEM_LIBRARY[libIndex] : null;
+  if (!tpl) return;
+  var fields = cloneItemFields(tpl);
+  var it;
+  if (itemId) {
+    it = (pc.inventory || []).find(function(i) { return i.id === itemId; });
+    if (!it) return;
+    Object.keys(fields).forEach(function(k) { it[k] = fields[k]; });
+    it.name = tpl.name;
+  } else {
+    it = Object.assign({ id: typeof uniqueId === 'function' ? uniqueId() : Date.now(), name: tpl.name, qty: 1, equipped: false }, fields);
+    pc.inventory = pc.inventory || [];
+    pc.inventory.push(it);
+  }
+  if (typeof hydrateWeaponStats === 'function' && it.slot === 'weapon') hydrateWeaponStats(it);
+  if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
+  savePartyStorage();
+  var lm = document.getElementById('item-lib-modal'); if (lm) lm.remove();
+  var fm = document.getElementById('item-fx-modal'); if (fm) fm.remove();
+  renderParty(); renderCombatants(); renderInventoryModal(pcId);
+  showToast('📚 ' + tpl.name + ' added to ' + pc.name, 'success');
+  editItemEffects(pcId, it.id); // open the editor so they can tweak immediately
+}
+
+// Library browser — grid of prebuilt items with their effect summary
+function openItemLibrary(pcId, itemId) {
+  var existing = document.getElementById('item-lib-modal'); if (existing) existing.remove();
+  var lib = (typeof ITEM_LIBRARY !== 'undefined') ? ITEM_LIBRARY : [];
+  var ov = document.createElement('div');
+  ov.id = 'item-lib-modal';
+  ov.className = 'modal-overlay show';
+  ov.style.zIndex = '2720';
+  var esc2 = function(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
+  var rows = lib.map(function(t, i) {
+    return '<div onclick="applyLibraryItem(' + pcId + ',' + (itemId || 0) + ',' + i + ')" style="padding:9px 11px;border:1px solid rgba(255,255,255,0.1);border-radius:6px;margin-bottom:6px;cursor:pointer;background:rgba(0,0,0,0.2);" onmouseover="this.style.borderColor=\'var(--gold)\'" onmouseout="this.style.borderColor=\'rgba(255,255,255,0.1)\'">' +
+      '<div style="font-size:14px;color:var(--gold-light);font-family:Cinzel,serif;">' + esc2(t.name) + ' <span style="font-size:10px;color:#666;">' + esc2(t.slot) + '</span></div>' +
+      '<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">' + esc2(t.desc || '') + '</div>' +
+    '</div>';
+  }).join('');
+  ov.innerHTML = '<div class="modal" style="max-width:520px;width:96%;max-height:86vh;overflow-y:auto;">' +
+    '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:4px;">📚 Magic Item Library</h3>' +
+    '<div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">Click one to ' + (itemId ? 'turn this item into it' : 'add it to ' + (party.find(function(p){return p.id===pcId;})||{}).name) + ' — then tweak anything in the effects editor.</div>' +
+    rows +
+    '<div class="modal-btns" style="margin-top:10px;"><button class="btn btn-ghost" onclick="document.getElementById(\'item-lib-modal\').remove()">Close</button></div>' +
+  '</div>';
+  ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+
+// Damage types + conditions used by the item builder dropdowns
+var ITEM_DMG_TYPES = ['slashing','piercing','bludgeoning','fire','cold','lightning','thunder','poison','acid','necrotic','radiant','force','psychic'];
+function itemConditionList() {
+  if (typeof CONDITION_EFFECTS !== 'undefined') return Object.keys(CONDITION_EFFECTS);
+  return ['Poisoned','Prone','Frightened','Restrained','Stunned','Blinded','Grappled','Charmed','Paralyzed','Unconscious'];
+}
+function fxSection(title, sub) {
+  return '<div style="margin:14px 0 6px;padding-top:10px;border-top:1px solid rgba(212,175,55,0.18);">' +
+    '<span style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.09em;color:var(--gold);">' + title + '</span>' +
+    (sub ? '<div style="font-size:10px;color:#666;margin-top:2px;">' + sub + '</div>' : '') + '</div>';
+}
+
 function editItemEffects(pcId, itemId) {
   var pc = party.find(function(p) { return p.id === pcId; });
   var it = pc && (pc.inventory || []).find(function(i) { return i.id === itemId; });
@@ -1182,36 +1272,97 @@ function editItemEffects(pcId, itemId) {
   ov.style.zIndex = '2700';
   var st = it.statBonuses || {};
   var ga = it.grantAction || {};
+  var oh = it.onHitSave || {};
+  var ch = it.charges || {};
+  var riders = (it.riderDamage && it.riderDamage.length) ? it.riderDamage.slice() : [];
+  while (riders.length < 3) riders.push({});
   var esc2 = function(s) { return String(s || '').replace(/"/g, '&quot;'); };
-  ov.innerHTML = '<div class="modal" style="max-width:480px;width:95%;max-height:85vh;overflow-y:auto;">' +
-    '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:4px;">✨ ' + esc2(it.name) + ' — effects</h3>' +
-    '<div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">Everything here applies automatically while the item is equipped.</div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">' +
+  var typeOpts = function(sel) { return '<option value="">type</option>' + ITEM_DMG_TYPES.map(function(t) { return '<option value="' + t + '"' + (sel === t ? ' selected' : '') + '>' + t + '</option>'; }).join(''); };
+  var condOpts = function(sel) { return '<option value="">— condition —</option>' + itemConditionList().map(function(c) { return '<option value="' + c + '"' + (sel === c ? ' selected' : '') + '>' + c + '</option>'; }).join(''); };
+  var isWeapon = it.slot === 'weapon';
+
+  var html = '<div class="modal" style="max-width:520px;width:96%;max-height:88vh;overflow-y:auto;">' +
+    '<h3 style="font-family:Cinzel,serif;color:var(--gold);margin-bottom:2px;">✨ ' + esc2(it.name) + '</h3>' +
+    '<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">Craft the item. Everything here applies automatically while it\'s equipped. <a href="#" onclick="openItemLibrary(' + pcId + ',' + itemId + ');return false;" style="color:var(--gold-light);">📚 Load from library…</a></div>';
+
+  // ── WEAPON section ──
+  html += fxSection('⚔ WEAPON', isWeapon ? 'Base dice + magic, plus extra effects on every hit.' : 'Only applies if this item\'s category is Weapon.');
+  html += '<div style="display:grid;grid-template-columns:70px 1fr 60px;gap:6px;margin-bottom:6px;align-items:end;">' +
+    '<div class="field-group" style="margin:0;"><label>Dice</label><input id="fx-dice" value="' + esc2(it.dice || '') + '" placeholder="1d8" style="text-align:center;"></div>' +
+    '<div class="field-group" style="margin:0;"><label>Damage type</label><select id="fx-dtype" style="width:100%;">' + typeOpts(it.damageType) + '</select></div>' +
+    '<div class="field-group" style="margin:0;"><label>Magic +</label><input id="fx-magic" type="number" value="' + (it.magicBonus || 0) + '" style="text-align:center;" title="+X to hit AND damage"></div>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px;">' +
+      '<div class="field-group" style="margin:0;"><label>+ to-hit</label><input id="fx-tohit" type="number" value="' + (it.toHitBonus || 0) + '" style="text-align:center;" title="This weapon only, on top of magic"></div>' +
+      '<div class="field-group" style="margin:0;"><label>+ damage</label><input id="fx-dmgbonus" type="number" value="' + (it.damageBonus || 0) + '" style="text-align:center;"></div>' +
+      '<div class="field-group" style="margin:0;"><label>Crit on</label><select id="fx-crit" style="width:100%;"><option value="20"' + ((it.critRange||20)==20?' selected':'') + '>20</option><option value="19"' + (it.critRange==19?' selected':'') + '>19–20</option><option value="18"' + (it.critRange==18?' selected':'') + '>18–20</option></select></div>' +
+    '</div>';
+
+  // Rider damage rows
+  html += '<label style="font-size:10px;color:var(--text-dim);">RIDER DAMAGE <span style="color:#666;">— extra dice of another type on every hit (2d10 poison…)</span></label>';
+  riders.forEach(function(rd, i) {
+    html += '<div style="display:grid;grid-template-columns:80px 1fr 90px;gap:5px;margin:4px 0;align-items:center;">' +
+      '<input id="fx-rd-dice-' + i + '" value="' + esc2(rd.dice || '') + '" placeholder="2d10" style="font-size:12px;padding:5px;text-align:center;">' +
+      '<select id="fx-rd-type-' + i + '" style="font-size:11px;padding:5px;">' + typeOpts(rd.type) + '</select>' +
+      '<label style="font-size:10px;color:var(--text-dim);display:flex;align-items:center;gap:4px;"><input id="fx-rd-crit-' + i + '" type="checkbox"' + (rd.onCrit ? ' checked' : '') + '>crit only</label>' +
+    '</div>';
+  });
+
+  // On-hit save
+  html += '<label style="font-size:10px;color:var(--text-dim);margin-top:6px;display:block;">ON-HIT SAVE <span style="color:#666;">— target saves or suffers a condition</span></label>' +
+    '<div style="display:grid;grid-template-columns:70px 60px 1fr 60px;gap:5px;margin:4px 0 2px;align-items:center;">' +
+      '<select id="fx-oh-ability" style="font-size:11px;padding:5px;"><option value="">save</option>' + ['str','dex','con','int','wis','cha'].map(function(a){ return '<option value="' + a + '"' + (oh.ability===a?' selected':'') + '>' + a.toUpperCase() + '</option>'; }).join('') + '</select>' +
+      '<input id="fx-oh-dc" type="number" value="' + (oh.dc || '') + '" placeholder="DC" style="font-size:12px;padding:5px;text-align:center;">' +
+      '<select id="fx-oh-cond" style="font-size:11px;padding:5px;">' + condOpts(oh.condition) + '</select>' +
+      '<input id="fx-oh-dur" type="number" value="' + (oh.duration || '') + '" placeholder="rds" style="font-size:12px;padding:5px;text-align:center;" title="Rounds (blank = until removed)">' +
+    '</div>';
+
+  // ── PASSIVE section ──
+  html += fxSection('🛡 PASSIVE (while equipped)');
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">' +
       '<div class="field-group" style="margin:0;"><label>+ AC</label><input id="fx-ac" type="number" value="' + (it.acBonus || 0) + '" style="text-align:center;"></div>' +
       '<div class="field-group" style="margin:0;"><label>+ Speed ft</label><input id="fx-speed" type="number" value="' + (it.speedBonus || 0) + '" style="text-align:center;"></div>' +
       '<div class="field-group" style="margin:0;"><label>Light ft</label><input id="fx-light" type="number" value="' + (it.lightFt || 0) + '" style="text-align:center;"></div>' +
     '</div>' +
-    '<label style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.08em;color:var(--text-dim);">STAT BONUSES</label>' +
-    '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin:5px 0 10px;">' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">' +
+      '<div class="field-group" style="margin:0;"><label title="Every attack, not just one weapon">+ hit (all)</label><input id="fx-allatk" type="number" value="' + (it.allAttackBonus || 0) + '" style="text-align:center;"></div>' +
+      '<div class="field-group" style="margin:0;"><label>+ dmg (all)</label><input id="fx-alldmg" type="number" value="' + (it.allDamageBonus || 0) + '" style="text-align:center;"></div>' +
+      '<div class="field-group" style="margin:0;"><label>+ all saves</label><input id="fx-savebonus" type="number" value="' + (it.saveBonus || 0) + '" style="text-align:center;"></div>' +
+    '</div>' +
+    '<label style="font-size:10px;color:var(--text-dim);">STAT BONUSES</label>' +
+    '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin:4px 0 8px;">' +
       ['str','dex','con','int','wis','cha'].map(function(s) {
         return '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-dim);">' + s.toUpperCase() + '</div><input id="fx-' + s + '" type="number" value="' + (st[s] || 0) + '" style="width:100%;text-align:center;font-size:12px;padding:4px 2px;"></div>';
       }).join('') +
     '</div>' +
-    '<div class="field-group" style="margin-bottom:8px;"><label>Grants resistance to <span style="color:#666;font-weight:normal;">(comma-separated: fire, cold...)</span></label><input id="fx-resist" value="' + esc2((it.grantResist || []).join(', ')) + '"></div>' +
-    '<div class="field-group" style="margin-bottom:8px;"><label>Grants immunity to</label><input id="fx-immune" value="' + esc2((it.grantImmune || []).join(', ')) + '"></div>' +
-    '<div class="field-group" style="margin-bottom:10px;"><label>Inflicts vulnerability to <span style="color:#666;font-weight:normal;">(cursed!)</span></label><input id="fx-vuln" value="' + esc2((it.grantVuln || []).join(', ')) + '"></div>' +
-    '<label style="font-size:10px;font-family:Cinzel,serif;letter-spacing:0.08em;color:var(--text-dim);">SPECIAL ATTACK GRANTED</label>' +
-    '<div style="display:grid;grid-template-columns:2fr 60px 60px 1fr 1fr;gap:5px;margin:5px 0 12px;">' +
-      '<input id="fx-aname" placeholder="Flame Tongue Blast" value="' + esc2(ga.name) + '" style="font-size:12px;padding:5px;">' +
+    '<label style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:6px;margin-bottom:4px;"><input id="fx-extraatk" type="checkbox"' + (it.grantsExtraAttack ? ' checked' : '') + '> Grants Extra Attack (2 attacks per Action)</label>';
+
+  // ── DEFENSES ──
+  html += fxSection('🧬 DEFENSES', 'Comma-separated damage types (fire, cold…). Condition immunity by name.');
+  html += '<div class="field-group" style="margin-bottom:6px;"><label>Resistance to</label><input id="fx-resist" value="' + esc2((it.grantResist || []).join(', ')) + '"></div>' +
+    '<div class="field-group" style="margin-bottom:6px;"><label>Immunity to (damage)</label><input id="fx-immune" value="' + esc2((it.grantImmune || []).join(', ')) + '"></div>' +
+    '<div class="field-group" style="margin-bottom:6px;"><label>Vulnerability to <span style="color:#666;font-weight:normal;">(cursed!)</span></label><input id="fx-vuln" value="' + esc2((it.grantVuln || []).join(', ')) + '"></div>' +
+    '<div class="field-group" style="margin-bottom:6px;"><label>Immune to conditions <span style="color:#666;font-weight:normal;">(Frightened, Poisoned…)</span></label><input id="fx-condimmune" value="' + esc2((it.conditionImmune || []).join(', ')) + '"></div>';
+
+  // ── GRANTED ACTION ──
+  html += fxSection('🌟 GRANTED ACTION', 'An extra attack/blast this item lets you use (Flame Tongue Blast, wand bolt…).');
+  html += '<div style="display:grid;grid-template-columns:2fr 56px 56px 70px 1fr;gap:5px;margin-bottom:6px;">' +
+      '<input id="fx-aname" placeholder="Fire Bolt" value="' + esc2(ga.name) + '" style="font-size:12px;padding:5px;">' +
       '<input id="fx-arange" type="number" placeholder="ft" value="' + (ga.range || '') + '" style="font-size:12px;padding:5px;text-align:center;">' +
       '<input id="fx-abonus" type="number" placeholder="+hit" value="' + (ga.bonus !== undefined ? ga.bonus : '') + '" style="font-size:12px;padding:5px;text-align:center;">' +
       '<input id="fx-adice" placeholder="2d6" value="' + esc2(ga.dice) + '" style="font-size:12px;padding:5px;">' +
-      '<select id="fx-atype" style="font-size:11px;padding:5px;"><option value="">type</option>' + ACTION_DMG_TYPES.map(function(t) { return '<option value="' + t + '"' + (ga.damageType === t ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select>' +
+      '<select id="fx-atype" style="font-size:11px;padding:5px;">' + typeOpts(ga.damageType) + '</select>' +
     '</div>' +
-    '<div class="modal-btns">' +
-      '<button class="btn btn-gold" onclick="saveItemEffects(' + pcId + ',' + itemId + ')">💾 Save Effects</button>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px;">' +
+      '<div class="field-group" style="margin:0;"><label>Charges (max)</label><input id="fx-charges" type="number" value="' + (ch.max || '') + '" placeholder="e.g. 3" style="text-align:center;"></div>' +
+      '<div class="field-group" style="margin:0;"><label>Recharge</label><select id="fx-recharge" style="width:100%;"><option value="">— none —</option><option value="short"' + (ch.per==='short'?' selected':'') + '>Short rest</option><option value="long"' + (ch.per==='long'?' selected':'') + '>Long rest</option><option value="dawn"' + (ch.per==='dawn'?' selected':'') + '>Dawn</option></select></div>' +
+    '</div>';
+
+  html += '<div class="modal-btns" style="margin-top:14px;">' +
+      '<button class="btn btn-gold" onclick="saveItemEffects(' + pcId + ',' + itemId + ')">💾 Save</button>' +
       '<button class="btn btn-ghost" onclick="document.getElementById(\'item-fx-modal\').remove()">Cancel</button>' +
     '</div></div>';
+  ov.innerHTML = html;
   ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
   document.body.appendChild(ov);
 }
@@ -1220,29 +1371,58 @@ function saveItemEffects(pcId, itemId) {
   var pc = party.find(function(p) { return p.id === pcId; });
   var it = pc && (pc.inventory || []).find(function(i) { return i.id === itemId; });
   if (!it) return;
-  var num = function(id) { return parseInt(document.getElementById(id).value) || 0; };
+  var num = function(id) { var el = document.getElementById(id); return el ? (parseInt(el.value) || 0) : 0; };
+  var val = function(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  var chk = function(id) { var el = document.getElementById(id); return !!(el && el.checked); };
   var csv = function(id) {
-    var valid = ['slashing','piercing','bludgeoning','fire','cold','lightning','thunder','poison','acid','necrotic','radiant','force','psychic'];
-    return document.getElementById(id).value.split(',').map(function(s) { return s.trim().toLowerCase(); }).filter(function(s) { return valid.indexOf(s) >= 0; });
+    return (val(id) || '').split(',').map(function(s) { return s.trim().toLowerCase(); }).filter(function(s) { return ITEM_DMG_TYPES.indexOf(s) >= 0; });
   };
+  var csvRaw = function(id) { return (val(id) || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean); };
+
+  // Weapon
+  var d = val('fx-dice'); if (d) it.dice = d;
+  var dt = val('fx-dtype'); if (dt) it.damageType = dt;
+  it.magicBonus = num('fx-magic') || undefined;
+  it.toHitBonus = num('fx-tohit') || undefined;
+  it.damageBonus = num('fx-dmgbonus') || undefined;
+  var cr = parseInt(val('fx-crit')) || 20; it.critRange = cr < 20 ? cr : undefined;
+  var riders = [];
+  for (var i = 0; i < 3; i++) {
+    var rdd = val('fx-rd-dice-' + i);
+    if (rdd) { var rd = { dice: rdd, type: val('fx-rd-type-' + i) || undefined }; if (chk('fx-rd-crit-' + i)) rd.onCrit = true; riders.push(rd); }
+  }
+  it.riderDamage = riders.length ? riders : undefined;
+  var ohAb = val('fx-oh-ability'), ohDc = num('fx-oh-dc'), ohCond = val('fx-oh-cond');
+  it.onHitSave = (ohAb && ohDc && ohCond) ? { ability: ohAb, dc: ohDc, condition: ohCond, duration: num('fx-oh-dur') || undefined } : undefined;
+
+  // Passive
   it.acBonus = num('fx-ac') || undefined;
   it.speedBonus = num('fx-speed') || undefined;
   it.lightFt = num('fx-light') || undefined;
-  var stats = {};
-  var any = false;
+  it.allAttackBonus = num('fx-allatk') || undefined;
+  it.allDamageBonus = num('fx-alldmg') || undefined;
+  it.saveBonus = num('fx-savebonus') || undefined;
+  it.grantsExtraAttack = chk('fx-extraatk') || undefined;
+  var stats = {}, any = false;
   ['str','dex','con','int','wis','cha'].forEach(function(s) { var v = num('fx-' + s); if (v) { stats[s] = v; any = true; } });
   it.statBonuses = any ? stats : undefined;
+
+  // Defenses
   it.grantResist = csv('fx-resist'); if (!it.grantResist.length) delete it.grantResist;
   it.grantImmune = csv('fx-immune'); if (!it.grantImmune.length) delete it.grantImmune;
   it.grantVuln = csv('fx-vuln'); if (!it.grantVuln.length) delete it.grantVuln;
-  var an = document.getElementById('fx-aname').value.trim();
+  it.conditionImmune = csvRaw('fx-condimmune'); if (!it.conditionImmune.length) delete it.conditionImmune;
+
+  // Granted action + charges
+  var an = val('fx-aname');
   it.grantAction = an ? {
-    name: an, kind: 'attack',
-    range: num('fx-arange') || 5,
-    bonus: num('fx-abonus') || 0,
-    dice: document.getElementById('fx-adice').value.trim() || '1d6',
-    damageType: document.getElementById('fx-atype').value || (typeof inferDamageType === 'function' ? inferDamageType(an) : '')
+    name: an, kind: 'attack', range: num('fx-arange') || 5, bonus: num('fx-abonus') || 0,
+    dice: val('fx-adice') || '1d6',
+    damageType: val('fx-atype') || (typeof inferDamageType === 'function' ? inferDamageType(an) : '')
   } : undefined;
+  var chMax = num('fx-charges'), chPer = val('fx-recharge');
+  it.charges = chMax ? { max: chMax, left: (it.charges && typeof it.charges.left === 'number' && it.charges.max === chMax) ? it.charges.left : chMax, per: chPer || 'long' } : undefined;
+
   if (typeof recomputePcCombat === 'function') recomputePcCombat(pc);
   savePartyStorage();
   renderParty();

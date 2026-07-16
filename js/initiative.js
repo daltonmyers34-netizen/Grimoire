@@ -134,6 +134,18 @@ function checkConcentration(c, damage) {
   }
 }
 
+// Refill item charges on rest: a short rest refills only 'short'-recharge items;
+// a long rest refills everything (short, long, and dawn items).
+function restoreItemCharges(restType) {
+  party.forEach(function(pc) {
+    (pc.inventory || []).forEach(function(it) {
+      if (!it.charges || typeof it.charges.max !== 'number') return;
+      var per = it.charges.per || 'long';
+      if (restType === 'long' || per === 'short') it.charges.left = it.charges.max;
+    });
+  });
+}
+
 function shortRest() {
   if (!party.length) { showToast('No party members to rest', 'info'); return; }
   var warlockCount = 0;
@@ -153,6 +165,7 @@ function shortRest() {
     pc.lastRest = 'short';
   });
   combatants.forEach(function(c) { if (c.type === 'ally') { c.actionSurgeUsed = false; c.secondWindUsed = false; c.bardicUsed = false; } });
+  restoreItemCharges('short');
   savePartyStorage();
   renderParty();
   renderCombatants();
@@ -178,6 +191,7 @@ function longRest() {
   combatants.forEach(function(c) { if (c.type === 'ally') { c.actionSurgeUsed = false; c.secondWindUsed = false; c.bardicUsed = false; } });
   // Also heal allies in combat
   combatants.filter(function(c) { return c.type === 'ally'; }).forEach(function(c) { c.hp = c.maxHp; });
+  restoreItemCharges('long');
   savePartyStorage();
   renderParty();
   renderCombatants();
